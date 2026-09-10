@@ -21,6 +21,7 @@ namespace ChunithmMobile.Rendering
         private Material edgeMaterial;
         private Material goldMaterial;
         private bool initialized;
+        private Transform trackRoot;
 
         private void Awake()
         {
@@ -70,9 +71,18 @@ namespace ChunithmMobile.Rendering
 
         public void Build()
         {
-            for (int i = transform.childCount - 1; i >= 0; i--)
-            {
-                Destroy(transform.GetChild(i).gameObject);
+            // The component shares its host with note playback. Only rebuild
+            // geometry owned by the field, never notes or their pool.
+            if (trackRoot == null) {
+                trackRoot = new GameObject("Track geometry").transform;
+                trackRoot.SetParent(transform, false);
+            }
+            for (int i = trackRoot.childCount - 1; i >= 0; i--) {
+                GameObject child = trackRoot.GetChild(i).gameObject;
+                child.SetActive(false);
+                MeshFilter filter = child.GetComponent<MeshFilter>();
+                if (filter != null && filter.sharedMesh != null) Release(filter.sharedMesh);
+                Release(child);
             }
 
             CreateQuad(
@@ -85,6 +95,12 @@ namespace ChunithmMobile.Rendering
             CreateDepthGuides();
             CreateLaneLines();
             CreateGoldenLine();
+        }
+
+        private static void Release(Object value)
+        {
+            if (Application.isPlaying) Destroy(value);
+            else DestroyImmediate(value);
         }
 
         private void CreateDepthGuides()
@@ -185,7 +201,7 @@ namespace ChunithmMobile.Rendering
             Material material)
         {
             var child = new GameObject(name);
-            child.transform.SetParent(transform, false);
+            child.transform.SetParent(trackRoot, false);
 
             var filter = child.AddComponent<MeshFilter>();
             filter.sharedMesh = MeshFactory.Quad(

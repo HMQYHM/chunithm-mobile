@@ -101,7 +101,12 @@ namespace ChunithmMobile.Runtime
                 GetComponent<GameplayJudgeController>()?.Bind(chart, clock, FindObjectOfType<ArcadeInputRig>(),
                     autoPlay, airAreaAuto, directionalAirAuto, mineImmunity, airLongNoMotion,
                     judgementOffsetMs, nonMissJusticeCritical, judgePoints);
-                chartRenderer.PrepareFirstFrame(-Math.Max(0, -preparedMusicOffsetMs) * clock.Rate);
+                Camera gameplayCamera = transform.parent != null
+                    ? transform.parent.Find("Gameplay Camera")?.GetComponent<Camera>() : null;
+                if (gameplayCamera == null || !gameplayCamera.isActiveAndEnabled)
+                    throw new InvalidOperationException("Gameplay camera is not ready for first-frame preparation.");
+                loading?.SetProgress("正在准备首帧画面…", .99f);
+                chartRenderer.PrepareFirstFrame(-Math.Max(0, -preparedMusicOffsetMs) * clock.Rate, gameplayCamera);
                 if (!keepLoadingVisible) loading?.Hide();
                 onReady?.Invoke();
                 if (!deferStart) StartPreparedWithPreparation();

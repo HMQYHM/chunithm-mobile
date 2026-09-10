@@ -57,6 +57,7 @@ namespace ChunithmMobile.Rendering
         private Material defaultAirHead, defaultAirArrow;
         private bool airTrailRainbow;
         private bool firstFrameHidden;
+        private Transform notesRoot;
         private readonly NoteSkinUvCache noteSkinUvs = new NoteSkinUvCache();
 
         /// <summary>
@@ -256,25 +257,55 @@ namespace ChunithmMobile.Rendering
         {
             if (chart == null || playback == null || clock == null || clock.Preparing) return;
             if (firstFrameHidden) {
-                foreach (var visual in active.Values) visual.Root.SetActive(true);
+                foreach (var visual in active.Values) if (visual.Valid) visual.Root.SetActive(true);
                 firstFrameHidden = false;
                 Debug.Log($"Gameplay first visible frame: chart={clock.TimeMs:F2}ms, warmedNotes={active.Count}");
             }
             RenderFrame(clock.TimeMs);
         }
 
-        public void PrepareFirstFrame(double chartTimeMs)
+        public void PrepareFirstFrame(double chartTimeMs, Camera warmupCamera = null)
         {
             if (chart == null || playback == null || clock == null) return;
             var watch = System.Diagnostics.Stopwatch.StartNew();
             RenderFrame(chartTimeMs);
+            if (warmupCamera != null) DrawPreparedFrame(warmupCamera);
             foreach (var visual in active.Values) visual.Root.SetActive(false);
             firstFrameHidden = true;
-            Debug.Log($"Gameplay first frame prepared: notes={active.Count}, elapsed={watch.ElapsedMilliseconds}ms, clockPlaying={clock.Playing}");
+            Debug.Log($"Gameplay first frame prepared: notes={active.Count}, gpuDraw={warmupCamera != null}, elapsed={watch.ElapsedMilliseconds}ms, clockPlaying={clock.Playing}");
+        }
+
+        private static void DrawPreparedFrame(Camera camera)
+        {
+            RenderTexture previousTarget = camera.targetTexture;
+            RenderTexture previousActive = RenderTexture.active;
+            RenderTexture target = RenderTexture.GetTemporary(Math.Max(1, camera.pixelWidth),
+                Math.Max(1, camera.pixelHeight), 24, RenderTextureFormat.ARGB32);
+            var fencePixel = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            try {
+                // Submit the real meshes/materials with the gameplay camera
+                // while loading still covers the screen. Readback waits for
+                // this draw on the GPU, rather than merely toggling objects.
+                camera.targetTexture = target;
+                camera.Render();
+                RenderTexture.active = target;
+                fencePixel.ReadPixels(new Rect(0, 0, 1, 1), 0, 0, false);
+            } finally {
+                camera.targetTexture = previousTarget;
+                RenderTexture.active = previousActive;
+                RenderTexture.ReleaseTemporary(target);
+                ReleaseOwnedObject(fencePixel);
+            }
         }
 
         private void RenderFrame(double now)
         {
+            remove.Clear();
+            foreach (var item in active) if (!item.Value.Valid) remove.Add(item.Key);
+            foreach (int index in remove) {
+                active[index].Dispose();
+                active.Remove(index);
+            }
             keep.Clear();
             updated.Clear();
 
@@ -1348,10 +1379,40 @@ namespace ChunithmMobile.Rendering
             return result;
         }
 
-        private void OnDestroy() { noteSkinUvs.Clear(); }
+        private void OnDestroy()
+        {
+            foreach (var visual in active.Values) visual.Dispose();
+            foreach (var visual in pool) visual.Dispose();
+            active.Clear();
+            pool.Clear();
+            noteSkinUvs.Clear();
+        }
 
-        private NoteVisual Rent() { NoteVisual v = pool.Count > 0 ? pool.Pop() : new NoteVisual(transform); v.Root.SetActive(true); return v; }
-        private void Return(NoteVisual v) { v.Root.SetActive(false); pool.Push(v); }
+        private NoteVisual Rent()
+        {
+            while (pool.Count > 0) {
+                NoteVisual cached = pool.Pop();
+                if (cached.Valid) { cached.Root.SetActive(true); return cached; }
+                cached.Dispose();
+            }
+            if (notesRoot == null) {
+                notesRoot = new GameObject("Note geometry").transform;
+                notesRoot.SetParent(transform, false);
+            }
+            return new NoteVisual(notesRoot);
+        }
+        private void Return(NoteVisual v)
+        {
+            if (!v.Valid) { v.Dispose(); return; }
+            v.Root.SetActive(false);
+            pool.Push(v);
+        }
+        private static void ReleaseOwnedObject(UnityEngine.Object value)
+        {
+            if (value == null) return;
+            if (Application.isPlaying) Destroy(value);
+            else DestroyImmediate(value);
+        }
         private void ClearActive() { foreach (var item in active) Return(item.Value); active.Clear(); }
 
         private static readonly Vector3[] QuadVertices = new Vector3[4];
@@ -1413,6 +1474,12 @@ namespace ChunithmMobile.Rendering
 
         private sealed class NoteVisual
         {
+            public bool Valid => Root != null && Head != null && Body != null && Line != null && Tail != null && Accent != null;
+            public void Dispose()
+            {
+                ReleaseOwnedObject(HeadMesh); ReleaseOwnedObject(BodyMesh); ReleaseOwnedObject(LineMesh);
+                ReleaseOwnedObject(TailMesh); ReleaseOwnedObject(AccentMesh); ReleaseOwnedObject(Root);
+            }
             public readonly GameObject Root,Head,Body,Line,Tail,Accent; public readonly Mesh HeadMesh,BodyMesh,LineMesh,TailMesh,AccentMesh; public readonly MeshFilter HeadFilter,BodyFilter,LineFilter,TailFilter,AccentFilter; public readonly MeshRenderer HeadRenderer,BodyRenderer,LineRenderer,TailRenderer,AccentRenderer;
             public readonly RibbonBuffers BodyBuffers = new RibbonBuffers();
             public readonly RibbonBuffers LineBuffers = new RibbonBuffers();
