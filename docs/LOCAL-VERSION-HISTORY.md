@@ -13,6 +13,10 @@ Generated Library/Build/Temp/Logs files are excluded.
   fix, including the adaptive frame-rate changes.
 - `v0.2.7-opening-notes-fixed`: isolated track/note geometry, invalid note pool
   recovery, and a real camera/GPU first-frame warmup before playback readiness.
+- `v0.2.7-before-mine-combo`: snapshot before the mine combo change.
+- `v0.2.7-mine-combo-fixed`: mine collision MISS clears the live combo before
+  publishing its judgement event, including non-scoring hazards. Immunity,
+  safe avoidance, existing score totals and historical max combo are preserved.
 
 These are snapshots of the code available when version control was started.
 They do not reconstruct older 0.2.x releases from APK files.
@@ -32,6 +36,12 @@ It contains all commits and tags at the time of this fix. It can be verified
 with `git bundle verify` and restored into a new folder using `git clone`.
 Future revisions should be committed separately, with a distinct tag after
 validation; do not overwrite the existing release tags.
+
+The later mine combo snapshot is also backed up in
+`Build/chunithm-mobile-history-0.2.7-mine-combo.bundle`. This includes the earlier
+opening-note commits. Its targeted input regression covers 26 combinations of
+press/held contact, playback rate, simple judgement, immunity, AUTO, avoidance,
+event ordering and combo recovery.
 
 ## Validation for the opening-note fix
 

@@ -23,6 +23,61 @@ namespace ChunithmMobile.Editor
             AndroidBuildConfigurator.BuildApk();
         }
 
+        public static void BuildMineComboVerifiedApk()
+        {
+            VerifyMineCombo();
+            AndroidBuildConfigurator.BuildApk();
+        }
+
+        private static void VerifyMineCombo()
+        {
+            int cases = 0;
+            foreach (double rate in new[] { .5, 1d, 2d })
+            foreach (bool simple in new[] { false, true })
+            foreach (bool immune in new[] { false, true })
+            foreach (bool resting in new[] { false, true }) {
+                using var test = new Fixture(new[] { Note(NoteKind.Tap, 500, 2),
+                    Note(NoteKind.Tap, 750, 4), Note(NoteKind.Mine, 1000, 8),
+                    Note(NoteKind.Tap, 1500, 2) }, rate, simple, mineImmunity: immune);
+                test.Frame(500, Finger(1, 2.5f, TouchPhase.Began));
+                test.Frame(600);
+                test.Frame(750, Finger(1, 4.5f, TouchPhase.Began));
+                test.Frame(800);
+                Require(test.Judge.ScoreState.Combo == 2, "mine fixture needs a live combo");
+                int events = 0, comboAtEvent = -1;
+                Chart.Judgement? mineGrade = null;
+                test.Judge.Judged += (point, result) => {
+                    if (point.NoteIndex != 2) return;
+                    events++; mineGrade = result.Grade; comboAtEvent = test.Judge.ScoreState.Combo;
+                };
+                if (resting) test.Frame(900, Finger(1, 8.5f, TouchPhase.Began));
+                test.Frame(1000, Finger(1, 8.5f, resting ? TouchPhase.Stationary : TouchPhase.Began));
+                Require(mineGrade == (immune ? Chart.Judgement.JusticeCritical : Chart.Judgement.Miss),
+                    "mine collision or immunity grade changed");
+                Require(test.Judge.ScoreState.Combo == (immune ? 2 : 0) && comboAtEvent == (immune ? 2 : 0),
+                    "mine did not break combo before HUD event, or immunity broke it");
+                Require(test.Judge.ScoreState.MaxCombo == 2 && test.Judge.ScoreState.Resolved == 2,
+                    "hazard combo reset changed historical max or scoring totals");
+                test.Frame(1010, Finger(1, 8.5f, TouchPhase.Stationary));
+                test.Frame(1200);
+                Require(events == 1, "mine resolved more than once");
+                test.Frame(1500, Finger(1, 2.5f, TouchPhase.Began));
+                Require(test.Judge.ScoreState.Combo == (immune ? 3 : 1), "combo did not restart after mine");
+                cases++;
+            }
+            foreach (bool automatic in new[] { false, true }) {
+                using var test = new Fixture(new[] { Note(NoteKind.Tap, 500, 2), Note(NoteKind.Mine, 1000, 8) },
+                    automatic: automatic);
+                test.Frame(500, Finger(1, 2.5f, TouchPhase.Began));
+                test.Frame(800);
+                if (automatic) test.Frame(1000, Finger(1, 8.5f, TouchPhase.Began));
+                test.Frame(1100);
+                Require(test.Judge.ScoreState.Combo >= 1, "untouched or AUTO mine broke combo");
+                cases++;
+            }
+            Debug.Log($"Mine combo regression passed: {cases} cases; press/held collision, .5x/1x/2x, simple judgement, immunity, AUTO, avoidance, event ordering, deduplication, next-note recovery.");
+        }
+
         public static void Run()
         {
             VerifyDefaultFlick();
@@ -253,7 +308,8 @@ namespace ChunithmMobile.Editor
             public readonly ArcadeInputRig Rig;
             public readonly GameplayJudgeController Judge;
 
-            public Fixture(ChartNote[] notes, double rate = 1, bool simple = false, int offsetMs = 0)
+            public Fixture(ChartNote[] notes, double rate = 1, bool simple = false, int offsetMs = 0,
+                bool mineImmunity = false, bool automatic = false)
             {
                 this.rate = rate;
                 Rig = root.AddComponent<ArcadeInputRig>();
@@ -264,7 +320,8 @@ namespace ChunithmMobile.Editor
                 var clock = new DspChartClock(source);
                 clock.SetRate(rate);
                 clock.Play(0);
-                Judge.Bind(chart, clock, Rig, offsetMs: offsetMs, enableNonMissJusticeCritical: simple);
+                Judge.Bind(chart, clock, Rig, offsetMs: offsetMs, enableNonMissJusticeCritical: simple,
+                    enableMineImmunity: mineImmunity, enableAutoPlay: automatic);
             }
 
             public void Frame(double chartTime, params Touch[] contacts)

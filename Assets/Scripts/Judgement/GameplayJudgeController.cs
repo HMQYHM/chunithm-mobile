@@ -42,6 +42,8 @@ namespace ChunithmMobile.Judgement
         {
             JusticeCritical = Justice = Attack = Miss = Combo = MaxCombo = 0;
         }
+
+        public void BreakCombo() => Combo = 0;
     }
 
     /// <summary>
@@ -649,6 +651,10 @@ namespace ChunithmMobile.Judgement
             resolved[index] = true;
             resolvedCount++;
             if (countScore && point.IsScoring) ScoreState.Add(grade);
+            // Hazard results can bypass score accounting but must still break
+            // the live combo before the HUD receives the judgement event.
+            else if (grade == Chart.Judgement.Miss && chart.Notes[point.NoteIndex].Kind == NoteKind.Mine)
+                ScoreState.BreakCombo();
             Judged?.Invoke(point, new JudgementResult(grade, deltaMs));
             if (resolvedCount == points.Count) {
                 Debug.Log($"Judgement complete: score={ScoreState.Score(scoringPointCount)} | " +
