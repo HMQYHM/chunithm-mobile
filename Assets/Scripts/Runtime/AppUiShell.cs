@@ -233,8 +233,17 @@ namespace ChunithmMobile.Runtime
         private string settingsCategory = "延迟";
         private static readonly string[] SettingsCategories = { "延迟", "画面", "皮肤", "音频", "更多" };
         private readonly Dictionary<string, Button> settingsCategoryButtons = new Dictionary<string, Button>();
-        private static readonly string[] UpdateLogVersions = { "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
+        private static readonly string[] UpdateLogVersions = { "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
         private static readonly string[][] UpdateLogLineKeys = {
+            new[] {
+                "0.2.8 更新日志",
+                "0.2.8 1. 优化折线判定",
+                "0.2.8 2. 优化皮肤加载",
+                "0.2.8 3. 修复地雷音符bug",
+                "0.2.8 4. 修复等级分级不正确bug",
+                "0.2.8 5. 修复谱面开始音符消失bug",
+                "0.2.8 6. 画面设置增加限制帧率选项"
+            },
             new[] {
                 "0.2.7 更新日志",
                 "0.2.7 1. 优化 AIR / FLICK 手感",
@@ -456,7 +465,7 @@ namespace ChunithmMobile.Runtime
             BuildResults(); BuildDelayCalibrationResults(); BuildLayoutEditor(); BuildModal(); BuildUpdateNotice(); BuildMods();
             BuildMetadataEditor(); BuildImportOverlay(); BuildCredits();
             EnsurePageBuilt(pageToRestore);
-            homeLibraryLabel.text = $"已加载歌曲：{catalog.Count}\nby: HMQYHM    v0.2.7";
+            homeLibraryLabel.text = $"已加载歌曲：{catalog.Count}\nby: HMQYHM    v{Application.version}";
             ApplyRuntimeSettings();
             foreach (var pair in pages) SetPageImmediate(pair.Value, pair.Key == pageToRestore);
             RebuildSongGrid(false);
@@ -605,7 +614,7 @@ namespace ChunithmMobile.Runtime
                 HighContrastUi ? new Color(.04f, .74f, 1f) : new Color(.18f, .25f, .50f), OpenMultiplayer);
             MenuButton("设置", "音频、画面与判定", menu, .24f, surfaceRaised, () => SwitchTo(AppPage.Settings));
             MenuButton("数据管理", "导入、删除与重建索引", menu, .02f, surfaceRaised, OpenSongDataManagement);
-            homeLibraryLabel = Label("已加载歌曲：扫描中\nby: HMQYHM    v0.2.7", page, 20, TextAnchor.LowerLeft, new Vector2(.075f, .035f), new Vector2(.55f, .15f), muted);
+            homeLibraryLabel = Label($"已加载歌曲：扫描中\nby: HMQYHM    v{Application.version}", page, 20, TextAnchor.LowerLeft, new Vector2(.075f, .035f), new Vector2(.55f, .15f), muted);
             BuildHomePaletteToggle(page);
         }
 
@@ -2156,7 +2165,7 @@ namespace ChunithmMobile.Runtime
             SettingsAction("索引状态", SongCatalog.LastLoadUsedCache ? "本次沿用缓存" : "本次已重建", null);
             SettingsAction("制作与感谢", "查看制作与感谢", ShowCredits);
             SettingsAction("导出最近日志", "使用系统文件保存窗口", ExportLogs);
-            SettingsAction("关于与许可", "CHUNITHM Mobile 0.2.7", ShowAbout);
+            SettingsAction("关于与许可", "CHUNITHM Mobile " + Application.version, ShowAbout);
             SettingsAction("恢复全部默认设置", "需要确认",
                 () => ShowModal("恢复默认", "确定恢复全部界面、判定和音频设置？", ResetSettings, true));
         }
@@ -3172,7 +3181,7 @@ namespace ChunithmMobile.Runtime
 
             RectTransform card = Panel("Version update card", updateNoticeLayer, surfaceRaised,
                 new Vector2(.48f, .04f), new Vector2(.975f, .74f));
-            Label(UiLocalization.Translate("0.2.7 更新版本说明"), card, 27, TextAnchor.MiddleLeft,
+            Label(UiLocalization.Translate(UpdateLogVersions[0] + " 更新版本说明"), card, 27, TextAnchor.MiddleLeft,
                 new Vector2(.07f, .77f), new Vector2(.93f, .94f), cyan);
             string prefix = UpdateLogVersions[0] + " ";
             string[] notes = UpdateLogLineKeys[0].Skip(1).Select(key => {
@@ -3199,7 +3208,7 @@ namespace ChunithmMobile.Runtime
         private void ShowUpdateNoticeIfNeeded()
         {
             const string updateKey = "chunithm_mobile_update_notice_version";
-            if (PlayerPrefs.GetString(updateKey, "") == "0.2.7" || updateNoticeLayer == null) return;
+            if (PlayerPrefs.GetString(updateKey, "") == UpdateLogVersions[0] || updateNoticeLayer == null) return;
             updateNoticeLayer.gameObject.SetActive(true);
             CanvasGroup group = updateNoticeLayer.GetComponent<CanvasGroup>() ?? updateNoticeLayer.gameObject.AddComponent<CanvasGroup>();
             group.alpha = 0f;
@@ -3219,7 +3228,7 @@ namespace ChunithmMobile.Runtime
 
         private void AcknowledgeUpdateNotice()
         {
-            PlayerPrefs.SetString("chunithm_mobile_update_notice_version", "0.2.7");
+            PlayerPrefs.SetString("chunithm_mobile_update_notice_version", UpdateLogVersions[0]);
             PlayerPrefs.Save();
             if (updateNoticeLayer != null) updateNoticeLayer.gameObject.SetActive(false);
         }
@@ -4275,7 +4284,7 @@ namespace ChunithmMobile.Runtime
             levels = catalog.SelectMany(song => song.Charts).Select(chart => chart.Level)
                 .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(LevelValue).ToList();
             if (homeLibraryLabel != null)
-                homeLibraryLabel.text = $"已加载歌曲：{catalog.Count}\nby: HMQYHM    v0.2.7";
+                homeLibraryLabel.text = $"已加载歌曲：{catalog.Count}\nby: HMQYHM    v{Application.version}";
 
             SongEntry replacement = string.IsNullOrWhiteSpace(preferredSongId) ? null : catalog.FirstOrDefault(song =>
                 string.Equals(song.Id, preferredSongId, StringComparison.OrdinalIgnoreCase));
@@ -5671,7 +5680,7 @@ namespace ChunithmMobile.Runtime
         private void ConfirmModal() { UnityEngine.Events.UnityAction action = modalAction; HideModal(); action?.Invoke(); }
         private IEnumerator Fade(CanvasGroup group, float from, float to, float duration) { float time = 0; while (time < duration) { time += Time.unscaledDeltaTime; group.alpha = Mathf.Lerp(from, to, time / duration); yield return null; } group.alpha = to; }
         private void ToggleSetting(string title, string message) => ShowModal(title, message, null, false);
-        private void ShowAbout() => ShowModal("CHUNITHM Mobile  0.2.7", "by: HMQYHM\n\n使用 HarmonyOS Sans 字体。字体版权归 Huawei Device Co., Ltd. 所有。\n\nEmoji 图形使用 Twemoji，采用 CC BY 4.0 许可。许可证全文随软件保留。", null, false);
+        private void ShowAbout() => ShowModal("CHUNITHM Mobile  " + Application.version, "by: HMQYHM\n\n使用 HarmonyOS Sans 字体。字体版权归 Huawei Device Co., Ltd. 所有。\n\nEmoji 图形使用 Twemoji，采用 CC BY 4.0 许可。许可证全文随软件保留。", null, false);
 
         private void ConfigureModalOption(Button button, string label, UnityEngine.Events.UnityAction action)
         {

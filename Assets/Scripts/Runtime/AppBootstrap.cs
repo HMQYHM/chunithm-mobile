@@ -70,7 +70,7 @@ namespace ChunithmMobile.Runtime
             }
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             IPlatformServices platform = PlatformServices.Current;
-            Debug.Log($"CHUNITHM Mobile 0.2.7 Unity prototype | {platform.DisplayName} | " +
+            Debug.Log($"CHUNITHM Mobile {Application.version} Unity prototype | {platform.DisplayName} | " +
                       $"{SystemInfo.graphicsDeviceType} | {SystemInfo.processorType} | " +
                       $"display={Screen.currentResolution.refreshRateRatio.value:F2}Hz | " +
                       $"safeArea={platform.SafeAreaPixels}");

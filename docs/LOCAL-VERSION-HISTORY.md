@@ -17,6 +17,9 @@ Generated Library/Build/Temp/Logs files are excluded.
 - `v0.2.7-mine-combo-fixed`: mine collision MISS clears the live combo before
   publishing its judgement event, including non-scoring hazards. Immunity,
   safe avoidance, existing score totals and historical max combo are preserved.
+- `v0.2.8`: Android version 0.2.8 (code 208), six release notes supplied by the
+  author, translated notice/history entries, and version-aware home/about text.
+  Full history backup: `Build/chunithm-mobile-history-0.2.8.bundle`.
 
 These are snapshots of the code available when version control was started.
 They do not reconstruct older 0.2.x releases from APK files.

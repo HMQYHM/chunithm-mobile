@@ -31,8 +31,8 @@ namespace ChunithmMobile.Editor
             PlayerSettings.productName = "CHUNITHM Mobile";
             PlayerSettings.companyName = "HMQYHM";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.zhongermate.chunithmmobile");
-            PlayerSettings.bundleVersion = "0.2.7";
-            PlayerSettings.Android.bundleVersionCode = 207;
+            PlayerSettings.bundleVersion = "0.2.8";
+            PlayerSettings.Android.bundleVersionCode = 208;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
             // Use the installed stable platform explicitly. Auto would currently
@@ -108,7 +108,7 @@ namespace ChunithmMobile.Editor
         {
             Apply();
             string output = System.Environment.GetEnvironmentVariable("CHUNITHM_APK_OUTPUT");
-            if (string.IsNullOrWhiteSpace(output)) output = "Build/CHUNITHM-Mobile-0.2.7-unity-arm64.apk";
+            if (string.IsNullOrWhiteSpace(output)) output = "Build/CHUNITHM-Mobile-0.2.8-unity-arm64.apk";
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions {
                 scenes = new[] { ScenePath }, locationPathName = output,
                 target = BuildTarget.Android, options = BuildOptions.None
