@@ -207,7 +207,7 @@ namespace ChunithmMobile.Judgement
                     continue;
                 }
 
-                bool continuation = point.PointIndex > 0 || note.IsContinuation ||
+                bool continuation = point.PointIndex > 0 || note.IsContinuation || note.IsSlideCheckpoint ||
                     (!note.VisibleHead && note.Kind != NoteKind.AirHold);
                 if (continuation && IsLong(note.Kind)) {
                     bool covered = IsCheckpointCovered(note, point.TimeMs, now);
@@ -402,7 +402,7 @@ namespace ChunithmMobile.Judgement
 
         private static bool IsGroundHead(ScheduledJudgePoint point, ChartNote note)
         {
-            if (!note.VisibleHead) return false;
+            if (!note.VisibleHead || note.IsSlideCheckpoint) return false;
             // A wide authored record can own multiple same-time combo points.
             // They are all resolved by the same panel image. Long-note body
             // points remain KEEP checkpoints and must not become new heads.

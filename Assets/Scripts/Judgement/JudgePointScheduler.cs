@@ -194,7 +194,7 @@ namespace ChunithmMobile.Judgement
         }
 
         private static bool IsGroundHeadCandidate(ChartNote note, int pointIndex) =>
-            pointIndex == 0 && note.VisibleHead &&
+            pointIndex == 0 && note.VisibleHead && !note.IsSlideCheckpoint &&
             (note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or
                 NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide);
 

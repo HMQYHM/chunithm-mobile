@@ -25,6 +25,9 @@ namespace ChunithmMobile.Chart
         // can start with an SLC record that has no standalone head judgement.
         public bool HasVisualHead = true;
         public bool IsContinuation;
+        // A connected SLD bend can retain its authored visual head and timing
+        // allocation while using coverage-only judgement at the junction.
+        public bool IsSlideCheckpoint;
         public bool VisibleTail;
         public bool AirFlick;
         // Preserve the authored opcode because several C2S records share a

@@ -108,6 +108,7 @@ namespace ChunithmMobile.Chart
             bpms.Sort((a, b) => a.Tick.CompareTo(b.Tick));
             var time = new TickTimeMapper(resolution, bpms);
             ResolveSegmentVisibility(rawNotes);
+            bool[] slideCheckpoints = ResolveSlideCheckpoints(rawNotes);
             var judgePoints = AllocateJudgePoints(rawNotes, totals, time);
             var notesAt = rawNotes.GroupBy(n => n.Tick).ToDictionary(g => g.Key, g => g.ToList());
             var visualHeads = ResolveSlideVisualHeads(rawNotes, notesAt);
@@ -125,6 +126,7 @@ namespace ChunithmMobile.Chart
                     VisibleHead = n.VisibleHead,
                     HasVisualHead = visualHeads[i],
                     IsContinuation = isContinuation,
+                    IsSlideCheckpoint = slideCheckpoints[i],
                     VisibleTail = n.Duration > 0 && !continuation && n.Kind != NoteKind.AirLadder && n.Kind != NoteKind.AirLine,
                     OriginalType = n.OriginalType, SourceType = n.SourceType,
                     AirLineColor = n.AirLineColor, AirLadderStyle = n.AirLadderStyle,
@@ -208,6 +210,31 @@ namespace ChunithmMobile.Chart
                     }
                 }
             }
+        }
+
+        private static bool[] ResolveSlideCheckpoints(IReadOnlyList<RawNote> notes)
+        {
+            var result = new bool[notes.Count];
+            var endings = new Dictionary<(long tick, int lane, int width), List<int>>();
+            for (int i = 0; i < notes.Count; i++) {
+                RawNote current = notes[i];
+                if (current.Kind != NoteKind.Slide) continue;
+                bool moving = current.Lane != current.EndLane || current.Width != current.EndWidth;
+                if (endings.TryGetValue((current.Tick, current.Lane, current.Width), out var owners))
+                    foreach (int owner in owners) {
+                        RawNote previous = notes[owner];
+                        if (moving || previous.Lane != previous.EndLane || previous.Width != previous.EndWidth ||
+                            result[owner] || !previous.VisibleHead) {
+                            result[i] = true;
+                            break;
+                        }
+                    }
+                if (current.Duration <= 0) continue;
+                var end = (current.Tick + current.Duration, current.EndLane, current.EndWidth);
+                if (!endings.TryGetValue(end, out var list)) endings[end] = list = new List<int>();
+                list.Add(i);
+            }
+            return result;
         }
 
         private static bool CanOwnHead(RawNote note)

@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.IO;
+using System.Linq;
+using System.Text;
 using ChunithmMobile.Chart;
 using ChunithmMobile.Input;
 using ChunithmMobile.Judgement;
@@ -27,6 +30,83 @@ namespace ChunithmMobile.Editor
         {
             VerifyMineCombo();
             AndroidBuildConfigurator.BuildApk();
+        }
+
+        public static void BuildSlideCheckpointVerifiedApk()
+        {
+            VerifySlideCheckpoints();
+            Run();
+            VerifyMineCombo();
+            PreparationAndLongHeadSelfTest.Run();
+            AndroidBuildConfigurator.BuildApk();
+        }
+
+        private static ChartNote[] ParseSlideFixture(string records)
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes("RESOLUTION\t384\nBPM_DEF\t120\n" + records));
+            return C2sParser.Parse(stream).Notes.ToArray();
+        }
+
+        private static void VerifySlideCheckpoints()
+        {
+            const string chain = "SLD\t0\t0\t2\t2\t192\t2\t2\n" +
+                "SLD\t0\t192\t2\t2\t192\t6\t4\n" +
+                "SLD\t1\t0\t6\t4\t192\t6\t4\n";
+            var parsed = ParseSlideFixture(chain);
+            Require(!parsed[0].IsSlideCheckpoint && parsed[1].IsSlideCheckpoint && parsed[2].IsSlideCheckpoint,
+                "SLD bend/width change/straight continuation was not linked");
+            Require(parsed.All(n => n.VisibleHead), "checkpoint classification changed visual head allocation");
+            var independent = ParseSlideFixture("SLD\t0\t0\t2\t2\t192\t2\t2\nSLD\t0\t192\t2\t2\t192\t2\t2\n" +
+                "SLD\t1\t1\t2\t2\t96\t6\t2\n");
+            Require(independent.All(n => !n.IsSlideCheckpoint), "independent straight/gapped slide lost head judgement");
+            var fork = ParseSlideFixture("SLD\t0\t0\t7\t2\t192\t7\t2\n" +
+                "TAP\t0\t180\t0\t1\nSLD\t0\t192\t7\t2\t96\t0\t2\nSLD\t0\t192\t7\t2\t96\t14\t2\n");
+            Require(fork[2].IsSlideCheckpoint && fork[3].IsSlideCheckpoint, "fork with interleaved TAP lost owner");
+            int cases = 0;
+            foreach (double rate in new[] { .5, 1d, 2d })
+            foreach (int offset in new[] { -500, 0, 500 })
+            foreach (double late in new[] { 0d, 50, 100, 151 }) {
+                var notes = ParseSlideFixture(chain);
+                using var test = new Fixture(notes, rate, offsetMs: offset);
+                Chart.Judgement? grade = null;
+                test.Judge.Judged += (point, result) => {
+                    if (point.NoteIndex == 1 && point.PointIndex == 0) grade = result.Grade;
+                };
+                double sample = 1000 + (offset + late) * rate;
+                test.Frame(sample, Finger(1, 3f, TouchPhase.Began));
+                Require(grade == (late <= 150 ? Chart.Judgement.JusticeCritical : Chart.Judgement.Miss),
+                    $"bend produced {grade} at {late}ms, rate={rate}, offset={offset}");
+                cases++;
+            }
+            using (var test = new Fixture(ParseSlideFixture(chain))) {
+                Chart.Judgement? node = null;
+                test.Judge.Judged += (point, result) => { if (point.NoteIndex == 1) node = result.Grade; };
+                test.Frame(950, Finger(1, 3f, TouchPhase.Began));
+                test.Frame(1000, Finger(1, 3f, TouchPhase.Stationary));
+                Require(node == Chart.Judgement.JusticeCritical, "bend required a new press");
+            }
+            foreach (double delta in new[] { 0d, 50, 75, 151 }) {
+                using var test = new Fixture(ParseSlideFixture(chain));
+                Chart.Judgement? head = null;
+                test.Judge.Judged += (point, result) => { if (point.NoteIndex == 0 && point.PointIndex == 0) head = result.Grade; };
+                test.Frame(delta, Finger(1, 3f, TouchPhase.Began));
+                Require(head == JudgementEngine.JudgeGround(NoteKind.Slide, delta, 0, longHead: true).Grade,
+                    "four-grade starting head changed");
+            }
+            string realPath = Path.GetFullPath("../\u63d0\u53d6\u7684\u6b4c\u66f2/100/chart/0100_03.c2s");
+            var real = C2sParser.Parse(realPath);
+            var points = JudgePointScheduler.Build(real);
+            var checkpoints = real.Notes.Where(n => n.IsSlideCheckpoint).ToArray();
+            Require(checkpoints.Length >= 6, "real-chart SLD forks not recognized");
+            foreach (var point in points)
+                if (real.Notes[point.NoteIndex].IsSlideCheckpoint)
+                    Require(!point.UsesGroundProtection, "KEEP bend stole a TAP protection window");
+            foreach (var note in checkpoints) note.IsSlideCheckpoint = false;
+            var before = JudgePointScheduler.Build(real);
+            Require(points.Select(p => (p.NoteIndex, p.PointIndex, p.TimeMs)).SequenceEqual(
+                before.Select(p => (p.NoteIndex, p.PointIndex, p.TimeMs))), "bend fix moved or added judge points");
+            Require(points.Count == real.OriginalJudgeTotal, "real chart combo total changed");
+            Debug.Log($"Slide checkpoint regression passed: {cases} rate/offset/window cases, SLD forks/width changes, stationary contact, four-grade head, real chart {checkpoints.Length} junctions with unchanged judge times and totals.");
         }
 
         private static void VerifyMineCombo()
@@ -151,10 +231,10 @@ namespace ChunithmMobile.Editor
             foreach (NoteKind kind in new[] { NoteKind.Hold, NoteKind.HeavenHold, NoteKind.Slide }) {
                 ChartNote note = Note(kind, 1000, 5);
                 using var test = new Fixture(new[] { note });
-                test.Frame(1090);
-                Require(test.Judge.ScoreState.Resolved == 0, "long head expired before its 150ms late boundary");
-                test.Frame(1120, Finger(1, 5.5f, TouchPhase.Began));
-                Require(test.Judge.ScoreState.JusticeCritical == 1, "late long head inside its window was rejected");
+                test.Frame(1060);
+                Require(test.Judge.ScoreState.Resolved == 0, "long head expired inside its four-grade window");
+                test.Frame(1075, Finger(1, 5.5f, TouchPhase.Began));
+                Require(test.Judge.ScoreState.Attack == 1, "late starting head must retain ATTACK instead of KEEP JC");
             }
             ChartNote exHold = Note(NoteKind.Hold, 1000, 5);
             exHold.OriginalType = "HXD";

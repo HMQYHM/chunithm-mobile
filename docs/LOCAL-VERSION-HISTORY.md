@@ -20,6 +20,16 @@ Generated Library/Build/Temp/Logs files are excluded.
 - `v0.2.8`: Android version 0.2.8 (code 208), six release notes supplied by the
   author, translated notice/history entries, and version-aware home/about text.
   Full history backup: `Build/chunithm-mobile-history-0.2.8.bundle`.
+- `v0.2.8-slide-checkpoint-fixed`: connected SLD bends/forks use JC/MISS
+  coverage judgement. Starting heads keep four grades. Visual flags, allocated
+  checkpoint times and chart totals remain unchanged. Complete backup:
+  `Build/chunithm-mobile-history-0.2.8-slide-checkpoint.bundle`.
+
+Slide junction classification requires an exact end tick/lane/width match to a
+preceding slide. Movement or width change on either segment, or continuation
+of an already identified body, makes the junction a coverage checkpoint.
+Unconnected starts and touching standalone straight slides retain head
+judgements. This classification is independent of the rendered head flags.
 
 These are snapshots of the code available when version control was started.
 They do not reconstruct older 0.2.x releases from APK files.
