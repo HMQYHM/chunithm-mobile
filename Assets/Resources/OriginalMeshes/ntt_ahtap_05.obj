@@ -1,0 +1,12 @@
+# ntt_ahtap_05.svo | exact original VBO __HndToSvo__chu_notes_v110_6plus__chu_notes_v110_6plus__ntt_ahtap_06__ntt_ahtap_06__chu_notes_v125_aht_06__ntt_ahtap_06__PNCT_0000.VBO
+o ntt_ahtap_05
+v -11.8000002 0.0199992955 5.60464191
+v -11.8000002 0.020000618 -4.48371601
+v 11.8000002 0.0199992955 5.60464191
+v 11.8000002 0.020000618 -4.48371601
+vt 0.125 0
+vt 0.125 1
+vt 0.875 0
+vt 0.875 1
+f 1/1 3/3 2/2
+f 2/2 3/3 4/4

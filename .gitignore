@@ -1,0 +1,15 @@
+/Library/
+/Temp/
+/Obj/
+/Logs/
+/UserSettings/
+/Build/
+*.csproj
+*.sln
+node_modules/
+__pycache__/
+/.tools/*.zip
+*.keystore
+*.jks
+.env
+.env.local

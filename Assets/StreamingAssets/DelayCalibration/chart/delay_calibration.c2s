@@ -1,0 +1,53 @@
+VERSION	1.08.00	1.08.00
+MUSIC	0
+SEQUENCEID	0
+DIFFICULT	00
+LEVEL	0.0
+CREATOR	CHUNITHM Mobile
+BPM_DEF	60.000	60.000	60.000	60.000
+MET_DEF	4	4
+RESOLUTION	384
+CLK_DEF	384
+PROGJUDGE_BPM	60.000
+PROGJUDGE_AER	1.000
+TUTORIAL	0
+# Explicit playback length in milliseconds. The test is a half-minute cycle.
+DURATION	30000
+
+BPM	0	0	60.000
+MET	0	0	4	4
+MET	6	0	4	0
+
+# Two preparation beats are followed by the first judged beat. After that,
+# one TAP arrives every second, matching 60 BPM for an easy latency reading.
+TAP	0	192	6	4
+TAP	0	288	6	4
+TAP	1	0	6	4
+TAP	1	96	6	4
+TAP	1	192	6	4
+TAP	1	288	6	4
+TAP	2	0	6	4
+TAP	2	96	6	4
+TAP	2	192	6	4
+TAP	2	288	6	4
+TAP	3	0	6	4
+TAP	3	96	6	4
+TAP	3	192	6	4
+TAP	3	288	6	4
+TAP	4	0	6	4
+TAP	4	96	6	4
+TAP	4	192	6	4
+TAP	4	288	6	4
+TAP	5	0	6	4
+TAP	5	96	6	4
+TAP	5	192	6	4
+TAP	5	288	6	4
+TAP	6	0	6	4
+TAP	6	96	6	4
+TAP	6	192	6	4
+TAP	6	288	6	4
+TAP	7	0	6	4
+TAP	7	96	6	4
+
+T_JUDGE_TAP	28
+T_JUDGE_ALL	28

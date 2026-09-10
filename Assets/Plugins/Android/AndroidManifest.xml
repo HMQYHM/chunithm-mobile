@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <application android:usesCleartextTraffic="true">
+    <activity android:name="com.unity3d.player.UnityPlayerActivity"
+              android:theme="@style/UnityThemeSelector"
+              android:screenOrientation="sensorLandscape"
+              android:launchMode="singleTask"
+              android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|density"
+              android:resizeableActivity="false"
+              android:hardwareAccelerated="false"
+              android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+    </activity>
+    <activity android:name="com.zhongermate.chunithmmobile.ImportPickerActivity"
+              android:theme="@android:style/Theme.Translucent.NoTitleBar"
+              android:screenOrientation="sensorLandscape"
+              android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
+              android:launchMode="singleTask"
+              android:exported="false" />
+    <activity android:name="com.zhongermate.chunithmmobile.LogExportActivity"
+              android:theme="@android:style/Theme.Translucent.NoTitleBar"
+              android:screenOrientation="sensorLandscape"
+              android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
+              android:exported="false" />
+  </application>
+</manifest>

@@ -1,0 +1,12 @@
+# chu_barline_blue_v10.svo | exact original VBO __HndToSvo__chu_nf_barline_v10__chu_nf_barline_v10__pPlane1__chu_barline_blue_v10__chu_barline_blue_mat__pPlane1__PNT_0000.VBO
+o chu_barline_blue_v10
+v -31.9999981 0 -1.45000005
+v -31.9999981 0 1.45000005
+v 31.9999981 0 -1.45000005
+v 31.9999981 0 1.45000005
+vt 0 1
+vt 0 0
+vt 1 1
+vt 1 0
+f 2/2 4/4 1/1
+f 1/1 4/4 3/3
