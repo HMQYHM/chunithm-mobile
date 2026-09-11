@@ -470,7 +470,7 @@ namespace ChunithmMobile.Rendering
                 JudgementEngine.MissWindowMs(note.Kind,
                     note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight,
                     note.AirFlick) * clock.Rate;
-            bool showHead = note.HasVisualHead && (!longBody || note.IsLongChainHead) && !judged &&
+            bool showHead = note.HasVisualHead && !judged &&
                             (airHead
                                 ? (insideApproach || hasReachedJudgementLine) && airPending
                                 : groundHead
@@ -479,6 +479,8 @@ namespace ChunithmMobile.Rendering
                                     : insideApproach);
             if (note.Kind == NoteKind.Slide && !note.VisibleHead && note.HasVisualHead)
                 showHead = insideApproach && now < note.TimeMs;
+            if (note.Kind == NoteKind.AirAction && !note.VisibleHead)
+                showHead = note.HasVisualHead && !judged && insideApproach && now < note.TimeMs;
             visual.Head.SetActive(showHead && note.Kind is not (NoteKind.AirLadder or NoteKind.AirLine));
             if (visual.Head.activeSelf) {
                 // Ground heads that are waiting for the late MISS boundary are

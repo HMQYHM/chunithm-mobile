@@ -36,7 +36,9 @@ namespace ChunithmMobile.Runtime
 
     public static class SongCatalog
     {
-        private const int IndexFormat = 4;
+        private const int IndexFormat = 5;
+        public static bool IsWorldsEnd(string difficulty) =>
+            string.Equals(difficulty?.Replace("'", "").Replace(" ", ""), "WORLDSEND", StringComparison.OrdinalIgnoreCase);
         private const string IndexFileName = "song-catalog-index.json";
         private const string MetadataFileName = ".chunithm-mobile-metadata.json";
 
@@ -356,14 +358,25 @@ namespace ChunithmMobile.Runtime
                     path = string.IsNullOrWhiteSpace(fileName) ? null : FindFile(root, fileName);
                 }
                 if (!File.Exists(path)) continue;
+                string difficulty = node.SelectSingleNode("type/str")?.InnerText?.Trim() ?? "CHART";
                 string level = node.SelectSingleNode("level")?.InnerText?.Trim() ?? "?";
+                // WORLD'S END stores its actual text badge (狂/光/避/...) at
+                // the song level. The fumen's numeric level is only a
+                // placeholder and must never be shown to the player.
+                bool worldEnd = IsWorldsEnd(difficulty) ||
+                    string.Equals(node.SelectSingleNode("type/data")?.InnerText?.Trim(), "WORLD'S END", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Text(document, "/MusicData/stageName/str"), "WORLD'S END", StringComparison.OrdinalIgnoreCase);
+                if (worldEnd) {
+                    string worldEndLevel = Text(document, "/MusicData/worldsEndTagName/str");
+                    if (!string.IsNullOrWhiteSpace(worldEndLevel)) level = worldEndLevel.Trim();
+                }
                 string decimalLevel = node.SelectSingleNode("levelDecimal")?.InnerText ?? "0";
                 // Music.xml stores the fractional part in hundredths (60 =
                 // .6). Only .6-.9 belong to the plus bucket.
-                if (int.TryParse(decimalLevel, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                if (!worldEnd && int.TryParse(decimalLevel, NumberStyles.Integer, CultureInfo.InvariantCulture,
                         out int hundredths) && hundredths >= 60 && hundredths <= 99) level += "+";
                 song.Charts.Add(new SongChartEntry {
-                    Difficulty = node.SelectSingleNode("type/str")?.InnerText?.ToUpperInvariant() ?? "CHART",
+                    Difficulty = difficulty.ToUpperInvariant(),
                     Level = level,
                     Designer = node.SelectSingleNode("notesDesigner/str")?.InnerText?.Trim() ??
                                node.SelectSingleNode("notesDesigner")?.InnerText?.Trim() ?? "",

@@ -3987,8 +3987,7 @@ namespace ChunithmMobile.Runtime
             RequestSongListTransition(() =>
             {
                 selectedChart = chart;
-                if (sortMode == SongSortMode.Level) SyncBucketToLevel(chart.Level);
-                else SyncBucketToSelection();
+                SyncBucketToSelection();
                 RenderSongDetails();
                 SaveSongSelectionState();
             }, false, false);
@@ -4243,7 +4242,7 @@ namespace ChunithmMobile.Runtime
             if (buckets.Count == 0) { bucketLabel.text = "—"; return; }
             string bucket = buckets[Mathf.Clamp(CurrentBucketIndex(), 0, buckets.Count - 1)];
             bucketLabel.text = sortMode == SongSortMode.Level
-                ? (string.IsNullOrEmpty(bucket) ? "未标等级" : "Lv. " + bucket)
+                ? (bucket == "WD" ? "WD" : string.IsNullOrEmpty(bucket) ? "未标等级" : "Lv. " + bucket)
                 : bucket;
         }
 
@@ -5714,7 +5713,7 @@ namespace ChunithmMobile.Runtime
         private static string LevelBucketKey(SongChartEntry chart)
         {
             if (chart == null) return string.Empty;
-            return string.Equals(chart.Difficulty, "WORLD'S END", StringComparison.OrdinalIgnoreCase)
+            return SongCatalog.IsWorldsEnd(chart.Difficulty)
                 ? "WD" : LevelKey(chart.Level);
         }
         private Color DifficultyColor(string difficulty)
@@ -5725,6 +5724,7 @@ namespace ChunithmMobile.Runtime
                 case "ADVANCED": return new Color(.94f, .66f, .16f, 1f);
                 case "EXPERT": return new Color(.92f, .22f, .30f, 1f);
                 case "ULTIMA": return new Color(.95f, .18f, .48f, 1f);
+                case "WORLDSEND":
                 case "WORLD'S END": return new Color(.72f, .72f, .78f, 1f);
                 default: return new Color(.58f, .10f, .92f, 1f);
             }

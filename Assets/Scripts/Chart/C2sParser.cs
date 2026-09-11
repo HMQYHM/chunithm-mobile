@@ -113,6 +113,7 @@ namespace ChunithmMobile.Chart
             var notesAt = rawNotes.GroupBy(n => n.Tick).ToDictionary(g => g.Key, g => g.ToList());
             var visualHeads = ResolveSlideVisualHeads(rawNotes, notesAt);
             ResolveAirHoldVisualHeads(rawNotes, visualHeads);
+            ResolveAirActionVisualHeads(rawNotes, visualHeads);
             var notes = rawNotes.Select((n, i) =>
             {
                 bool continuation = n.Duration > 0 && notesAt.TryGetValue(n.Tick + n.Duration, out var next) &&
@@ -136,7 +137,7 @@ namespace ChunithmMobile.Chart
                     ExplicitJudgeTimesMs = n.ExplicitJudgeTicks?.Select(time.ToMs).ToList()
                 };
             }).OrderBy(n => n.TimeMs).ToList();
-            ResolveLongVisualChains(notes);
+            ResolveLongVisualChains(notes, rawNotes);
 
             double latestNoteMs = notes.Count == 0 ? 0 : notes.Max(n => Math.Max(n.TimeMs, n.EndTimeMs));
             double duration = explicitDurationMs > 0
@@ -156,44 +157,30 @@ namespace ChunithmMobile.Chart
             return new ParsedChart(notes, duration, bpms[0].Bpm, total, mappedScrolls, mappedProfiles, mappedAssignments);
         }
 
-        private static void ResolveLongVisualChains(List<ChartNote> notes)
+        private static void ResolveLongVisualChains(List<ChartNote> notes, IReadOnlyList<RawNote> rawNotes)
         {
             int nextChain = 0;
+            var endings = new Dictionary<long, List<int>>();
             for (int i = 0; i < notes.Count; i++) {
                 ChartNote note = notes[i];
                 if (note.EndTimeMs <= note.TimeMs || !IsLongVisualNote(note)) continue;
                 int owner = -1;
-                for (int j = i - 1; j >= 0; j--) {
-                    ChartNote previous = notes[j];
-                    if (previous.EndTimeMs < note.TimeMs) break;
-                    if (previous.Kind != note.Kind || previous.EndTimeMs != note.TimeMs ||
-                        previous.Lane >= note.Lane + Math.Max(1, note.Width) ||
-                        note.Lane >= previous.Lane + Math.Max(1, previous.Width)) continue;
-                    if (note.IsContinuation || note.OriginalType is "SLD" or "SLC" or "SXC" or "SXD") {
-                        owner = j;
-                        break;
-                    }
-                }
+                RawNote raw = rawNotes[i];
+                if (endings.TryGetValue(raw.Tick, out var candidates))
+                    foreach (int j in candidates)
+                        if (IsContinuousSegment(rawNotes[j], raw)) { owner = j; break; }
                 if (owner >= 0) {
                     note.LongChainId = notes[owner].LongChainId;
                     note.IsLongChainHead = false;
+                    notes[owner].IsLongChainTail = false;
                 } else {
                     note.LongChainId = nextChain++;
                     note.IsLongChainHead = true;
                 }
-            }
-            for (int i = 0; i < notes.Count; i++) {
-                ChartNote note = notes[i];
-                if (note.LongChainId < 0) continue;
                 note.IsLongChainTail = true;
-                for (int j = i + 1; j < notes.Count; j++) {
-                    ChartNote next = notes[j];
-                    if (next.TimeMs > note.EndTimeMs) break;
-                    if (next.LongChainId == note.LongChainId && next.TimeMs == note.EndTimeMs) {
-                        note.IsLongChainTail = false;
-                        break;
-                    }
-                }
+                long end = raw.Tick + raw.Duration;
+                if (!endings.TryGetValue(end, out var list)) endings[end] = list = new List<int>();
+                list.Add(i);
             }
         }
 
@@ -378,7 +365,7 @@ namespace ChunithmMobile.Chart
                 bool hasPrevious = false;
                 for (int j = i - 1; j >= 0; j--) {
                     RawNote previous = notes[j];
-                    if (previous.Tick + previous.Duration < note.Tick) break;
+                    if (previous.Tick + previous.Duration < note.Tick) continue;
                     if (previous.Kind != NoteKind.AirHold ||
                         previous.Tick + previous.Duration != note.Tick) continue;
                     int previousEnd = previous.EndLane + Math.Max(1, previous.EndWidth);
@@ -389,6 +376,18 @@ namespace ChunithmMobile.Chart
                     }
                 }
                 if (!hasPrevious) visualHeads[i] = true;
+            }
+        }
+
+        private static void ResolveAirActionVisualHeads(IReadOnlyList<RawNote> notes, bool[] visualHeads)
+        {
+            // ASD carries an authored action cap even inside a connected
+            // trail. ASC only shapes the curve unless it owns a starting head.
+            // Visual nodes must not introduce extra scoring heads.
+            for (int i = 0; i < notes.Count; i++) {
+                RawNote note = notes[i];
+                if (note.Kind != NoteKind.AirAction) continue;
+                visualHeads[i] = note.OriginalType == "ASD" || note.VisibleHead;
             }
         }
 
