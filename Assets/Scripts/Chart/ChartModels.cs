@@ -28,6 +28,9 @@ namespace ChunithmMobile.Chart
         // A connected SLD bend can retain its authored visual head and timing
         // allocation while using coverage-only judgement at the junction.
         public bool IsSlideCheckpoint;
+        public int LongChainId = -1;
+        public bool IsLongChainHead;
+        public bool IsLongChainTail;
         public bool VisibleTail;
         public bool AirFlick;
         // Preserve the authored opcode because several C2S records share a

@@ -136,6 +136,7 @@ namespace ChunithmMobile.Chart
                     ExplicitJudgeTimesMs = n.ExplicitJudgeTicks?.Select(time.ToMs).ToList()
                 };
             }).OrderBy(n => n.TimeMs).ToList();
+            ResolveLongVisualChains(notes);
 
             double latestNoteMs = notes.Count == 0 ? 0 : notes.Max(n => Math.Max(n.TimeMs, n.EndTimeMs));
             double duration = explicitDurationMs > 0
@@ -154,6 +155,51 @@ namespace ChunithmMobile.Chart
             int total = totals.TryGetValue("ALL", out var all) ? all : notes.Sum(n => n.JudgePointCount);
             return new ParsedChart(notes, duration, bpms[0].Bpm, total, mappedScrolls, mappedProfiles, mappedAssignments);
         }
+
+        private static void ResolveLongVisualChains(List<ChartNote> notes)
+        {
+            int nextChain = 0;
+            for (int i = 0; i < notes.Count; i++) {
+                ChartNote note = notes[i];
+                if (note.EndTimeMs <= note.TimeMs || !IsLongVisualNote(note)) continue;
+                int owner = -1;
+                for (int j = i - 1; j >= 0; j--) {
+                    ChartNote previous = notes[j];
+                    if (previous.EndTimeMs < note.TimeMs) break;
+                    if (previous.Kind != note.Kind || previous.EndTimeMs != note.TimeMs ||
+                        previous.Lane >= note.Lane + Math.Max(1, note.Width) ||
+                        note.Lane >= previous.Lane + Math.Max(1, previous.Width)) continue;
+                    if (note.IsContinuation || note.OriginalType is "SLD" or "SLC" or "SXC" or "SXD") {
+                        owner = j;
+                        break;
+                    }
+                }
+                if (owner >= 0) {
+                    note.LongChainId = notes[owner].LongChainId;
+                    note.IsLongChainHead = false;
+                } else {
+                    note.LongChainId = nextChain++;
+                    note.IsLongChainHead = true;
+                }
+            }
+            for (int i = 0; i < notes.Count; i++) {
+                ChartNote note = notes[i];
+                if (note.LongChainId < 0) continue;
+                note.IsLongChainTail = true;
+                for (int j = i + 1; j < notes.Count; j++) {
+                    ChartNote next = notes[j];
+                    if (next.TimeMs > note.EndTimeMs) break;
+                    if (next.LongChainId == note.LongChainId && next.TimeMs == note.EndTimeMs) {
+                        note.IsLongChainTail = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static bool IsLongVisualNote(ChartNote note) =>
+            note.Kind is NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
+                NoteKind.AirHold or NoteKind.AirAction;
 
         private static int FindScrollProfile(List<ScrollAssignment> assignments, double timeMs, int lane, int width)
         {

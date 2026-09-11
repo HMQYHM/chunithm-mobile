@@ -470,7 +470,7 @@ namespace ChunithmMobile.Rendering
                 JudgementEngine.MissWindowMs(note.Kind,
                     note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight,
                     note.AirFlick) * clock.Rate;
-            bool showHead = note.HasVisualHead && !judged &&
+            bool showHead = note.HasVisualHead && (!longBody || note.IsLongChainHead) && !judged &&
                             (airHead
                                 ? (insideApproach || hasReachedJudgementLine) && airPending
                                 : groundHead
@@ -499,7 +499,7 @@ namespace ChunithmMobile.Rendering
             // final interval profile so the tail cannot detach from its body.
             bool showTail = false;
             float tailZ = 0f;
-            bool tailPending = longBody && note.VisibleTail && now <= note.EndTimeMs +
+            bool tailPending = longBody && note.IsLongChainTail && note.VisibleTail && now <= note.EndTimeMs +
                 JudgementEngine.MissWindowMs(note) * clock.Rate;
             if (tailPending) {
                 int endProfile = geometry[noteIndex].EndProfileId;
