@@ -4556,6 +4556,7 @@ namespace ChunithmMobile.Runtime
 
         private void SetGameplayScene(bool active)
         {
+            HighRefreshRateController.SetGameplayActive(active);
             if (gameplayCamera != null) gameplayCamera.SetActive(active);
             if (gameplaySession != null) gameplaySession.gameObject.SetActive(active);
         }

@@ -19,6 +19,7 @@ namespace ChunithmMobile.Runtime
         private double activeHz;
         private int pacedLimit;
         private bool suspended;
+        private bool gameplayActive;
         private readonly FrameRateDeadline deadline = new FrameRateDeadline();
         private double sampleStart;
         private int sampleFrames;
@@ -30,6 +31,13 @@ namespace ChunithmMobile.Runtime
             int limit = AppSettings.NormalizeFrameRateLimit(value);
             if (instance.requestedLimit == limit) return;
             instance.requestedLimit = limit;
+            instance.Apply(true);
+        }
+
+        public static void SetGameplayActive(bool active)
+        {
+            if (instance == null || instance.gameplayActive == active) return;
+            instance.gameplayActive = active;
             instance.Apply(true);
         }
 
@@ -88,7 +96,8 @@ namespace ChunithmMobile.Runtime
             // PlayerLoop caused 60/90/120 limits to present as uneven 48/72
             // cadence on panels with fractional refresh rates.
             double pacingDisplayHz = androidBestHz > 0 ? androidBestHz : activeHz;
-            int target = SelectTargetFrameRate(pacingDisplayHz, requestedLimit, Application.isMobilePlatform);
+            int target = SelectTargetFrameRate(pacingDisplayHz,
+                gameplayActive ? requestedLimit : 0, Application.isMobilePlatform);
             int nextPacedLimit = 0;
             if (force || nextPacedLimit != pacedLimit) deadline.Reset();
             pacedLimit = nextPacedLimit;
