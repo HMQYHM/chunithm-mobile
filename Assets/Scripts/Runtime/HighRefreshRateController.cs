@@ -87,8 +87,8 @@ namespace ChunithmMobile.Runtime
             // Keep the requested cap in Unity's pacing path. Sleeping in the
             // PlayerLoop caused 60/90/120 limits to present as uneven 48/72
             // cadence on panels with fractional refresh rates.
-            int target = SelectTargetFrameRate(requestedLimit == 0 ? displayHz : activeHz,
-                requestedLimit, Application.isMobilePlatform);
+            double pacingDisplayHz = androidBestHz > 0 ? androidBestHz : activeHz;
+            int target = SelectTargetFrameRate(pacingDisplayHz, requestedLimit, Application.isMobilePlatform);
             int nextPacedLimit = 0;
             if (force || nextPacedLimit != pacedLimit) deadline.Reset();
             pacedLimit = nextPacedLimit;
@@ -199,7 +199,11 @@ namespace ChunithmMobile.Runtime
                             window.Call("setAttributes", attributes);
                         } catch (Exception e) { Debug.LogWarning("Android display request failed: " + e.Message); }
                     }));
-                    return rates[SelectDisplayMode(supported, 0)];
+                    // Return the mode actually selected for this limit. The
+                    // previous code returned the highest supported mode even
+                    // after selecting 60/90Hz, so Unity could be asked to
+                    // present at a rate the active surface did not use.
+                    return preferredHz;
                 }
             }
             catch (Exception exception) {
