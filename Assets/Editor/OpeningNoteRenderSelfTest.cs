@@ -21,7 +21,6 @@ namespace ChunithmMobile.Editor
         {
             Run();
             PreparationAndLongHeadSelfTest.Run();
-            AdaptiveFrameRateSelfTest.Run();
             AndroidBuildConfigurator.BuildApk();
         }
 

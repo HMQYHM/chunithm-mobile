@@ -318,13 +318,9 @@ namespace ChunithmMobile.Editor
                             "settings rows overlap: " + category + "/" + rows[i].name);
                     if (category == "画面") {
                         Require(body.Find("遮罩高度") == null, "disabled mask still exposes controls");
-                        Transform frameRow = body.Find("帧率上限");
-                        Require(frameRow != null && frameRow.GetSiblingIndex() > body.Find("Visual editor command").GetSiblingIndex(),
-                            "frame rate selector missing below visual layout");
-                        Dropdown frameChoice = frameRow.GetComponentInChildren<Dropdown>();
-                        Require(frameChoice.options.Count == 4 && frameChoice.options[0].text == "60" &&
-                            frameChoice.options[1].text == "90" && frameChoice.options[2].text == "120" &&
-                            frameChoice.options[3].text == UiLocalization.Translate("无限制"), "frame rate choices incorrect");
+                        Require(body.Find("帧率上限") == null, "removed frame limit still visible");
+                        Require(body.Find("显示帧数").GetComponentInChildren<Toggle>() != null,
+                            "FPS display toggle missing");
                     }
                     if (category == "音频") Require(body.Find("按键音").GetComponentInChildren<Toggle>() != null &&
                         body.Find("正解音").GetComponentInChildren<Slider>() != null, "combined audio controls missing");

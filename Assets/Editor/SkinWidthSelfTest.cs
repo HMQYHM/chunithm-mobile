@@ -6,42 +6,14 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
-    public static class FrameRateSkinSelfTest
+    public static class SkinWidthSelfTest
     {
         public static void BuildVerifiedApk()
         {
-            VerifyRates();
+            GameplayPauseSelfTest.Run();
             VerifySkinWidths();
             SkinSettingsSelfTest.Run();
             AndroidBuildConfigurator.BuildApk();
-        }
-
-        private static void VerifyRates()
-        {
-            const string key = "chunithm_mobile_settings_v1";
-            bool existed = PlayerPrefs.HasKey(key);
-            string saved = PlayerPrefs.GetString(key);
-            try {
-                foreach (int limit in new[] { 0, 60, 90, 120 }) {
-                    new AppSettings { FrameRateLimit = limit }.Save();
-                    Require(AppSettings.Load().FrameRateLimit == limit, "frame limit not persisted");
-                    foreach (double hz in new[] { 60d, 90d, 120d, 144d, 165d }) {
-                        int target = HighRefreshRateController.SelectTargetFrameRate(hz, limit, true);
-                        Require(target == (limit == 0 ? (int)hz : Math.Min(limit, (int)hz)), "mobile cap incorrect");
-                    }
-                }
-                Require(HighRefreshRateController.SelectTargetFrameRate(144, 0, false) == -1, "desktop unlimited capped");
-                Require(HighRefreshRateController.SelectTargetFrameRate(119.88, 0, true) == 120, "fractional refresh rounded down");
-                PlayerPrefs.SetString(key, "{\"SettingsVersion\":19}");
-                Require(AppSettings.Load().FrameRateLimit == 0, "legacy settings not unlimited");
-                var settings = new AppSettings { FrameRateLimit = 90 };
-                settings.Reset();
-                Require(settings.FrameRateLimit == 0, "reset retained frame cap");
-            } finally {
-                if (existed) PlayerPrefs.SetString(key, saved); else PlayerPrefs.DeleteKey(key);
-                PlayerPrefs.Save();
-            }
-            Debug.Log("Frame rate regression passed: 60/90/120/unlimited, persistence/reset, fractional refresh, mobile and desktop.");
         }
 
         private static void VerifySkinWidths()

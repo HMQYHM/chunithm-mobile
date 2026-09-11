@@ -38,8 +38,6 @@ namespace ChunithmMobile.Runtime
         public bool AnswerSoundEnabled = true;
         public int AnswerSoundVolume = 80;
         public int DspBufferSize = 512;
-        // 0 = no app cap (highest supported display refresh on mobile).
-        public int FrameRateLimit;
         public bool ShowGameplayFps;
         // MusicOffsetMs moves the song audio relative to the chart clock.
         // JudgeOffsetMs moves only the input judgement reference point.
@@ -171,7 +169,6 @@ namespace ChunithmMobile.Runtime
                 value.KeySoundVolume = UnityEngine.Mathf.Clamp(value.KeySoundVolume, 0, 100);
                 value.AnswerSoundVolume = UnityEngine.Mathf.Clamp(value.AnswerSoundVolume, 0, 100);
                 value.DspBufferSize = NormalizeDspBufferSize(value.DspBufferSize);
-                value.FrameRateLimit = NormalizeFrameRateLimit(value.FrameRateLimit);
                 if (value.NoteSpeed <= 0) {
                     value.NoteSpeed = 100;
                     value.TrackVerticalOffset = 12;
@@ -241,9 +238,6 @@ namespace ChunithmMobile.Runtime
                 return "跟隨系統（English）";
             }
         }
-
-        public static int NormalizeFrameRateLimit(int value) => value is 60 or 90 or 120 ? value : 0;
-
         public void Save()
         {
             UnityEngine.PlayerPrefs.SetString(Key, UnityEngine.JsonUtility.ToJson(this));
@@ -252,7 +246,6 @@ namespace ChunithmMobile.Runtime
 
         public void Reset()
         {
-            FrameRateLimit = 0;
             LanguageMode = -1;
             MusicVolume = 100;
             BackgroundMusicVolume = 100;

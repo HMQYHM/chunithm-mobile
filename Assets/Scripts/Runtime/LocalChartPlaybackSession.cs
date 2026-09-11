@@ -22,7 +22,9 @@ namespace ChunithmMobile.Runtime
     {
         private readonly DspChartClock clock = new DspChartClock();
         private ChartPlaybackRenderer chartRenderer;
-        private bool resumeAfterForeground;
+        private bool pauseRequested;
+        private bool applicationPaused;
+        private bool applicationFocused = true;
         private AudioSource songSource;
         private AudioClip songClip;
         private AudioClip mixedSongClip;
@@ -42,6 +44,7 @@ namespace ChunithmMobile.Runtime
         public int JudgeTotal => loadedChart?.OriginalJudgeTotal ?? 0;
         public GameplayScoreState ScoreState => GetComponent<GameplayJudgeController>()?.ScoreState;
         public event Action PlaybackCompleted;
+        public event Action PlaybackPaused;
 
         private void Awake()
         {
@@ -240,6 +243,7 @@ namespace ChunithmMobile.Runtime
             clock.PlayScheduled(chartStartDsp, 0, baseDsp);
             chartRenderer.enabled = true;
             songSource.PlayScheduled(audioStartDsp);
+            if (pauseRequested || applicationPaused || !applicationFocused) PausePlayback();
             Debug.Log($"Audio scheduled: preparation={startDelaySeconds:F3}s, chartDsp={chartStartDsp:F3}, audioDsp={audioStartDsp:F3}, musicOffset={preparedMusicOffsetMs}ms");
         }
 
@@ -440,6 +444,8 @@ namespace ChunithmMobile.Runtime
 
         public void PausePlayback()
         {
+            pauseRequested = true;
+            PlaybackPaused?.Invoke();
             if (loadedChart == null || !clock.Playing) return;
             pausedPreparationRemaining = clock.Preparing
                 ? (float)Math.Max(0, preparationEndDsp - PlatformServices.Current.AudioTime.Seconds) : 0;
@@ -452,6 +458,8 @@ namespace ChunithmMobile.Runtime
 
         public void ResumePlayback()
         {
+            if (applicationPaused || !applicationFocused) return;
+            pauseRequested = false;
             if (loadedChart == null || clock.Playing) return;
             if (pausedPreparationRemaining > 0) {
                 SchedulePreparedPlayback(preparedMusicOffsetMs, pausedPreparationRemaining);
@@ -475,6 +483,7 @@ namespace ChunithmMobile.Runtime
 
         private void ReleasePlayback()
         {
+            pauseRequested = applicationPaused || !applicationFocused;
             pausedPreparationRemaining = 0;
             preparationEndDsp = 0;
             clock.Pause();
@@ -492,14 +501,14 @@ namespace ChunithmMobile.Runtime
 
         private void OnApplicationPause(bool paused)
         {
-            if (paused) {
-                resumeAfterForeground = clock.Playing;
-                PausePlayback();
-            } else if (resumeAfterForeground) {
-                // The final UI inserts its three-second resume preparation here.
-                ResumePlayback();
-                resumeAfterForeground = false;
-            }
+            applicationPaused = paused;
+            if (paused) PausePlayback();
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            applicationFocused = focused;
+            if (!focused) PausePlayback();
         }
     }
 }

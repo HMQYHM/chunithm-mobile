@@ -16,7 +16,6 @@ namespace ChunithmMobile.Runtime
             var root = new GameObject("CHUNITHM Mobile Runtime");
             DontDestroyOnLoad(root);
             root.AddComponent<LowLatencyAudioController>();
-            root.AddComponent<HighRefreshRateController>();
             root.AddComponent<AppBootstrap>();
             root.AddComponent<RuntimeLoadingOverlay>();
             root.AddComponent<SongSelectionPreviewPlayer>();
@@ -69,6 +68,9 @@ namespace ChunithmMobile.Runtime
                 Debug.LogError("Unable to create first-run application folders: " + exception);
             }
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
+            // Android treats -1 as 30 fps. A target above the display rate
+            // lets Unity use the current refresh rate without a custom cap.
+            Application.targetFrameRate = int.MaxValue;
             IPlatformServices platform = PlatformServices.Current;
             Debug.Log($"CHUNITHM Mobile {Application.version} Unity prototype | {platform.DisplayName} | " +
                       $"{SystemInfo.graphicsDeviceType} | {SystemInfo.processorType} | " +
@@ -78,8 +80,8 @@ namespace ChunithmMobile.Runtime
 
         private void OnApplicationPause(bool paused)
         {
-            // The gameplay clock/audio service will subscribe here; never let
-            // Android background time advance the chart.
+            // Suspend menu audio too. Gameplay keeps its own explicit pause
+            // until the player chooses to continue.
             AudioListener.pause = paused;
         }
     }

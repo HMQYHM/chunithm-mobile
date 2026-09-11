@@ -369,6 +369,7 @@ namespace ChunithmMobile.Runtime
         private RectTransform gameplayPausePanel;
         private Button gameplayPauseButton;
         private float pauseTapPendingUntil;
+        private Coroutine gameplayResumeRoutine;
         private Button delayCalibrationExitButton;
         private Text delayCalibrationLabel;
         private Text delayCalibrationLive;
@@ -413,7 +414,10 @@ namespace ChunithmMobile.Runtime
             gameplayCamera = transform.Find("Gameplay Camera")?.gameObject;
             gameplayBackdrop = GetComponentInChildren<GameplayBackdropRenderer>(true);
             inputRig = GetComponent<ArcadeInputRig>();
-            if (gameplaySession != null) gameplaySession.PlaybackCompleted += OnGameplayCompleted;
+            if (gameplaySession != null) {
+                gameplaySession.PlaybackCompleted += OnGameplayCompleted;
+                gameplaySession.PlaybackPaused += ShowGameplayPause;
+            }
             if (gameplayJudge != null) gameplayJudge.Judged += OnGameplayJudged;
             font = Resources.Load<Font>("Fonts/HarmonyOS_Sans_SC_Regular") ?? Font.CreateDynamicFontFromOSFont(new[] { "Noto Sans CJK SC", "sans-serif", "Arial" }, 32);
             titleFont = Resources.Load<Font>("Fonts/HarmonyOS_Sans_SC_Bold") ?? font;
@@ -1947,15 +1951,7 @@ namespace ChunithmMobile.Runtime
         {
             SettingsHeader("画面", "轨道、触摸区域与游玩界面");
             SettingsVisualEditorButton();
-            SettingsSectionTitle("帧率", "设置画面刷新上限", cyan);
-            int[] frameRates = { 60, 90, 120, 0 };
-            SkinDropdown("帧率上限", new[] { "60", "90", "120", "无限制" },
-                Array.IndexOf(frameRates, AppSettings.NormalizeFrameRateLimit(settings.FrameRateLimit)),
-                index => {
-                    settings.FrameRateLimit = frameRates[index];
-                    settings.Save();
-                    HighRefreshRateController.Configure(settings.FrameRateLimit);
-                });
+            SettingsSectionTitle("帧数显示", "查看游玩时的实际渲染帧率", cyan);
             SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
                 value => ChangeSetting(() => settings.ShowGameplayFps = value));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
@@ -4580,7 +4576,7 @@ namespace ChunithmMobile.Runtime
 
         private void SetGameplayScene(bool active)
         {
-            HighRefreshRateController.SetGameplayActive(active);
+            if (!active) CancelGameplayResume();
             if (gameplayCamera != null) gameplayCamera.SetActive(active);
             if (gameplaySession != null) gameplaySession.gameObject.SetActive(active);
         }
@@ -4588,10 +4584,24 @@ namespace ChunithmMobile.Runtime
         private void PauseGameplay()
         {
             if (currentPage != AppPage.Gameplay || gameplaySession == null) return;
-            pauseTapPendingUntil = 0f;
             gameplaySession.PausePlayback();
+            ShowGameplayPause();
+        }
+
+        private void ShowGameplayPause()
+        {
+            if (currentPage != AppPage.Gameplay) return;
+            CancelGameplayResume();
+            pauseTapPendingUntil = 0f;
             ConfigureMultiplayerPauseV2();
-            gameplayPausePanel.gameObject.SetActive(true);
+            gameplayPausePanel?.gameObject.SetActive(true);
+        }
+
+        private void CancelGameplayResume()
+        {
+            if (gameplayResumeRoutine != null) StopCoroutine(gameplayResumeRoutine);
+            gameplayResumeRoutine = null;
+            if (gameplayCountdown != null) gameplayCountdown.text = "";
         }
 
         private void RequestPauseGameplay()
@@ -4612,12 +4622,13 @@ namespace ChunithmMobile.Runtime
         private void ResumeGameplayWithCountdown()
         {
             if (currentPage != AppPage.Gameplay) return;
+            CancelGameplayResume();
             gameplayPausePanel.gameObject.SetActive(false);
             if (gameplaySession != null && gameplaySession.Clock.Preparing) {
                 gameplaySession.ResumePlayback();
                 return;
             }
-            StartCoroutine(ResumeCountdown());
+            gameplayResumeRoutine = StartCoroutine(ResumeCountdown());
         }
 
         private IEnumerator ResumeCountdown()
@@ -4629,12 +4640,14 @@ namespace ChunithmMobile.Runtime
                 if (currentPage != AppPage.Gameplay) yield break;
             }
             gameplayCountdown.text = "";
+            gameplayResumeRoutine = null;
             gameplaySession?.ResumePlayback();
         }
 
         private void RestartGameplay()
         {
             if (playedSong == null || playedChart == null || gameplaySession == null) return;
+            CancelGameplayResume();
             pauseTapPendingUntil = 0f;
             gameplayPausePanel.gameObject.SetActive(false);
             gameplayCountdown.text = "";
@@ -5196,7 +5209,6 @@ namespace ChunithmMobile.Runtime
         private void ApplyRuntimeSettings()
         {
             if (settings == null) return;
-            HighRefreshRateController.Configure(settings.FrameRateLimit);
             if (!string.Equals(GameplaySkinManager.Active.Id, settings.GameplaySkinId,
                     StringComparison.OrdinalIgnoreCase))
                 GameplaySkinManager.SetActive(settings.GameplaySkinId);

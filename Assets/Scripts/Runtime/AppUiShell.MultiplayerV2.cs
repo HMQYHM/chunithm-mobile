@@ -2107,6 +2107,7 @@ namespace ChunithmMobile.Runtime
         private void OnApplicationPause(bool paused)
         {
             if (paused) {
+                PauseGameplay();
                 SaveMultiplayerDraftV2();
                 settings?.Save();
                 uiSession?.Save();
@@ -2126,7 +2127,10 @@ namespace ChunithmMobile.Runtime
 
         private void OnApplicationFocus(bool focused)
         {
-            if (!focused) SaveMultiplayerDraftV2();
+            if (!focused) {
+                PauseGameplay();
+                SaveMultiplayerDraftV2();
+            }
             if (!focused || multiplayerClient == null || !multiplayerAuthenticatedV2) return;
             multiplayerBackgroundAtMs = 0;
             multiplayerClient.SendAppState(false);
