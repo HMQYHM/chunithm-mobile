@@ -112,6 +112,7 @@ namespace ChunithmMobile.Chart
             var judgePoints = AllocateJudgePoints(rawNotes, totals, time);
             var notesAt = rawNotes.GroupBy(n => n.Tick).ToDictionary(g => g.Key, g => g.ToList());
             var visualHeads = ResolveSlideVisualHeads(rawNotes, notesAt);
+            ResolveAirHoldVisualHeads(rawNotes, visualHeads);
             var notes = rawNotes.Select((n, i) =>
             {
                 bool continuation = n.Duration > 0 && notesAt.TryGetValue(n.Tick + n.Duration, out var next) &&
@@ -317,6 +318,32 @@ namespace ChunithmMobile.Chart
                 if (IsContinuousSegment(previous, note)) return true;
             }
             return false;
+        }
+
+        private static void ResolveAirHoldVisualHeads(IReadOnlyList<RawNote> notes, bool[] visualHeads)
+        {
+            // AHD/AHX records are continuation records for scoring, but the
+            // first record of each authored AIR-HOLD still has a visible cap.
+            // Keep that visual head separate from the judgement ownership so
+            // continuation segments do not gain an extra head judgement.
+            for (int i = 0; i < notes.Count; i++) {
+                RawNote note = notes[i];
+                if (note.Kind != NoteKind.AirHold) continue;
+                bool hasPrevious = false;
+                for (int j = i - 1; j >= 0; j--) {
+                    RawNote previous = notes[j];
+                    if (previous.Tick + previous.Duration < note.Tick) break;
+                    if (previous.Kind != NoteKind.AirHold ||
+                        previous.Tick + previous.Duration != note.Tick) continue;
+                    int previousEnd = previous.EndLane + Math.Max(1, previous.EndWidth);
+                    int currentEnd = note.Lane + Math.Max(1, note.Width);
+                    if (previous.EndLane < currentEnd && note.Lane < previousEnd) {
+                        hasPrevious = true;
+                        break;
+                    }
+                }
+                if (!hasPrevious) visualHeads[i] = true;
+            }
         }
 
         private static RawNote ParseNote(string[] p, long resolution)
