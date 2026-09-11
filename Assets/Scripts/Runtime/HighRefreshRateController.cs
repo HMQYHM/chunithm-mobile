@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using UnityEngine;
 using UnityEngine.LowLevel;
 using UnityEngine.Rendering;
@@ -38,14 +37,12 @@ namespace ChunithmMobile.Runtime
         {
             instance = this;
             requestedLimit = AppSettings.Load().FrameRateLimit;
-            SetPacingLoop(true);
             Apply(force: true);
         }
 
         private void OnDestroy()
         {
             if (instance != this) return;
-            SetPacingLoop(false);
             instance = null;
         }
 
@@ -87,13 +84,12 @@ namespace ChunithmMobile.Runtime
             if (force) androidBestHz = RequestAndroidPreferredRefreshRate(requestedLimit);
             double displayHz = Math.Max(ReadBestRefreshRate(), androidBestHz);
             activeHz = ReadActiveRefreshRate();
-            bool softwarePacing = Application.isMobilePlatform && NeedsDeadlinePacing(activeHz, requestedLimit);
-            // Android rounds a non-divisor target down: 144/ceil(144/60)=48.
-            // In that case leave Unity at the native display cadence and limit
-            // frame starts with absolute deadlines instead of a fixed divisor.
-            int target = softwarePacing ? SelectTargetFrameRate(activeHz) :
-                SelectTargetFrameRate(requestedLimit == 0 ? displayHz : activeHz, requestedLimit, Application.isMobilePlatform);
-            int nextPacedLimit = softwarePacing ? requestedLimit : 0;
+            // Keep the requested cap in Unity's pacing path. Sleeping in the
+            // PlayerLoop caused 60/90/120 limits to present as uneven 48/72
+            // cadence on panels with fractional refresh rates.
+            int target = SelectTargetFrameRate(requestedLimit == 0 ? displayHz : activeHz,
+                requestedLimit, Application.isMobilePlatform);
+            int nextPacedLimit = 0;
             if (force || nextPacedLimit != pacedLimit) deadline.Reset();
             pacedLimit = nextPacedLimit;
             if (!force && target == appliedTarget && QualitySettings.vSyncCount == 0 &&
@@ -111,31 +107,9 @@ namespace ChunithmMobile.Runtime
 
         private static double MonotonicSeconds => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
-        private struct FrameStartPacing { }
-
-        private static void SetPacingLoop(bool enabled)
-        {
-            PlayerLoopSystem loop = PlayerLoop.GetCurrentPlayerLoop();
-            var systems = new List<PlayerLoopSystem>(loop.subSystemList);
-            systems.RemoveAll(item => item.type == typeof(FrameStartPacing));
-            if (enabled) systems.Insert(0, new PlayerLoopSystem {
-                type = typeof(FrameStartPacing), updateDelegate = PaceFrameStart
-            });
-            loop.subSystemList = systems.ToArray();
-            PlayerLoop.SetPlayerLoop(loop);
-        }
-
-        private static void PaceFrameStart()
-        {
-            var owner = instance;
-            if (owner == null || owner.suspended || owner.pacedLimit == 0) return;
-            double due = owner.deadline.Next(MonotonicSeconds, owner.pacedLimit);
-            // Wait BEFORE Unity samples input/time. No busy spin and no delay
-            // after judgement. Audio continues on its own DSP/native thread.
-            double remaining;
-            while ((remaining = due - MonotonicSeconds) > 0)
-                Thread.Sleep(Math.Max(1, Math.Min(5, (int)(remaining * 1000))));
-        }
+        // Frame pacing is delegated to Unity/Android Frame Pacing. A custom
+        // PlayerLoop sleep fights VSYNC and produces uneven frame delivery on
+        // devices whose refresh rate is not an integer multiple of the limit.
 
         public static bool NeedsDeadlinePacing(double hz, int limit)
         {

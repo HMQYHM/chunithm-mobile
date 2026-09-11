@@ -998,7 +998,11 @@ namespace ChunithmMobile.Rendering
                 if (!tail && pairedGroundByAir.TryGetValue(index, out ChartNote ground)) { lane = ground.Lane; width = Mathf.Clamp(ground.Width, 1, 16); x = ChartSpace.NoteCenterX(lane, width, z); half = ChartSpace.NoteHalfWidth(width, z); }
                 bool down = note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight;
                 bool tilted = note.AirDirection is AirDirection.UpLeft or AirDirection.UpRight or AirDirection.DownLeft or AirDirection.DownRight;
-                bool mirror = note.AirDirection is AirDirection.UpLeft or AirDirection.DownLeft;
+                // The extracted tilted meshes are authored from the right
+                // facing base pose. Left-facing chart opcodes therefore use
+                // the mirrored mesh; this keeps AUL/ADL visually left of the
+                // lane just like the original playfield.
+                bool mirror = note.AirDirection is AirDirection.UpRight or AirDirection.DownRight;
                 string meshKind = down ? (tilted ? "airdwtilt" : "airdw") : (tilted ? "airuptilt" : "airup");
                 if (!SetOriginalAirMesh(target, filter, meshKind, width, x, z, note.AirHeight, mirror)) {
                     filter.sharedMesh = fallbackMesh;

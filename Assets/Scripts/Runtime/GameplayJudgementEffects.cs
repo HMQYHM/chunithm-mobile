@@ -30,8 +30,8 @@ namespace ChunithmMobile.Runtime
 
             bool air = note.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction;
             bool down = note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight;
-            bool left = note.AirDirection is AirDirection.UpLeft or AirDirection.DownLeft;
-            bool right = note.AirDirection is AirDirection.UpRight or AirDirection.DownRight;
+            bool left = note.AirDirection is AirDirection.UpRight or AirDirection.DownRight;
+            bool right = note.AirDirection is AirDirection.UpLeft or AirDirection.DownLeft;
             bool miss = judgement.Grade == Chart.Judgement.Miss;
             EffectStyle style = miss ? EffectStyle.Miss
                 : !air ? EffectStyle.Ground
