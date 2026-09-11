@@ -4306,7 +4306,7 @@ namespace ChunithmMobile.Runtime
             managedSongRoots.RemoveWhere(root => !availableRoots.Contains(root));
             categories = catalog.Select(song => song.Category)
                 .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(value => value).ToList();
-            levels = catalog.SelectMany(song => song.Charts).Select(chart => chart.Level)
+            levels = catalog.SelectMany(song => song.Charts).Select(LevelBucketKey)
                 .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(LevelValue).ToList();
             if (homeLibraryLabel != null)
                 homeLibraryLabel.text = $"已加载歌曲：{catalog.Count}\nby: HMQYHM    v{Application.version}";
