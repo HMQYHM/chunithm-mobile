@@ -484,7 +484,10 @@ namespace ChunithmMobile.Rendering
                 // Ground heads that are waiting for the late MISS boundary are
                 // pinned to the same plane as the gold line, matching arcade
                 // behavior instead of drifting into the touch area.
-                float renderHeadZ = (groundHead || airHead) && hasReachedJudgementLine
+                // AIR heads travel with their authored height and depth. Only
+                // ground heads stay on the judgement plane while waiting for
+                // their late MISS boundary.
+                float renderHeadZ = groundHead && hasReachedJudgementLine
                     ? ChartSpace.JudgementZ : Mathf.Min(headZ, VisualFarZ);
                 UpdateHead(visual.Head, visual.HeadFilter, visual.HeadMesh, visual.HeadRenderer,
                     noteIndex, note, renderHeadZ, false);
@@ -496,15 +499,24 @@ namespace ChunithmMobile.Rendering
             // final interval profile so the tail cannot detach from its body.
             bool showTail = false;
             float tailZ = 0f;
-            if (longBody && note.VisibleTail && now < note.EndTimeMs) {
+            bool tailPending = longBody && note.VisibleTail && now <= note.EndTimeMs +
+                JudgementEngine.MissWindowMs(note) * clock.Rate;
+            if (tailPending) {
                 int endProfile = geometry[noteIndex].EndProfileId;
                 tailZ = Distance(endProfile, note.EndTimeMs, now);
                 float tailGuardZ = VisibilityGuardZ(endProfile, note.EndTimeMs, now, tailZ);
-                showTail = tailZ >= ChartSpace.NearZ && tailZ <= VisualFarZ + tailGuardZ;
+                bool tailReachedLine = tailZ <= ChartSpace.JudgementZ;
+                showTail = (tailReachedLine || tailZ >= ChartSpace.NearZ) &&
+                    tailZ <= VisualFarZ + tailGuardZ;
             }
             visual.Tail.SetActive(showTail && note.Kind is not (NoteKind.AirLadder or NoteKind.AirLine));
-            if (visual.Tail.activeSelf) UpdateHead(visual.Tail, visual.TailFilter, visual.TailMesh,
-                visual.TailRenderer, noteIndex, note, Mathf.Min(tailZ, VisualFarZ), true);
+            if (visual.Tail.activeSelf) {
+                bool tailIsAir = note.Kind is NoteKind.AirHold or NoteKind.AirAction;
+                float renderTailZ = tailIsAir && tailZ <= ChartSpace.JudgementZ
+                    ? ChartSpace.JudgementZ : Mathf.Min(tailZ, VisualFarZ);
+                UpdateHead(visual.Tail, visual.TailFilter, visual.TailMesh,
+                    visual.TailRenderer, noteIndex, note, renderTailZ, true);
+            }
         }
 
         private void UpdateLongVisual(NoteVisual visual, RibbonGeometry ribbon, ChartNote note, double now)
