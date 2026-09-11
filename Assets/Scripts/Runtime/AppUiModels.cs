@@ -28,7 +28,7 @@ namespace ChunithmMobile.Runtime
     [Serializable]
     public sealed class AppSettings
     {
-        public int SettingsVersion = 19;
+        public int SettingsVersion = 20;
         // -1 follows the system. 0 is Simplified Chinese, 1 is Traditional Chinese, 2 is English.
         public int LanguageMode = -1;
         public int MusicVolume = 100;
@@ -40,6 +40,7 @@ namespace ChunithmMobile.Runtime
         public int DspBufferSize = 512;
         // 0 = no app cap (highest supported display refresh on mobile).
         public int FrameRateLimit;
+        public bool ShowGameplayFps;
         // MusicOffsetMs moves the song audio relative to the chart clock.
         // JudgeOffsetMs moves only the input judgement reference point.
         public int MusicOffsetMs;
@@ -158,7 +159,8 @@ namespace ChunithmMobile.Runtime
                     value.GameplayJudgementY = UnityEngine.Mathf.Clamp(value.GameplayComboY -
                         UnityEngine.Mathf.RoundToInt(10 * value.GameplayJudgementScale / 100f), 5, 95);
                 }
-                value.SettingsVersion = 19;
+                if (value.SettingsVersion < 20) value.ShowGameplayFps = false;
+                value.SettingsVersion = 20;
                 value.GameplayJudgementX = UnityEngine.Mathf.Clamp(value.GameplayJudgementX, 5, 95);
                 value.GameplayJudgementY = UnityEngine.Mathf.Clamp(value.GameplayJudgementY, 5, 95);
                 value.GameplayJudgementScale = UnityEngine.Mathf.Clamp(value.GameplayJudgementScale, 50, 180);

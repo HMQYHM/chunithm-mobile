@@ -346,6 +346,9 @@ namespace ChunithmMobile.Runtime
         private RectTransform gameplayAirZone;
         private Image gameplayProgressTrack;
         private Image gameplayProgressFill;
+        private Text gameplayFpsLabel;
+        private float gameplayFpsTimer;
+        private int gameplayFpsFrames;
         private Image gameplayAirGuide;
         private Image gameplayAirBoundaryBottom;
         private Image gameplayAirBoundaryTop;
@@ -1943,6 +1946,8 @@ namespace ChunithmMobile.Runtime
                     settings.Save();
                     HighRefreshRateController.Configure(settings.FrameRateLimit);
                 });
+            SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
+                value => ChangeSetting(() => settings.ShowGameplayFps = value));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
             SettingsSlider("背景亮度", "%", 20, 100, settings.BackgroundBrightness,
                 value => settings.BackgroundBrightness = Mathf.RoundToInt(value));
@@ -3006,6 +3011,10 @@ namespace ChunithmMobile.Runtime
             gameplayProgressFill = progressFill.gameObject.AddComponent<Image>();
             gameplayProgressFill.color = GameplayAccent;
             gameplayProgressFill.raycastTarget = false;
+            gameplayFpsLabel = Label("FPS 0", page, 18, TextAnchor.LowerLeft,
+                new Vector2(.018f, .035f), new Vector2(.16f, .085f), new Color(1f, 1f, 1f, .58f));
+            AddReadableOutline(gameplayFpsLabel, .42f);
+            gameplayFpsLabel.gameObject.SetActive(false);
             float initialTouchpadWidth = settings.TouchpadWidth / 100f;
             gameplayTouchpad = Panel("Touchpad", page, new Color(.015f, .08f, .105f, .82f),
                 new Vector2((1f - initialTouchpadWidth) * .5f, 0),
@@ -5097,6 +5106,7 @@ namespace ChunithmMobile.Runtime
         private void UpdateGameplayHud()
         {
             if (currentPage != AppPage.Gameplay || gameplaySession == null || gameplayScore == null) return;
+            UpdateGameplayFps();
             double duration = gameplaySession.PlaybackDurationMs;
             SetGameplayProgress(duration > 0
                 ? Mathf.Clamp01((float)(gameplaySession.PlaybackTimeMs / duration))
@@ -5109,6 +5119,24 @@ namespace ChunithmMobile.Runtime
             if (gameplayJudgementBlock != null && gameplayJudgementBlock.gameObject.activeSelf && Time.unscaledTime >= gameplayTimingHideAt)
                 gameplayJudgementBlock.gameObject.SetActive(false);
             UpdateGameplayInputFeedback();
+        }
+
+        private void UpdateGameplayFps()
+        {
+            if (gameplayFpsLabel == null) return;
+            if (settings == null || !settings.ShowGameplayFps) {
+                gameplayFpsLabel.gameObject.SetActive(false);
+                return;
+            }
+            gameplayFpsLabel.gameObject.SetActive(true);
+            gameplayFpsFrames++;
+            gameplayFpsTimer += Time.unscaledDeltaTime;
+            if (gameplayFpsTimer >= .5f) {
+                float fps = gameplayFpsFrames / Mathf.Max(.001f, gameplayFpsTimer);
+                gameplayFpsLabel.text = $"FPS {fps:0}";
+                gameplayFpsFrames = 0;
+                gameplayFpsTimer = 0f;
+            }
         }
 
         private void SetGameplayProgress(float value)
