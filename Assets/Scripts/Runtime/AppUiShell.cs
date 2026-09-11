@@ -624,7 +624,11 @@ namespace ChunithmMobile.Runtime
             AddMeteorBackground(page, MeteorBackgroundProfile.Quiet);
             songSelectBackButton = ButtonText("‹", page, new Vector2(.015f, .91f), new Vector2(.06f, .985f), surfaceRaised, () => { preview?.StopPreview(); SwitchTo(AppPage.Home); });
             songSelectTitle = Label("SONG SELECT", page, 30, TextAnchor.MiddleLeft, new Vector2(.07f, .91f), new Vector2(.25f, .985f), Color.white);
-            InputField search = Input("搜索歌曲、作者或谱师", page, new Vector2(.25f, .91f), new Vector2(.75f, .985f));
+            ButtonText("全部歌曲随机", page, new Vector2(.25f, .91f), new Vector2(.345f, .985f),
+                surfaceRaised, SelectRandomSongFromLibrary);
+            ButtonText("当前列表随机", page, new Vector2(.35f, .91f), new Vector2(.445f, .985f),
+                surfaceRaised, SelectRandomSongFromCurrentList);
+            InputField search = Input("搜索歌曲、作者或谱师", page, new Vector2(.45f, .91f), new Vector2(.75f, .985f));
             search.onValueChanged.AddListener(value => RequestSongListTransition(() => searchText = value, true, true));
             songSelectModsButton = ButtonText("MODS\nNORMAL", page, new Vector2(.76f, .91f), new Vector2(.85f, .985f), surfaceRaised, ShowMods, true);
             modLabel = songSelectModsButton.GetComponentInChildren<Text>();
@@ -658,6 +662,27 @@ namespace ChunithmMobile.Runtime
             detailMeta = Label("请导入歌曲", detail, 21, TextAnchor.UpperLeft, new Vector2(.44f, .57f), new Vector2(.94f, .79f), muted);
             difficultyRow = Panel("Difficulties", detail, Color.clear, new Vector2(.055f, .22f), new Vector2(.945f, .53f));
             songSelectPrimaryButton = ButtonText("开始！", detail, new Vector2(.055f, .045f), new Vector2(.945f, .165f), cyan, PrepareGameplay);
+        }
+
+        private void SelectRandomSongFromLibrary()
+        {
+            var charts = catalog.Where(song => song?.Charts != null)
+                .SelectMany(song => song.Charts.Select(chart => new SongListItem { Song = song, Chart = chart }))
+                .Where(item => item.Song != null && item.Chart != null && File.Exists(item.Chart.Path))
+                .ToList();
+            if (charts.Count == 0) return;
+            SongListItem item = charts[UnityEngine.Random.Range(0, charts.Count)];
+            SelectSong(item.Song, true, item.Chart.Difficulty, true, item.Chart.Path);
+        }
+
+        private void SelectRandomSongFromCurrentList()
+        {
+            List<SongListItem> choices = SongsForCurrentBucket()
+                .Where(item => item?.Song != null && item.Chart != null && File.Exists(item.Chart.Path))
+                .ToList();
+            if (choices.Count == 0) return;
+            SongListItem item = choices[UnityEngine.Random.Range(0, choices.Count)];
+            SelectSong(item.Song, true, item.Chart.Difficulty, true, item.Chart.Path);
         }
 
         private void BuildDataManagement()
@@ -3645,10 +3670,10 @@ namespace ChunithmMobile.Runtime
             {
                 // Level mode is chart-based. A song can therefore appear more
                 // than once when it has multiple charts at the selected level.
-                query = catalog
+                    query = catalog
                     .Where(song => song.Charts != null)
                     .SelectMany(song => song.Charts
-                        .Where(chart => string.Equals(LevelKey(chart.Level), bucket, StringComparison.OrdinalIgnoreCase))
+                        .Where(chart => string.Equals(LevelBucketKey(chart), bucket, StringComparison.OrdinalIgnoreCase))
                         .Select(chart => new SongListItem { Song = song, Chart = chart }))
                     .OrderBy(item => DifficultyPriority(item.Chart?.Difficulty))
                     .ThenBy(item => item.Song.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -4164,7 +4189,7 @@ namespace ChunithmMobile.Runtime
             if (buckets.Count == 0) { SetCurrentBucketIndex(0); return; }
             string value = sortMode == SongSortMode.Category
                 ? selectedSong?.Category
-                : LevelKey(selectedChart?.Level ?? HighestChart(selectedSong)?.Level);
+                : LevelBucketKey(selectedChart ?? HighestChart(selectedSong));
             int index = value == null ? -1 : buckets.ToList().FindIndex(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase));
             SetCurrentBucketIndex(index >= 0 ? index : 0);
         }
@@ -4184,22 +4209,22 @@ namespace ChunithmMobile.Runtime
             IEnumerable<string> values = catalog
                 .Where(song => song.Charts != null)
                 .SelectMany(song => song.Charts)
-                .Select(chart => LevelKey(chart.Level));
+                .Select(LevelBucketKey);
             return values.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(LevelValue).ToArray();
         }
 
         private bool SongBelongsToLevelBucket(SongEntry song, string bucket)
         {
             SongChartEntry highest = HighestChart(song);
-            if (highest != null && string.Equals(LevelKey(highest.Level), bucket, StringComparison.OrdinalIgnoreCase)) return true;
+            if (highest != null && string.Equals(LevelBucketKey(highest), bucket, StringComparison.OrdinalIgnoreCase)) return true;
             // A level bucket represents the level currently selected on the
             // right, so songs with that level must remain visible even when
             // their highest chart is another difficulty.
             if (song?.Charts != null && song.Charts.Any(chart =>
-                    string.Equals(LevelKey(chart.Level), bucket, StringComparison.OrdinalIgnoreCase))) return true;
+                    string.Equals(LevelBucketKey(chart), bucket, StringComparison.OrdinalIgnoreCase))) return true;
             return selectedSong != null && selectedChart != null &&
                    string.Equals(song.Root, selectedSong.Root, StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(LevelKey(selectedChart.Level), bucket, StringComparison.OrdinalIgnoreCase);
+                   string.Equals(LevelBucketKey(selectedChart), bucket, StringComparison.OrdinalIgnoreCase);
         }
 
         private void UpdateBucketLabel()
@@ -5649,6 +5674,7 @@ namespace ChunithmMobile.Runtime
         {
             if (string.IsNullOrWhiteSpace(level)) return float.PositiveInfinity;
             string normalized = level.Trim();
+            if (string.Equals(normalized, "WD", StringComparison.OrdinalIgnoreCase)) return 1000f;
             bool plus = normalized.EndsWith("+", StringComparison.Ordinal);
             if (plus) normalized = normalized.Substring(0, normalized.Length - 1);
             if (!float.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
@@ -5656,6 +5682,12 @@ namespace ChunithmMobile.Runtime
             return plus ? value + .5f : value;
         }
         private static string LevelKey(string level) => string.IsNullOrWhiteSpace(level) ? string.Empty : level.Trim();
+        private static string LevelBucketKey(SongChartEntry chart)
+        {
+            if (chart == null) return string.Empty;
+            return string.Equals(chart.Difficulty, "WORLD'S END", StringComparison.OrdinalIgnoreCase)
+                ? "WD" : LevelKey(chart.Level);
+        }
         private Color DifficultyColor(string difficulty)
         {
             switch (difficulty?.ToUpperInvariant())
