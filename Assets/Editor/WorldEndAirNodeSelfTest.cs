@@ -9,6 +9,7 @@ using ChunithmMobile.Chart;
 using ChunithmMobile.Rendering;
 using ChunithmMobile.Runtime;
 using ChunithmMobile.Timing;
+using ChunithmMobile.Platform;
 using UnityEngine;
 
 namespace ChunithmMobile.Editor
