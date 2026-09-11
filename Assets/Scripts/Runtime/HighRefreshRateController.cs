@@ -17,6 +17,8 @@ namespace ChunithmMobile.Runtime
         private int requestedLimit;
         private double androidBestHz;
         private double activeHz;
+        private double lastObservedHz;
+        private int stableRefreshSamples;
         private int pacedLimit;
         private bool suspended;
         private bool gameplayActive;
@@ -89,15 +91,26 @@ namespace ChunithmMobile.Runtime
         private void Apply(bool force)
         {
             nextRefreshPoll = Time.unscaledTime + RefreshPollSeconds;
-            if (force) androidBestHz = RequestAndroidPreferredRefreshRate(requestedLimit);
+            if (force) {
+                androidBestHz = RequestAndroidPreferredRefreshRate(requestedLimit);
+                lastObservedHz = 0;
+                stableRefreshSamples = 0;
+            }
             double displayHz = Math.Max(ReadBestRefreshRate(), androidBestHz);
             activeHz = ReadActiveRefreshRate();
+            if (activeHz > 0 && Math.Abs(activeHz - lastObservedHz) <= .5)
+                stableRefreshSamples++;
+            else {
+                lastObservedHz = activeHz;
+                stableRefreshSamples = 1;
+            }
             // Keep the requested cap in Unity's pacing path. Sleeping in the
             // PlayerLoop caused 60/90/120 limits to present as uneven 48/72
             // cadence on panels with fractional refresh rates.
             double pacingDisplayHz = androidBestHz > 0 ? androidBestHz : activeHz;
+            bool readyToCap = stableRefreshSamples >= 3;
             int target = SelectTargetFrameRate(pacingDisplayHz,
-                gameplayActive ? requestedLimit : 0, Application.isMobilePlatform);
+                gameplayActive && readyToCap ? requestedLimit : 0, Application.isMobilePlatform);
             int nextPacedLimit = 0;
             if (force || nextPacedLimit != pacedLimit) deadline.Reset();
             pacedLimit = nextPacedLimit;
@@ -110,7 +123,8 @@ namespace ChunithmMobile.Runtime
             Time.maximumDeltaTime = 1f / 30f;
             appliedTarget = target;
             Debug.Log($"Display frame pacing applied: active={activeHz:F2}Hz best={displayHz:F2}Hz " +
-                      $"limit={requestedLimit} target={target} deadlineLimit={pacedLimit} vSync={QualitySettings.vSyncCount} " +
+                      $"limit={requestedLimit} target={target} stable={readyToCap} samples={stableRefreshSamples} " +
+                      $"deadlineLimit={pacedLimit} vSync={QualitySettings.vSyncCount} " +
                       $"renderInterval={OnDemandRendering.renderFrameInterval}");
         }
 
