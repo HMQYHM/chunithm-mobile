@@ -36,7 +36,7 @@ namespace ChunithmMobile.Runtime
 
     public static class SongCatalog
     {
-        private const int IndexFormat = 5;
+        private const int IndexFormat = 6;
         public static bool IsWorldsEnd(string difficulty) =>
             string.Equals(difficulty?.Replace("'", "").Replace(" ", ""), "WORLDSEND", StringComparison.OrdinalIgnoreCase);
         private const string IndexFileName = "song-catalog-index.json";
@@ -371,10 +371,10 @@ namespace ChunithmMobile.Runtime
                     if (!string.IsNullOrWhiteSpace(worldEndLevel)) level = worldEndLevel.Trim();
                 }
                 string decimalLevel = node.SelectSingleNode("levelDecimal")?.InnerText ?? "0";
-                // Music.xml stores the fractional part in hundredths (60 =
-                // .6). Only .6-.9 belong to the plus bucket.
+                // Music.xml stores the fractional part in hundredths (50 =
+                // .5). Fractions .50-.99 belong to the plus bucket.
                 if (!worldEnd && int.TryParse(decimalLevel, NumberStyles.Integer, CultureInfo.InvariantCulture,
-                        out int hundredths) && hundredths >= 60 && hundredths <= 99) level += "+";
+                        out int hundredths) && hundredths >= 50 && hundredths <= 99) level += "+";
                 song.Charts.Add(new SongChartEntry {
                     Difficulty = difficulty.ToUpperInvariant(),
                     Level = level,

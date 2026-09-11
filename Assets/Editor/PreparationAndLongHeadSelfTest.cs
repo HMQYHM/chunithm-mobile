@@ -88,15 +88,15 @@ namespace ChunithmMobile.Editor
             string fixture = Path.GetFullPath("Build/level-rule-fixture");
             Directory.CreateDirectory(fixture);
             File.WriteAllText(Path.Combine(fixture, "test.c2s"), "RESOLUTION\t384\nBPM_DEF\t120\n");
-            foreach (int fraction in new[] { 0, 10, 50, 59, 60, 90, 99 }) {
+            foreach (int fraction in new[] { 0, 10, 40, 49, 50, 59, 60, 90, 99 }) {
                 File.WriteAllText(Path.Combine(fixture, "Music.xml"),
                     "<MusicData><fumens><MusicFumenData><enable>true</enable><file><path>test.c2s</path></file>" +
                     "<level>14</level><levelDecimal>" + fraction + "</levelDecimal></MusicFumenData></fumens></MusicData>");
                 var song = (SongEntry)typeof(SongCatalog).GetMethod("ReadSong", BindingFlags.NonPublic | BindingFlags.Static)
                     .Invoke(null, new object[] { fixture });
-                Require(song.Charts.Single().Level == (fraction >= 60 ? "14+" : "14"), "plus threshold mismatch");
+                Require(song.Charts.Single().Level == (fraction >= 50 ? "14+" : "14"), "plus threshold mismatch");
             }
-            Debug.Log("Preparation/long-head/level regression passed: 2s freeze, rates/offsets, pause/resume, curved and headless chains, independent heads, JC/MISS KEEP, .60 plus threshold.");
+            Debug.Log("Preparation/long-head/level regression passed: 2s freeze, rates/offsets, pause/resume, curved and headless chains, independent heads, JC/MISS KEEP, .50 plus threshold.");
         }
 
         private static void VerifyFirstFrame()
