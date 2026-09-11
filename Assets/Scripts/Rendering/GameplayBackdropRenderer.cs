@@ -17,7 +17,7 @@ namespace ChunithmMobile.Rendering
         private Texture2D loadedCover;
         private Coroutine loading;
         private int requestVersion;
-        private float brightness = .70f;
+        private float brightness = 0f;
         private float opacity = .42f;
 
         private void Awake()

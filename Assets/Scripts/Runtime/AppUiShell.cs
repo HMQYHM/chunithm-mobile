@@ -1955,7 +1955,7 @@ namespace ChunithmMobile.Runtime
             SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
                 value => ChangeSetting(() => settings.ShowGameplayFps = value));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
-            SettingsSlider("背景亮度", "%", 20, 100, settings.BackgroundBrightness,
+            SettingsSlider("背景亮度", "%", 0, 100, settings.BackgroundBrightness,
                 value => settings.BackgroundBrightness = Mathf.RoundToInt(value));
             SettingsSlider("封面背景强度", "%", 20, 100, settings.JacketBackgroundOpacity,
                 value => settings.JacketBackgroundOpacity = Mathf.RoundToInt(value));
@@ -2607,9 +2607,9 @@ namespace ChunithmMobile.Runtime
                 new Vector2(.07f, .89f), new Vector2(.93f, .97f), Color.white);
             Label("描边框可移动；角点可调大小；橙色调下端宽度，紫色调上端宽度，灰线调遮罩。",
                 layoutEditorMenu, 16, TextAnchor.UpperLeft, new Vector2(.07f, .78f), new Vector2(.93f, .89f), muted);
-            editorBackgroundBrightnessSlider = LayoutEditorSliderRow("背景亮度", "%", 20, 100,
+            editorBackgroundBrightnessSlider = LayoutEditorSliderRow("背景亮度", "%", 0, 100,
                 settings.BackgroundBrightness, .68f, value => {
-                    if (draftSettings != null) draftSettings.BackgroundBrightness = Mathf.Clamp(value, 20, 100);
+                    if (draftSettings != null) draftSettings.BackgroundBrightness = Mathf.Clamp(value, 0, 100);
                 }, value => Mathf.RoundToInt(value) + "%", out editorBackgroundBrightnessValue);
             editorTouchpadOpacitySlider = LayoutEditorSliderRow("触控板透明度", "%", 0, 100,
                 settings.TouchpadOpacity, .59f, value => {

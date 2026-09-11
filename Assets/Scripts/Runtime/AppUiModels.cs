@@ -28,7 +28,7 @@ namespace ChunithmMobile.Runtime
     [Serializable]
     public sealed class AppSettings
     {
-        public int SettingsVersion = 20;
+        public int SettingsVersion = 21;
         // -1 follows the system. 0 is Simplified Chinese, 1 is Traditional Chinese, 2 is English.
         public int LanguageMode = -1;
         public int MusicVolume = 100;
@@ -47,7 +47,7 @@ namespace ChunithmMobile.Runtime
         public int GameplayPauseY = 93;
         public int GameplayPauseScale = 100;
         public bool PauseRequiresDoubleTap;
-        public int BackgroundBrightness = 70;
+        public int BackgroundBrightness = 0;
         public bool ShowJusticeCriticalMs = true;
         public bool ShowJusticeMs = true;
         public bool ShowAttackMs = true;
@@ -158,7 +158,9 @@ namespace ChunithmMobile.Runtime
                         UnityEngine.Mathf.RoundToInt(10 * value.GameplayJudgementScale / 100f), 5, 95);
                 }
                 if (value.SettingsVersion < 20) value.ShowGameplayFps = false;
-                value.SettingsVersion = 20;
+                if (value.SettingsVersion < 21) value.BackgroundBrightness = 0;
+                value.SettingsVersion = 21;
+                value.BackgroundBrightness = UnityEngine.Mathf.Clamp(value.BackgroundBrightness, 0, 100);
                 value.GameplayJudgementX = UnityEngine.Mathf.Clamp(value.GameplayJudgementX, 5, 95);
                 value.GameplayJudgementY = UnityEngine.Mathf.Clamp(value.GameplayJudgementY, 5, 95);
                 value.GameplayJudgementScale = UnityEngine.Mathf.Clamp(value.GameplayJudgementScale, 50, 180);
@@ -260,7 +262,7 @@ namespace ChunithmMobile.Runtime
             GameplayPauseY = 93;
             GameplayPauseScale = 100;
             PauseRequiresDoubleTap = false;
-            BackgroundBrightness = 70;
+            BackgroundBrightness = 0;
             ShowJusticeCriticalMs = true;
             ShowJusticeMs = true;
             ShowAttackMs = true;
