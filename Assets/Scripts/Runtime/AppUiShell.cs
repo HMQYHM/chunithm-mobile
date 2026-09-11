@@ -86,6 +86,7 @@ namespace ChunithmMobile.Runtime
         private int categoryBucketIndex;
         private int levelBucketIndex;
         private string searchText = "";
+        private InputField songSearchInput;
         private List<string> categories = new List<string>();
         private List<string> levels = new List<string>();
         private Transform songGrid;
@@ -631,8 +632,12 @@ namespace ChunithmMobile.Runtime
                 surfaceRaised, SelectRandomSongFromLibrary);
             ButtonText("当前列表随机", page, new Vector2(.35f, .91f), new Vector2(.445f, .985f),
                 surfaceRaised, SelectRandomSongFromCurrentList);
-            InputField search = Input("搜索歌曲、作者或谱师", page, new Vector2(.45f, .91f), new Vector2(.75f, .985f));
-            search.onValueChanged.AddListener(value => RequestSongListTransition(() => searchText = value, true, true));
+            songSearchInput = Input("搜索歌曲、作者或谱师", page, new Vector2(.45f, .91f), new Vector2(.75f, .985f));
+            songSearchInput.SetTextWithoutNotify(searchText);
+            songSearchInput.onValueChanged.AddListener(value => {
+                searchText = value;
+                RequestSongListTransition(null, true, true);
+            });
             songSelectModsButton = ButtonText("MODS\nNORMAL", page, new Vector2(.76f, .91f), new Vector2(.85f, .985f), surfaceRaised, ShowMods, true);
             modLabel = songSelectModsButton.GetComponentInChildren<Text>();
             songSelectDeleteButton = ButtonText("删除", page, new Vector2(.86f, .91f), new Vector2(.95f, .985f), new Color(.35f, .07f, .10f), ConfirmDelete);
@@ -669,21 +674,26 @@ namespace ChunithmMobile.Runtime
 
         private void SelectRandomSongFromLibrary()
         {
+            CancelSongListTransition();
+            searchText = "";
+            songSearchInput?.SetTextWithoutNotify("");
             var charts = catalog.Where(song => song?.Charts != null)
                 .SelectMany(song => song.Charts.Select(chart => new SongListItem { Song = song, Chart = chart }))
                 .Where(item => item.Song != null && item.Chart != null && File.Exists(item.Chart.Path))
                 .ToList();
-            if (charts.Count == 0) return;
+            if (charts.Count == 0) { RebuildSongGrid(false); return; }
             SongListItem item = charts[UnityEngine.Random.Range(0, charts.Count)];
             SelectSong(item.Song, true, item.Chart.Difficulty, true, item.Chart.Path);
         }
 
         private void SelectRandomSongFromCurrentList()
         {
+            CancelSongListTransition();
+            if (songSearchInput != null) searchText = songSearchInput.text;
             List<SongListItem> choices = SongsForCurrentBucket()
                 .Where(item => item?.Song != null && item.Chart != null && File.Exists(item.Chart.Path))
                 .ToList();
-            if (choices.Count == 0) return;
+            if (choices.Count == 0) { RebuildSongGrid(false); return; }
             SongListItem item = choices[UnityEngine.Random.Range(0, choices.Count)];
             SelectSong(item.Song, true, item.Chart.Difficulty, true, item.Chart.Path);
         }
@@ -4086,7 +4096,14 @@ namespace ChunithmMobile.Runtime
 
         private void RequestSongListTransition(Action mutation, bool selectFallback, bool playFallbackPreview)
         {
+            CancelSongListTransition();
+            songGridTransition = StartCoroutine(AnimateSongListChange(mutation, selectFallback, playFallbackPreview));
+        }
+
+        private void CancelSongListTransition()
+        {
             if (songGridTransition != null) StopCoroutine(songGridTransition);
+            songGridTransition = null;
             if (gridLayoutRefresh != null) StopCoroutine(gridLayoutRefresh);
             gridLayoutRefresh = null;
             if (songGrid != null) {
@@ -4097,7 +4114,6 @@ namespace ChunithmMobile.Runtime
                 songGridGroup.alpha = 1f;
                 songGridGroup.blocksRaycasts = true;
             }
-            songGridTransition = StartCoroutine(AnimateSongListChange(mutation, selectFallback, playFallbackPreview));
         }
 
         private IEnumerator AnimateSongListChange(Action mutation, bool selectFallback, bool playFallbackPreview)
@@ -4218,7 +4234,7 @@ namespace ChunithmMobile.Runtime
                 .Where(song => song.Charts != null)
                 .SelectMany(song => song.Charts)
                 .Select(LevelBucketKey);
-            return values.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(LevelValue).ToArray();
+            return values.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(LevelBucketValue).ToArray();
         }
 
         private bool SongBelongsToLevelBucket(SongEntry song, string bucket)
@@ -4315,7 +4331,7 @@ namespace ChunithmMobile.Runtime
             categories = catalog.Select(song => song.Category)
                 .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(value => value).ToList();
             levels = catalog.SelectMany(song => song.Charts).Select(LevelBucketKey)
-                .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(LevelValue).ToList();
+                .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(LevelBucketValue).ToList();
             if (homeLibraryLabel != null)
                 homeLibraryLabel.text = $"已加载歌曲：{catalog.Count}\nby: HMQYHM    v{Application.version}";
 
@@ -5713,7 +5729,18 @@ namespace ChunithmMobile.Runtime
                 return float.PositiveInfinity;
             return plus ? value + .5f : value;
         }
-        private static string LevelKey(string level) => string.IsNullOrWhiteSpace(level) ? string.Empty : level.Trim();
+        private static float LevelBucketValue(string level) => level == "WD" ? -1f : LevelValue(level);
+        private static string LevelKey(string level)
+        {
+            if (string.IsNullOrWhiteSpace(level)) return "WD";
+            string value = level.Trim();
+            bool plus = value.EndsWith("+", StringComparison.Ordinal);
+            string digits = plus ? value.Substring(0, value.Length - 1) : value;
+            if (digits.Length == 0 || digits.Any(c => c < '0' || c > '9') ||
+                !int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out int number) || number <= 0)
+                return "WD";
+            return number.ToString(CultureInfo.InvariantCulture) + (plus ? "+" : "");
+        }
         private static string LevelBucketKey(SongChartEntry chart)
         {
             if (chart == null) return string.Empty;
