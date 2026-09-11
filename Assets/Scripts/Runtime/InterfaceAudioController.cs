@@ -13,6 +13,7 @@ namespace ChunithmMobile.Runtime
         private AudioSource entrySource;
         private AudioSource resultsSource;
         private AudioSource cueSource;
+        private AudioSource gameplayKeySource;
         private AudioClip entryClip;
         private AudioClip resultsClip;
         private AudioClip switchClip;
@@ -34,6 +35,8 @@ namespace ChunithmMobile.Runtime
             entrySource = CreateSource("Interface entry music", true, false);
             resultsSource = CreateSource("Result music", true, false);
             cueSource = CreateSource("Page transition cues", false, true);
+            gameplayKeySource = CreateSource("Gameplay key sounds", false, false);
+            gameplayKeySource.volume = 1f;
             entryClip = Resources.Load<AudioClip>("Audio/ui_entry");
             resultsClip = Resources.Load<AudioClip>("Audio/ui_results");
             switchClip = Resources.Load<AudioClip>("Audio/delay_ready");
@@ -118,6 +121,12 @@ namespace ChunithmMobile.Runtime
             MusicMode target = ModeFor(to);
             if (musicFade != null) StopCoroutine(musicFade);
             musicFade = StartCoroutine(FadeMusic(target, Mathf.Max(.05f, duration)));
+        }
+
+        public void PlayMineKeySound()
+        {
+            if (keySoundEnabled && keySoundVolume > 0f && switchClip != null)
+                gameplayKeySource.PlayOneShot(switchClip, keySoundVolume);
         }
 
         public void PlayStandaloneTransition(float duration)

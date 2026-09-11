@@ -279,10 +279,8 @@ namespace ChunithmMobile.Runtime
                 foreach (ScheduledJudgePoint point in points)
                 {
                     ChartNote note = chart.Notes[point.NoteIndex];
-                    // The original runtime emits feedback only for the first
-                    // judgement of a visible note. KEEP checkpoints, hidden
-                    // continuation segments, mines, and visual-only objects do
-                    // not create another answer sound.
+                    // One chart-timed cue per visible head, including mines.
+                    // KEEP checkpoints and hidden continuations do not add cues.
                     if (!ShouldMergeAnswerSound(note, point)) continue;
                     AddAnswerStart(answerStarts, source,
                         point.TimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames), frequency);
@@ -375,7 +373,7 @@ namespace ChunithmMobile.Runtime
         {
             if (note == null || point.PointIndex != 0 || !note.VisibleHead) return false;
             return note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or
-                NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or NoteKind.Air or NoteKind.AirHold or
+                NoteKind.Mine or NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or NoteKind.Air or NoteKind.AirHold or
                 NoteKind.AirAction;
         }
 

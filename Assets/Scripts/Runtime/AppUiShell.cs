@@ -5319,6 +5319,10 @@ namespace ChunithmMobile.Runtime
         private void OnGameplayJudged(ScheduledJudgePoint point, JudgementResult judgement)
         {
             gameplayChartRenderer?.MarkJudged(point.NoteIndex, point.PointIndex);
+            if (point.PointIndex == 0 && judgement.Grade == ChunithmMobile.Chart.Judgement.Miss &&
+                gameplayJudge != null && gameplayJudge.TryGetNote(point.NoteIndex, out ChartNote soundNote) &&
+                soundNote.Kind == NoteKind.Mine)
+                interfaceAudio?.PlayMineKeySound();
             if (delayCalibrationActive && delayCalibrationLive != null)
             {
                 bool calibrationMiss = judgement.Grade == ChunithmMobile.Chart.Judgement.Miss;

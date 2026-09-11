@@ -454,7 +454,9 @@ namespace ChunithmMobile.Rendering
 
             bool judged = judgedHeads.Contains(noteIndex);
             bool hasReachedJudgementLine = headZ <= ChartSpace.JudgementZ;
-            bool insideApproach = headZ >= ChartSpace.NearZ &&
+            // Signed scroll distance can cross the line before the authored
+            // hit time. Such future heads must not be pinned or drawn below it.
+            bool insideApproach = headZ >= (now < note.TimeMs ? ChartSpace.JudgementZ : ChartSpace.NearZ) &&
                                   headZ <= VisualFarZ + visibilityGuardZ;
 
             // The original renderer has two different head lifetimes. A
@@ -472,9 +474,9 @@ namespace ChunithmMobile.Rendering
                     note.AirFlick) * clock.Rate;
             bool showHead = note.HasVisualHead && !judged &&
                             (airHead
-                                ? (insideApproach || hasReachedJudgementLine) && airPending
+                                ? (insideApproach || (hasReachedJudgementLine && now >= note.TimeMs)) && airPending
                                 : groundHead
-                                    ? (insideApproach || hasReachedJudgementLine) &&
+                                    ? (insideApproach || (hasReachedJudgementLine && now >= note.TimeMs)) &&
                                       now <= note.TimeMs + JudgementEngine.MissWindowMs(note) * clock.Rate
                                     : insideApproach);
             if (note.Kind == NoteKind.Slide && !note.VisibleHead && note.HasVisualHead)
@@ -489,7 +491,7 @@ namespace ChunithmMobile.Rendering
                 // AIR heads travel with their authored height and depth. Only
                 // ground heads stay on the judgement plane while waiting for
                 // their late MISS boundary.
-                float renderHeadZ = groundHead && hasReachedJudgementLine
+                float renderHeadZ = groundHead && hasReachedJudgementLine && now >= note.TimeMs
                     ? ChartSpace.JudgementZ : Mathf.Min(headZ, VisualFarZ);
                 UpdateHead(visual.Head, visual.HeadFilter, visual.HeadMesh, visual.HeadRenderer,
                     noteIndex, note, renderHeadZ, false);
@@ -508,13 +510,14 @@ namespace ChunithmMobile.Rendering
                 tailZ = Distance(endProfile, note.EndTimeMs, now);
                 float tailGuardZ = VisibilityGuardZ(endProfile, note.EndTimeMs, now, tailZ);
                 bool tailReachedLine = tailZ <= ChartSpace.JudgementZ;
-                showTail = (tailReachedLine || tailZ >= ChartSpace.NearZ) &&
+                showTail = ((tailReachedLine && now >= note.EndTimeMs) ||
+                    tailZ >= (now < note.EndTimeMs ? ChartSpace.JudgementZ : ChartSpace.NearZ)) &&
                     tailZ <= VisualFarZ + tailGuardZ;
             }
             visual.Tail.SetActive(showTail && note.Kind is not (NoteKind.AirLadder or NoteKind.AirLine));
             if (visual.Tail.activeSelf) {
                 bool tailIsAir = note.Kind is NoteKind.AirHold or NoteKind.AirAction;
-                float renderTailZ = tailIsAir && tailZ <= ChartSpace.JudgementZ
+                float renderTailZ = tailIsAir && tailZ <= ChartSpace.JudgementZ && now >= note.EndTimeMs
                     ? ChartSpace.JudgementZ : Mathf.Min(tailZ, VisualFarZ);
                 UpdateHead(visual.Tail, visual.TailFilter, visual.TailMesh,
                     visual.TailRenderer, noteIndex, note, renderTailZ, true);
@@ -1303,11 +1306,11 @@ namespace ChunithmMobile.Rendering
 
         private bool IsUnresolvedHead(ChartNote note, int noteIndex, double now)
         {
-            if (note == null || !note.HasVisualHead || judgedHeads.Contains(noteIndex)) return false;
+            if (note == null || !note.HasVisualHead || now < note.TimeMs || judgedHeads.Contains(noteIndex)) return false;
             if (note.Kind == NoteKind.Slide && !note.VisibleHead) return false;
             if (note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or NoteKind.Mine or
                 NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide)
-                return true;
+                return now <= note.TimeMs + JudgementEngine.MissWindowMs(note) * clock.Rate;
             if (note.Kind is not (NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction)) return false;
             bool down = note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight;
             return now <= note.TimeMs + JudgementEngine.MissWindowMs(note.Kind, down, note.AirFlick) * clock.Rate;
