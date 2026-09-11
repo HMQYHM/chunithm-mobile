@@ -183,11 +183,15 @@ namespace ChunithmMobile.Runtime
                         }
                     }
                     double[] supported = rates.ToArray();
-                    int selected = SelectDisplayMode(supported, limit);
+                    // Keep the surface at its highest native refresh rate and
+                    // apply 60/90/120 as a Unity presentation cap. Switching
+                    // the Android mode down to the cap can make Frame Pacing
+                    // fall into an uneven half-rate cadence on some panels.
+                    int selected = SelectDisplayMode(supported, 0);
                     float preferredHz = (float)rates[selected];
                     int preferredId = ids[selected];
                     Debug.Log($"Android refresh request: active={rates[0]:F2}Hz supported=[{string.Join(",", rates)}] " +
-                              $"limit={limit} selected={preferredHz:F2}Hz mode={preferredId}");
+                              $"limit={limit} highest={preferredHz:F2}Hz mode={preferredId}");
                     activity.Call("runOnUiThread", new AndroidJavaRunnable(() => {
                         try {
                             using var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
