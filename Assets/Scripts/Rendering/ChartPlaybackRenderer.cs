@@ -8,21 +8,53 @@ using UnityEngine;
 
 namespace ChunithmMobile.Rendering
 {
+    // 游玩谱面渲染器：按 DSP 谱面时间创建、更新、隐藏和回收音符视觉对象。
+    // 地面音符、AIR 本体和 AIR 拖尾有独立材质/生命周期；本类不负责判定和成绩。
     /// <summary>Original-resource renderer with independent head/body/line/tail lifetimes.</summary>
     public sealed class ChartPlaybackRenderer : MonoBehaviour
     {
         private const double VisibilityLeadRealMilliseconds = 120.0;
         private const double PostHeadRenderGraceMilliseconds = 900.0;
+        // Rendering-only guard for tiny backwards samples from platform audio
+        // adapters. Judgement still uses the untouched DSP chart clock.
+        private const double RenderTimeBackstepToleranceMilliseconds = 8.0;
         private const float MinimumVisibilityGuardZ = 2f;
         private const float MaximumVisibilityGuardZ = 96f;
-        private const double AirDecorationHoldMilliseconds = 900.0;
+        // A moving ribbon must not be created/destroyed because a floating
+        // point value crosses the camera clip plane by a few microns. Keep a
+        // small spatial hysteresis band; the line is still outside the play
+        // field before it is finally recycled by ProcessNote.
+        private const float RibbonClipEpsilonZ = .08f;
+        // Keep ribbon clipping outside the visible judgement area. Rebuilding
+        // a segment exactly as it crosses the near plane causes mesh topology
+        // churn and visible shaking on consecutive frames.
+        private const float RibbonBodyNearClipZ = ChartSpace.NearZ - 8f;
+        private const float RibbonBodyFarClipZ = ChartSpace.FarZ + ChartSpace.JudgementZ + 8f;
+        // Guide lines are submitted as complete authored segments. The camera
+        // performs the final viewport clipping, so their first visible segment
+        // does not change topology while crossing the screen.
+        private const float GuidePathNearCullZ = ChartSpace.NearZ - 24f;
+        private const float GuidePathFarCullZ = ChartSpace.FarZ + ChartSpace.JudgementZ + 24f;
+        // Zero-duration ALD records still need a continuous visual crossing.
+        // They use the same guide-path mesh pipeline as normal records and
+        // receive only this short authored-time window.
+        private const double InstantGuidePathTravelMilliseconds = 48.0;
+        // Decoration is visual-only. If a frame stalls while a dense batch of
+        // ALD meshes is submitted, the authoritative DSP time can advance a
+        // large distance between two renders. Do not let an existing line
+        // teleport by that whole distance in one frame; let its visual clock
+        // catch up over subsequent frames instead.
+        private const double GuideVisualMaxAdvanceMilliseconds = 48.0;
+        // Long-note surfaces are clipped at the judgement line. The note
+        // object remains alive for KEEP judgement and is recycled only after
+        // its complete authored tail leaves the normal visual range.
+        private const float RibbonGameplayNearClipZ = ChartSpace.JudgementZ;
         // Keep every airborne surface above the complete ground-note pass.
         // Equal-queue renderers use Unity's camera-distance transparent sort.
         private const int GroundHeadQueue = 3070;
         private const int AirWallQueue = 3100;
         private const int AirBodyQueue = 3110;
-        private const int AirDecorationQueue = 3120;
-        private const int AirLineQueue = 3130;
+        private const int AirTrailQueue = 3130;
         private const int AirHeadQueue = 3140;
         private const int AirArrowQueue = 3150;
         private const float AirTrailOuterOpacity = .28f;
@@ -36,23 +68,26 @@ namespace ChunithmMobile.Rendering
         private readonly HashSet<int> keep = new HashSet<int>();
         private readonly HashSet<int> updated = new HashSet<int>();
         private readonly HashSet<int> judgedHeads = new HashSet<int>();
+        private readonly HashSet<int> airActionEntriesWithDirectionalAir = new HashSet<int>();
         private readonly List<int> remove = new List<int>();
         private readonly Dictionary<int, ChartNote> pairedGroundByAir = new Dictionary<int, ChartNote>();
+        private readonly Dictionary<int, LongChainGeometry> longChainGeometry = new Dictionary<int, LongChainGeometry>();
+        private readonly Dictionary<int, int> longChainOwnerByNote = new Dictionary<int, int>();
+        private readonly Dictionary<int, GuidePathVisual> activeGuidePaths = new Dictionary<int, GuidePathVisual>();
+        private readonly Dictionary<int, GuidePathGeometry> guidePathGeometry = new Dictionary<int, GuidePathGeometry>();
+        private readonly Dictionary<string, Material> guidePathMaterials = new Dictionary<string, Material>();
         private readonly Dictionary<string, Material> headMaterials = new Dictionary<string, Material>();
         private readonly Dictionary<string, Mesh> originalMeshes = new Dictionary<string, Mesh>();
         private readonly Dictionary<string, Mesh> mirroredAirMeshes = new Dictionary<string, Mesh>();
-        private readonly Dictionary<string, Material> airLineMaterials = new Dictionary<string, Material>();
-        private readonly Dictionary<string, Material> airLineBodyMaterials = new Dictionary<string, Material>();
         private ParsedChart chart;
         private OriginalPlaybackMap playback;
         private RibbonGeometry[] geometry;
         private DspChartClock clock;
         private double lastRenderTime = double.NegativeInfinity;
+        private double guideVisualTime = double.NegativeInfinity;
         private Material holdBody, slideBody, airHoldBody;
         private Material heavenRoof, heavenRoofPink, heavenWall, heavenShadow;
         private Material airActionTrailRainbowBody, airActionTrailGreenBody, airActionBarBody;
-        private Material airLadderTop, airLadderPost, airLadderEdge;
-        private Material airLadderStem, airLadderRim;
         private Material holdLine, slideLine, airActionTrailRainbowLine, airActionTrailGreenLine, defaultHead;
         private Material defaultAirHead, defaultAirArrow;
         private bool airTrailRainbow;
@@ -61,14 +96,17 @@ namespace ChunithmMobile.Rendering
         private readonly NoteSkinUvCache noteSkinUvs = new NoteSkinUvCache();
 
         /// <summary>
-        /// Changes only AIR ACTION's authored trail. AIR heads and ALD
-        /// decorative lines deliberately use separate material paths.
+        /// Changes only AIR ACTION's authored trail.
         /// </summary>
         public void ConfigureAirTrail(bool rainbow)
         {
             airTrailRainbow = rainbow;
         }
 
+        /// <summary>
+        /// 绑定谱面和时钟并预计算每个音符的几何数据。Bind 会清理上一局视觉对象，
+        /// 但不启动播放，也不修改判定状态。
+        /// </summary>
         public void Bind(ParsedChart parsedChart, DspChartClock chartClock)
         {
             firstFrameHidden = false;
@@ -77,23 +115,37 @@ namespace ChunithmMobile.Rendering
             chart = parsedChart;
             playback = new OriginalPlaybackMap(parsedChart);
             lastRenderTime = double.NegativeInfinity;
+            guideVisualTime = double.NegativeInfinity;
             geometry = new RibbonGeometry[parsedChart.Notes.Count];
             pairedGroundByAir.Clear();
             for (int i = 0; i < parsedChart.Notes.Count; i++) geometry[i] = BuildGeometry(parsedChart.Notes[i]);
-            BuildAirPairs(parsedChart.Notes);
+            // Bind the clock before building independent visual tracks. This
+            // keeps the decoration path safe if a future geometry prewarm
+            // consults playback timing during construction.
             clock = chartClock;
+            BuildGuidePathVisuals(parsedChart.GuidePaths ?? new List<VisualGuidePath>());
+            BuildLongChainGeometry(parsedChart.Notes);
+            BuildAirPairs(parsedChart.Notes);
+            BuildAirActionArrowOwnership(parsedChart.Notes);
         }
 
+        /// <summary>释放当前谱面的活动对象和几何引用，供停止或重新游玩使用。</summary>
         public void Clear()
         {
             firstFrameHidden = false;
             ClearActive();
+            ClearGuidePathVisuals();
+            guidePathGeometry.Clear();
             judgedHeads.Clear();
             chart = null;
             playback = null;
             geometry = null;
+            longChainGeometry.Clear();
+            longChainOwnerByNote.Clear();
             clock = null;
+            airActionEntriesWithDirectionalAir.Clear();
             lastRenderTime = double.NegativeInfinity;
+            guideVisualTime = double.NegativeInfinity;
         }
 
         private void Awake()
@@ -131,8 +183,8 @@ namespace ChunithmMobile.Rendering
                     if (filter != null && filter.sharedMesh != null) originalMeshes[key] = filter.sharedMesh;
                 }
             }
-            holdBody = TextureMaterial("field/hold_joint", new Color(1f, 1f, 1f, .92f), 2980);
-            slideBody = TextureMaterial("field/slide_joint", new Color(1f, 1f, 1f, .90f), 2990);
+            holdBody = TextureMaterial("field/hold_joint", new Color(1f, 1f, 1f, .54f), 2980);
+            slideBody = TextureMaterial("field/slide_joint", new Color(1f, 1f, 1f, .54f), 2990);
             // Unlit/Transparent ignores material tint/alpha. This layer needs
             // an actual translucent surface, independent of the bright centre line.
             airHoldBody = TintedAirMaterial(GameplaySkinManager.LoadFieldTexture("field/air_hold_joint"),
@@ -146,17 +198,11 @@ namespace ChunithmMobile.Rendering
             airActionBarBody = TintedAirMaterial(GameplaySkinManager.LoadFieldTexture("field/air_action_bar"),
                 new Color(1, 1, 1, AirTrailOuterOpacity), AirBodyQueue);
             airActionTrailGreenBody = TintedAirMaterial(null, new Color(.12f, 1f, .34f, AirTrailOuterOpacity), AirBodyQueue);
-            airLadderTop = TextureMaterial("field/air_ladder_top", Color.white, AirDecorationQueue);
-            airLadderPost = TextureMaterial("field/air_train", Color.white, AirDecorationQueue);
-            airLadderEdge = MeshFactory.Material(new Color(1f, .88f, 1f, .96f), true);
-            airLadderEdge.renderQueue = AirLineQueue;
-            airLadderStem = TintedAirMaterial(null, new Color(1f, .35f, .85f, .75f), AirDecorationQueue);
-            airLadderRim = TintedAirMaterial(null, new Color(.95f, .85f, 1f, .92f), AirBodyQueue);
             holdLine = MeshFactory.Material(new Color(1f, .94f, .44f, .98f), true); holdLine.renderQueue = 3040;
             slideLine = MeshFactory.Material(new Color(.68f, .96f, 1f, .98f), true); slideLine.renderQueue = 3040;
             airActionTrailGreenLine = SolidAirTrailMaterial(null, new Color(.12f, 1f, .34f, 1f));
             airActionTrailRainbowLine = SolidAirTrailMaterial(GameplaySkinManager.LoadFieldTexture("field/air_action_line"), Color.white);
-            BuildAirLineMaterials();
+            BuildGuidePathMaterials();
             defaultHead = MeshFactory.Material(Color.white, true);
             defaultHead.renderQueue = GroundHeadQueue;
             defaultAirHead = new Material(defaultHead) { renderQueue = AirHeadQueue };
@@ -184,7 +230,7 @@ namespace ChunithmMobile.Rendering
         {
             return new Material(Resources.Load<Shader>("AirTrailCore")) {
                 mainTexture = texture != null ? texture : Texture2D.whiteTexture,
-                color = tint, renderQueue = AirLineQueue, enableInstancing = true
+                color = tint, renderQueue = AirTrailQueue, enableInstancing = true
             };
         }
 
@@ -235,7 +281,6 @@ namespace ChunithmMobile.Rendering
             if (airActionTrailGreenBody != null) airActionTrailGreenBody.color = trail;
             trail.a = 1f;
             if (airActionTrailGreenLine != null) airActionTrailGreenLine.color = trail;
-            if (airLadderEdge != null) airLadderEdge.color = skin.EdgeColor;
             PrepareNoteSkinUvs();
         }
 
@@ -253,6 +298,7 @@ namespace ChunithmMobile.Rendering
                 }
         }
 
+        // 先按时间范围筛选音符，再更新对象池；不为整首谱面每帧创建 GameObject。
         private void LateUpdate()
         {
             if (chart == null || playback == null || clock == null || clock.Preparing) return;
@@ -261,9 +307,20 @@ namespace ChunithmMobile.Rendering
                 firstFrameHidden = false;
                 Debug.Log($"Gameplay first visible frame: chart={clock.TimeMs:F2}ms, warmedNotes={active.Count}");
             }
-            RenderFrame(clock.TimeMs);
+            double now = clock.TimeMs;
+            // Keep rendering monotonic across tiny platform audio-clock
+            // backsteps. This affects visuals only; judgement continues to
+            // consume the authoritative DSP clock.
+            if (!double.IsNegativeInfinity(lastRenderTime) &&
+                now < lastRenderTime &&
+                lastRenderTime - now <= RenderTimeBackstepToleranceMilliseconds)
+                now = lastRenderTime;
+            RenderFrame(now);
         }
 
+        /// <summary>
+        /// 在不推进 DSP 时钟的情况下预热首帧。加载流程应在此完成后再启动正式音频和谱面时间轴。
+        /// </summary>
         public void PrepareFirstFrame(double chartTimeMs, Camera warmupCamera = null)
         {
             if (chart == null || playback == null || clock == null) return;
@@ -334,47 +391,272 @@ namespace ChunithmMobile.Rendering
             remove.Clear();
             foreach (var item in active) if (!keep.Contains(item.Key)) remove.Add(item.Key);
             foreach (int index in remove) { Return(active[index]); active.Remove(index); }
+            UpdateGuidePathVisuals(AdvanceGuideVisualTime(now));
+        }
+
+        private double AdvanceGuideVisualTime(double authoritativeNow)
+        {
+            if (double.IsNegativeInfinity(guideVisualTime)) {
+                guideVisualTime = authoritativeNow;
+                return guideVisualTime;
+            }
+
+            // A real seek or a replay restart must take effect immediately.
+            // Tiny backwards samples are already filtered by LateUpdate, but
+            // this guard also covers editor preview and explicit seeks.
+            if (authoritativeNow + RenderTimeBackstepToleranceMilliseconds < guideVisualTime) {
+                guideVisualTime = authoritativeNow;
+                return guideVisualTime;
+            }
+
+            double delta = authoritativeNow - guideVisualTime;
+            if (delta <= 0) return guideVisualTime;
+
+            // Follow normal frame cadence without adding latency. Only cap an
+            // abnormal jump, such as a one-frame mesh/GC stall. A minimum
+            // step keeps the line responsive on devices that report a very
+            // small or zero unscaled frame delta during startup.
+            double frameMs = Time.unscaledDeltaTime * 1000.0;
+            double allowed = Math.Max(12.0, Math.Min(GuideVisualMaxAdvanceMilliseconds,
+                frameMs * Math.Max(.5, clock != null ? clock.Rate : 1.0) * 2.5));
+            guideVisualTime += Math.Min(delta, allowed);
+            return guideVisualTime;
         }
 
         private void ProcessNote(int i, double now)
         {
             ChartNote note = chart.Notes[i];
-                bool instantDecoration = note.Kind is NoteKind.AirLadder or NoteKind.AirLine;
-                bool decorationActive = instantDecoration &&
-                    now >= note.TimeMs && now <= note.TimeMs + AirDecorationHoldMilliseconds;
-                bool longBody = note.EndTimeMs > note.TimeMs &&
-                    note.Kind is (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
-                        NoteKind.AirHold or NoteKind.AirAction or NoteKind.AirLadder or NoteKind.AirLine);
-                // Active long objects are already inside the visibility band.
-                // Recomputing every ribbon endpoint just to rediscover that
-                // fact is costly on dense charts, especially on low-end CPUs.
-                // Keep the normal bounds path for first activation and short
-                // objects, where it is still needed for correct culling.
-                if (longBody && active.TryGetValue(i, out NoteVisual activeVisual) &&
-                    (decorationActive || now <= note.EndTimeMs + PostHeadRenderGraceMilliseconds)) {
-                    keep.Add(i);
-                    updated.Add(i);
-                    float activeHeadZ = Distance(note.ScrollProfileId, note.TimeMs, now);
-                    UpdateVisual(activeVisual, i, note, now, activeHeadZ,
-                        VisibilityGuardZ(note.ScrollProfileId, note.TimeMs, now, activeHeadZ));
-                    return;
+            bool longBody = note.EndTimeMs > note.TimeMs &&
+                note.Kind is (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
+                    NoteKind.AirHold or NoteKind.AirAction);
+            double visualEndMs = note.EndTimeMs;
+            if (note.LongChainId >= 0 && longChainGeometry.TryGetValue(note.LongChainId, out LongChainGeometry chain))
+                visualEndMs = chain.EndTimeMs;
+            int headProfile = note.ScrollProfileId;
+            if (note.Kind == NoteKind.Air &&
+                pairedGroundByAir.TryGetValue(i, out ChartNote pairedGround))
+                headProfile = pairedGround.ScrollProfileId;
+            float headZ = Distance(headProfile, note.TimeMs, now);
+            double min, max;
+            GetVisualDistanceBounds(i, now, headZ, out min, out max);
+            bool unresolvedHead = IsUnresolvedHead(note, i, now);
+            if ((max < ChartSpace.NearZ - RibbonClipEpsilonZ && !unresolvedHead) ||
+                min > VisualFarZ + MaximumVisibilityGuardZ ||
+                (!longBody && now > Math.Max(note.TimeMs, visualEndMs) + 260)) return;
+            float visibilityGuardZ = VisibilityGuardZ(headProfile, note.TimeMs, now, headZ);
+            if (min > VisualFarZ + visibilityGuardZ) return;
+            if (!active.TryGetValue(i, out NoteVisual visual)) { visual = Rent(); active[i] = visual; }
+            keep.Add(i);
+            updated.Add(i);
+            UpdateVisual(visual, i, note, now, headZ, visibilityGuardZ);
+        }
+
+        private void BuildGuidePathVisuals(IReadOnlyList<VisualGuidePath> paths)
+        {
+            ClearGuidePathVisuals();
+            guidePathGeometry.Clear();
+            // Editor self-tests and a few lightweight preview hosts can bind
+            // the renderer before Unity has dispatched Awake. Keep Bind
+            // self-contained so a guide path can never make song loading
+            // fail merely because its material cache is still empty.
+            if (guidePathMaterials.Count == 0) BuildGuidePathMaterials();
+            // ALD records are independent authored visual objects. Do not
+            // rewrite one record from a neighboring record: a later line can
+            // have a different colour, profile, or intended origin, and
+            // welding them makes an already visible line shift when the next
+            // one enters the viewport.
+            for (int i = 0; i < paths.Count; i++) {
+                GuidePathVisual visual = new GuidePathVisual(notesRoot != null ? notesRoot : transform);
+                string colorKey = NormalizeGuidePathColor(paths[i].Color);
+                if (!guidePathMaterials.TryGetValue(colorKey, out Material material))
+                    material = guidePathMaterials["GRN"];
+                visual.Renderer.sharedMaterial = material;
+                visual.Root.SetActive(false);
+                activeGuidePaths.Add(i, visual);
+                guidePathGeometry.Add(i, BuildGuidePathGeometry(paths[i]));
+            }
+        }
+
+        // ALD records are often exported as adjacent pieces of one visual
+        // path. Keep a hard boundary from inventing a raised "head" when the
+        // next record repeats the same instant with slightly different lane,
+        // width, or height rounding. This is visual-only; ALD records remain
+        // untouched in the parser and never enter judgement.
+        private static void WeldGuidePathStarts(IReadOnlyList<VisualGuidePath> paths)
+        {
+            if (paths == null || paths.Count < 2) return;
+            for (int i = 1; i < paths.Count; i++) {
+                VisualGuidePath previous = paths[i - 1];
+                VisualGuidePath current = paths[i];
+                if (Math.Abs(previous.EndTimeMs - current.TimeMs) > .5) continue;
+                if (!string.Equals(previous.Color, current.Color, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(previous.SecondaryColor, current.SecondaryColor, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                float previousCenter = previous.EndLane + previous.EndWidth * .5f;
+                float currentCenter = current.Lane + current.Width * .5f;
+                if (Mathf.Abs(previousCenter - currentCenter) > .26f) continue;
+                if (Mathf.Abs(previous.EndWidth - current.Width) > .26f) continue;
+                if (Mathf.Abs(previous.EndAirHeight - current.AirHeight) > .26f) continue;
+
+                current.Lane = previous.EndLane;
+                current.Width = Mathf.Max(1, previous.EndWidth);
+                current.AirHeight = previous.EndAirHeight;
+                // A welded chain must use one spatial time base. Independent
+                // field mappers have independent distance origins and create
+                // a gap even when the authored timestamps are identical.
+                current.ScrollProfileId = previous.ScrollProfileId;
+            }
+        }
+
+        private void UpdateGuidePathVisuals(double now)
+        {
+            if (chart == null || chart.GuidePaths == null) return;
+            foreach (var pair in activeGuidePaths) {
+                VisualGuidePath path = chart.GuidePaths[pair.Key];
+                UpdateGuidePathVisual(pair.Value, path, now, pair.Key);
+            }
+        }
+
+        private void UpdateGuidePathVisual(GuidePathVisual visual, VisualGuidePath path, double now, int index)
+        {
+            if (!guidePathGeometry.TryGetValue(index, out GuidePathGeometry authored)) return;
+            int samples = authored.Times.Length;
+            bool visible = false;
+            for (int i = 0; i < samples - 1; i++) {
+                float z = Distance(authored.Profiles[i], authored.Times[i], now);
+                float zNext = Distance(authored.Profiles[i + 1], authored.Times[i + 1], now);
+                if ((z >= GuidePathNearCullZ && z <= GuidePathFarCullZ) ||
+                    (zNext >= GuidePathNearCullZ && zNext <= GuidePathFarCullZ)) {
+                    visible = true;
+                    break;
                 }
-                int headProfile = note.ScrollProfileId;
-                if (note.Kind == NoteKind.Air &&
-                    pairedGroundByAir.TryGetValue(i, out ChartNote pairedGround))
-                    headProfile = pairedGround.ScrollProfileId;
-                float headZ = Distance(headProfile, note.TimeMs, now);
-                GetVisualDistanceBounds(i, now, headZ, out double min, out double max);
-                bool unresolvedHead = IsUnresolvedHead(note, i, now);
-                if (!decorationActive && (max < ChartSpace.NearZ - .25f && !unresolvedHead) ||
-                    min > VisualFarZ + MaximumVisibilityGuardZ ||
-                    (!decorationActive && now > Math.Max(note.TimeMs, note.EndTimeMs) + 260)) return;
-                float visibilityGuardZ = VisibilityGuardZ(headProfile, note.TimeMs, now, headZ);
-                if (!decorationActive && min > VisualFarZ + visibilityGuardZ) return;
-                if (!active.TryGetValue(i, out NoteVisual visual)) { visual = Rent(); active[i] = visual; }
-                keep.Add(i);
-                updated.Add(i);
-                UpdateVisual(visual, i, note, now, headZ, visibilityGuardZ);
+            }
+            if (!visible) {
+                visual.Root.SetActive(false);
+                return;
+            }
+            visual.Root.SetActive(true);
+            visual.Buffers.BeginFrame();
+            visual.Buffers.EnsureCapacity(samples - 1);
+            int vertices = 0, triangles = 0;
+            int pathProfile = authored.Profiles.Length > 0 ? authored.Profiles[0] : 0;
+            for (int i = 0; i < samples - 1; i++) {
+                float p0 = authored.Progress[i], p1 = authored.Progress[i + 1];
+                // Both adjacent quads must use the same profile at a shared
+                // sample point. This makes the endpoint geometry identical
+                // on both sides of an SLA boundary and prevents visible gaps.
+                GuidePathPoint(path, authored.Times[i], p0, now, pathProfile,
+                    out Vector3 centerA, out float uvA);
+                GuidePathPoint(path, authored.Times[i + 1], p1, now, pathProfile,
+                    out Vector3 centerB, out float uvB);
+                // Keep the decoration as a single fine line, but make it
+                // easier to see on dense charts and high-DPI screens.
+                const float halfWidth = .024f;
+                Vector3 leftA = centerA - Vector3.right * halfWidth;
+                Vector3 rightA = centerA + Vector3.right * halfWidth;
+                Vector3 leftB = centerB - Vector3.right * halfWidth;
+                Vector3 rightB = centerB + Vector3.right * halfWidth;
+                float minZ = Mathf.Min(leftA.z, leftB.z);
+                float maxZ = Mathf.Max(leftA.z, leftB.z);
+                if (maxZ < GuidePathNearCullZ || minZ > GuidePathFarCullZ) continue;
+                visual.Buffers.AppendRibbonQuad(ref vertices, ref triangles,
+                    leftA, rightA, uvA, leftB, rightB, uvB);
+            }
+            CommitRibbon(visual.Mesh, visual.Buffers, vertices, triangles);
+        }
+
+        private GuidePathGeometry BuildGuidePathGeometry(VisualGuidePath path)
+        {
+            double duration = path.EndTimeMs - path.TimeMs;
+            bool instant = duration <= .001;
+            if (instant) {
+                // Treat a zero-duration record as a very short authored path.
+                // This keeps its motion continuous through the judgement line
+                // instead of switching to a separate fixed-length renderer.
+                duration = InstantGuidePathTravelMilliseconds;
+            }
+            int sampleCount = instant ? 2 : 48;
+            var times = new double[sampleCount];
+            var progress = new float[sampleCount];
+            // Keep one spatial time base for a complete ALD record. Switching
+            // independent field mappers between samples creates a visible gap
+            // or sudden segment, especially at the head of dense charts.
+            var profiles = new int[sampleCount];
+            for (int i = 0; i < sampleCount; i++) {
+                progress[i] = i / (float)(sampleCount - 1);
+                times[i] = instant
+                    ? path.TimeMs - duration * .5 + duration * progress[i]
+                    : path.TimeMs + duration * progress[i];
+            }
+            int profileId = path.ScrollProfileId;
+            if (profileId < 0)
+                profileId = playback.FindProfile(path.TimeMs, path.Lane, path.Width);
+            for (int i = 0; i < profiles.Length; i++) profiles[i] = profileId;
+            return new GuidePathGeometry(times, progress, profiles, false, 0);
+        }
+
+        private void GuidePathPoint(VisualGuidePath path, double authored, float p, double now,
+            int profile, out Vector3 center, out float uv)
+        {
+            float z = Distance(profile, authored, now);
+            // Project every authored sample independently. The previous
+            // implementation computed the current start/end X positions and
+            // then interpolated between them, which made the whole old line
+            // move whenever either endpoint changed depth. That is a relative
+            // shape, not the authored chart path. Each sample must keep its
+            // own lane/width and only receive the perspective projection for
+            // its own Z position.
+            float lane = Mathf.Lerp(path.Lane, path.EndLane, p);
+            float width = Mathf.Lerp(path.Width, path.EndWidth, p);
+            // Guide lines are authored as a stable overlay over the lane
+            // field. Do not project X at each sample's Z: that makes a line
+            // on one fixed lane lean as it travels through the trapezoid and
+            // makes its angle change whenever the next ALD appears. Keep the
+            // lateral basis fixed while retaining each sample's independent
+            // forward depth.
+            float x = ChartSpace.NoteCenterX(lane, width, ChartSpace.JudgementZ);
+            float y = ChartSpace.AirY(Mathf.Lerp(path.AirHeight, path.EndAirHeight, p));
+            center = new Vector3(x, y, z);
+            uv = p;
+        }
+
+        private void ClearGuidePathVisuals()
+        {
+            foreach (GuidePathVisual visual in activeGuidePaths.Values) visual.Dispose();
+            activeGuidePaths.Clear();
+            guidePathGeometry.Clear();
+        }
+
+        private void BuildGuidePathMaterials()
+        {
+            var colors = new Dictionary<string, Color> {
+                { "RED", new Color(1f, .12f, .12f) }, { "ORN", new Color(1f, .42f, .06f) },
+                { "YEL", new Color(1f, .90f, .08f) }, { "LIM", new Color(.55f, 1f, .08f) },
+                { "GRN", new Color(.08f, 1f, .38f) }, { "DGR", new Color(.02f, .58f, .20f) },
+                { "AQA", new Color(.06f, .95f, 1f) }, { "BLU", new Color(.12f, .40f, 1f) },
+                { "VLT", new Color(.68f, .18f, 1f) }, { "PNK", new Color(1f, .22f, .72f) },
+                { "GRY", new Color(.68f, .72f, .78f) }, { "BLK", new Color(.15f, .16f, .20f) },
+                { "NON", new Color(.34f, .95f, .76f) }
+            };
+            foreach (var pair in colors) {
+                Material line = MeshFactory.Material(pair.Value, false);
+                line.renderQueue = AirTrailQueue;
+                guidePathMaterials[pair.Key] = line;
+            }
+        }
+
+        private static string NormalizeGuidePathColor(string color)
+        {
+            string key = (color ?? "").Trim().ToUpperInvariant();
+            return key switch {
+                "1" => "RED", "2" => "ORN", "3" => "YEL", "4" => "LIM", "5" or "DEF" => "GRN",
+                "6" => "AQA", "7" => "BLU", "8" => "VLT", "9" => "PNK", "10" => "GRY",
+                "11" => "BLK", "12" => "NON",
+                "RED" or "ORN" or "YEL" or "LIM" or "GRN" or "DGR" or "AQA" or "BLU" or
+                "VLT" or "PNK" or "GRY" or "BLK" or "NON" => key,
+                _ => "GRN"
+            };
         }
 
         private double RenderLookAheadMilliseconds()
@@ -435,6 +717,9 @@ namespace ChunithmMobile.Rendering
         {
             min = max = headDistance;
             RibbonGeometry ribbon = geometry[noteIndex];
+            if (longChainOwnerByNote.TryGetValue(noteIndex, out int owner) && owner == noteIndex &&
+                longChainGeometry.TryGetValue(chart.Notes[noteIndex].LongChainId, out LongChainGeometry chain))
+                ribbon = chain.Ribbon;
             for (int i = 0; i < ribbon.SegmentCount; i++) {
                 int profile = ribbon.SegmentProfileIds[i];
                 double start = Distance(profile, ribbon.AuthoredTimes[i], now);
@@ -447,10 +732,12 @@ namespace ChunithmMobile.Rendering
         private void UpdateVisual(NoteVisual visual, int noteIndex, ChartNote note, double now,
             float headZ, float visibilityGuardZ)
         {
-            bool longBody = note.EndTimeMs > note.TimeMs && note.Kind is NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or NoteKind.AirHold or NoteKind.AirAction or NoteKind.AirLadder or NoteKind.AirLine;
+            bool longBody = (note.EndTimeMs > note.TimeMs && note.Kind is
+                (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
+                 NoteKind.AirHold or NoteKind.AirAction));
             visual.Accent.SetActive(false);
             visual.Body.SetActive(longBody); visual.Line.SetActive(longBody);
-            if (longBody) UpdateLongVisual(visual, geometry[noteIndex], note, now);
+            if (longBody) UpdateLongVisual(visual, noteIndex, geometry[noteIndex], note, now);
 
             bool judged = judgedHeads.Contains(noteIndex);
             bool hasReachedJudgementLine = headZ <= ChartSpace.JudgementZ;
@@ -479,11 +766,14 @@ namespace ChunithmMobile.Rendering
                                     ? (insideApproach || (hasReachedJudgementLine && now >= note.TimeMs)) &&
                                       now <= note.TimeMs + JudgementEngine.MissWindowMs(note) * clock.Rate
                                     : insideApproach);
-            if (note.Kind == NoteKind.Slide && !note.VisibleHead && note.HasVisualHead)
-                showHead = insideApproach && now < note.TimeMs;
-            if (note.Kind == NoteKind.AirAction && !note.VisibleHead)
+            // A standalone directional AIR is always an authored visual
+            // layer. Keep it alive through its own AIR window even if damaged
+            // metadata reports zero points; a same-time TAP or long-note cap
+            // must not make the arrow disappear at the judgement plane.
+            // Headless long-note control records still remain approach-only.
+            if ((!OwnsVisualHeadJudgement(note) || note.JudgePointCount <= 0) && note.Kind != NoteKind.Air)
                 showHead = note.HasVisualHead && !judged && insideApproach && now < note.TimeMs;
-            visual.Head.SetActive(showHead && note.Kind is not (NoteKind.AirLadder or NoteKind.AirLine));
+            visual.Head.SetActive(showHead);
             if (visual.Head.activeSelf) {
                 // Ground heads that are waiting for the late MISS boundary are
                 // pinned to the same plane as the gold line, matching arcade
@@ -497,43 +787,66 @@ namespace ChunithmMobile.Rendering
                     noteIndex, note, renderHeadZ, false);
             }
 
+            // A ground note that starts an ASC trail owns two simultaneous
+            // visuals in the original presentation: the green AHTAP cap/body
+            // and an upward AIR arrow rising from the ground plane. Keep the
+            // arrow in Accent so neither visual replaces the other. If the C2S
+            // already provides an explicit AIR/AUL/AUR at this plane, that
+            // authored note remains the sole directional layer.
+            bool showTrailEntryArrow = showHead && IsAirActionTrailEntry(note) &&
+                !airActionEntriesWithDirectionalAir.Contains(noteIndex);
+            visual.Accent.SetActive(showTrailEntryArrow);
+            if (showTrailEntryArrow)
+                UpdateDirectionalAirHead(visual.Accent, visual.AccentFilter, visual.AccentMesh,
+                    visual.AccentRenderer, note.Lane, note.Width, Mathf.Min(headZ, VisualFarZ),
+                    note.AirHeight, AirDirection.Up, connectToCap: true);
+
             // The assignment interval is end-exclusive. Querying exactly at
             // EndTimeMs can therefore select the next profile while the final
             // body interval still belongs to the previous one. Reuse that
             // final interval profile so the tail cannot detach from its body.
             bool showTail = false;
             float tailZ = 0f;
-            bool tailPending = longBody && note.IsLongChainTail && note.VisibleTail && now <= note.EndTimeMs +
-                JudgementEngine.MissWindowMs(note) * clock.Rate;
+            // This cap is geometry, not a separate judgeable note. Its lifetime
+            // ends at the authored tail; attached AIR/TAP records live separately.
+            bool tailPending = longBody && note.IsLongChainTail && note.VisibleTail;
             if (tailPending) {
                 int endProfile = geometry[noteIndex].EndProfileId;
                 tailZ = Distance(endProfile, note.EndTimeMs, now);
                 float tailGuardZ = VisibilityGuardZ(endProfile, note.EndTimeMs, now, tailZ);
-                bool tailReachedLine = tailZ <= ChartSpace.JudgementZ;
-                showTail = ((tailReachedLine && now >= note.EndTimeMs) ||
-                    tailZ >= (now < note.EndTimeMs ? ChartSpace.JudgementZ : ChartSpace.NearZ)) &&
+                // The tail is geometry, not a judgement checkpoint. Keep the
+                // cap only on the approach side of the judgement line; the
+                // body itself is clipped at the same plane below.
+                showTail = tailZ >= ChartSpace.JudgementZ &&
                     tailZ <= VisualFarZ + tailGuardZ;
             }
-            visual.Tail.SetActive(showTail && note.Kind is not (NoteKind.AirLadder or NoteKind.AirLine));
+            visual.Tail.SetActive(showTail);
             if (visual.Tail.activeSelf) {
                 bool tailIsAir = note.Kind is NoteKind.AirHold or NoteKind.AirAction;
-                float renderTailZ = tailIsAir && tailZ <= ChartSpace.JudgementZ && now >= note.EndTimeMs
-                    ? ChartSpace.JudgementZ : Mathf.Min(tailZ, VisualFarZ);
+                float renderTailZ = Mathf.Min(tailZ, VisualFarZ);
                 UpdateHead(visual.Tail, visual.TailFilter, visual.TailMesh,
                     visual.TailRenderer, noteIndex, note, renderTailZ, true);
             }
         }
 
-        private void UpdateLongVisual(NoteVisual visual, RibbonGeometry ribbon, ChartNote note, double now)
+        private void UpdateLongVisual(NoteVisual visual, int noteIndex, RibbonGeometry ribbon, ChartNote note, double now)
         {
-            float start = now > note.TimeMs && note.EndTimeMs > note.TimeMs ? Mathf.Clamp01((float)((now - note.TimeMs) / (note.EndTimeMs - note.TimeMs))) : 0f;
-            bool visible = now < note.EndTimeMs;
+            if (note.LongChainId >= 0 && longChainGeometry.TryGetValue(note.LongChainId, out LongChainGeometry chain)) {
+                if (!longChainOwnerByNote.TryGetValue(noteIndex, out int owner) || owner != noteIndex) {
+                    visual.Body.SetActive(false);
+                    visual.Line.SetActive(false);
+                    return;
+                }
+                ribbon = chain.Ribbon;
+            }
+            // Keep the complete authored curve. Its segments are clipped only
+            // by the shared spatial viewport below, so the endpoint crossing
+            // the judgement line retains the authored bend without adding a
+            // renderer-side overshoot.
+            float start = 0f;
+            bool visible = true;
             if (note.Kind == NoteKind.HeavenHold) {
                 UpdateHeavenHoldVisual(visual, ribbon, note, now, start, visible);
-                return;
-            }
-            if (note.Kind == NoteKind.AirLadder) {
-                UpdateAirLadderVisual(visual, ribbon, note, now, start, visible);
                 return;
             }
             bool hasCentreLine = note.Kind != NoteKind.Hold;
@@ -549,199 +862,14 @@ namespace ChunithmMobile.Rendering
                     air = true;
                     break;
                 case NoteKind.AirHold: body = airHoldBody; line = airActionTrailGreenLine; air = true; break;
-                case NoteKind.AirLine:
-                    // ALD is a chart-authored decorative line. It must never
-                    // inherit AIR ACTION's rainbow/green trail preference.
-                    body = AirLineBodyMaterial(note.AirLineColor);
-                    line = AirLineMaterial(note.AirLineColor);
-                    air = true;
-                    break;
                 default: body = holdBody; line = holdLine; break;
             }
             visual.BodyRenderer.sharedMaterial = body; visual.LineRenderer.sharedMaterial = line;
-            UpdateRibbon(visual.BodyMesh, visual.BodyBuffers, ribbon, note, now, start, air, false);
+            UpdateRibbon(visual.BodyMesh, visual.BodyBuffers, ribbon, note, now, start, air, false,
+                RibbonGameplayNearClipZ);
             if (hasCentreLine)
-                UpdateRibbon(visual.LineMesh, visual.LineBuffers, ribbon, note, now, start, air, true);
-        }
-
-        private void UpdateAirLadderVisual(NoteVisual visual, RibbonGeometry ribbon, ChartNote note,
-            double now, float start, bool visible)
-        {
-            visual.Body.SetActive(visible);
-            visual.Line.SetActive(visible);
-            visual.Accent.SetActive(false);
-            if (!visible) return;
-
-            // One-tick ALD posts are composite objects: a horizontal cap at
-            // the authored starting height and a narrow connection below it.
-            // Stretching air_train across Width turns stacked caps into walls.
-            if (note.EndTimeMs - note.TimeMs <= 24.0) {
-                UpdateShortAirLadderVisual(visual, ribbon, note, now, start);
-                return;
-            }
-
-            bool horizontal = Mathf.Abs(note.EndAirHeight - note.AirHeight) < .01f;
-            bool defaultColor = IsDefaultAirLadderColor(note.AirLineColor);
-            visual.BodyRenderer.sharedMaterial = defaultColor
-                ? (horizontal ? airLadderTop : airLadderPost)
-                : AirLineBodyMaterial(note.AirLineColor);
-            visual.LineRenderer.sharedMaterial = defaultColor
-                ? airLadderEdge
-                : AirLineMaterial(note.AirLineColor);
-
-            UpdateAirLadderBody(visual.BodyMesh, visual.BodyBuffers, ribbon, note, now, start);
-            UpdateAirLadderAccent(visual.LineMesh, visual.LineBuffers, ribbon, note, now, start, horizontal);
-        }
-
-        private void UpdateShortAirLadderVisual(NoteVisual visual, RibbonGeometry ribbon,
-            ChartNote note, double now, float start)
-        {
-            bool defaultColor = IsDefaultAirLadderColor(note.AirLineColor);
-            // A short ALD is an instant field-decoration event. The arcade
-            // renderer reveals the complete rail at once; it is not a tiny
-            // airborne cap that scrolls in from the far edge.
-            visual.Body.SetActive(false);
-            visual.Accent.SetActive(false);
-            bool active = now >= note.TimeMs &&
-                now <= note.TimeMs + AirDecorationHoldMilliseconds;
-            visual.Line.SetActive(active);
-            if (!active) return;
-            visual.LineRenderer.sharedMaterial = defaultColor
-                ? airLadderEdge : AirLineMaterial(note.AirLineColor);
-            SetFullDepthAirDecoration(visual.LineMesh, visual.LineBuffers, note);
-        }
-
-        private static void SetFullDepthAirDecoration(Mesh mesh, RibbonBuffers buffers, ChartNote note)
-        {
-            buffers.BeginFrame();
-            buffers.EnsureCapacity(1);
-            int vertices = 0;
-            int triangles = 0;
-            float height = ChartSpace.AirY(note.AirHeight);
-            float nearX = ChartSpace.NoteCenterX(note.Lane, note.Width, ChartSpace.NearZ);
-            float farX = ChartSpace.NoteCenterX(note.EndLane, note.EndWidth, ChartSpace.FarZ);
-            float nearHalf = FixedLineHalfWidth(.115f);
-            float farHalf = FixedLineHalfWidth(.115f);
-            buffers.AppendRibbonQuad(ref vertices, ref triangles,
-                new Vector3(nearX - nearHalf, height, ChartSpace.NearZ),
-                new Vector3(nearX + nearHalf, height, ChartSpace.NearZ),
-                0f,
-                new Vector3(farX - farHalf, height, ChartSpace.FarZ),
-                new Vector3(farX + farHalf, height, ChartSpace.FarZ),
-                1f);
-            CommitRibbon(mesh, buffers, vertices, triangles);
-        }
-
-        private void UpdateAirLadderBody(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon,
-            ChartNote note, double now, float start)
-        {
-            buffers.BeginFrame();
-            buffers.EnsureCapacity(ribbon.SegmentCount);
-            double duration = Math.Max(.001, note.EndTimeMs - note.TimeMs);
-            double cutoff = note.TimeMs + duration * Mathf.Clamp01(start);
-            int vertices = 0;
-            int triangles = 0;
-            for (int i = 0; i < ribbon.SegmentCount; i++) {
-                double segmentStart = Math.Max(cutoff, ribbon.AuthoredTimes[i]);
-                double segmentEnd = ribbon.AuthoredTimes[i + 1];
-                if (segmentEnd <= segmentStart + .001) continue;
-                int profile = ribbon.SegmentProfileIds[i];
-                CalculateAirLadderPoint(note, segmentStart, now, profile,
-                    out Vector3 leftA, out Vector3 rightA, out float uvA);
-                CalculateAirLadderPoint(note, segmentEnd, now, profile,
-                    out Vector3 leftB, out Vector3 rightB, out float uvB);
-                PadShortAirLadder(note, ribbon, i, ref leftA, ref rightA, ref leftB, ref rightB);
-                if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
-                        ref leftB, ref rightB, ref uvB,
-                        ChartSpace.NearZ, ChartSpace.FarZ + ChartSpace.JudgementZ + 8f))
-                    continue;
-                buffers.AppendRibbonQuad(ref vertices, ref triangles,
-                    leftA, rightA, uvA, leftB, rightB, uvB);
-            }
-            CommitRibbon(mesh, buffers, vertices, triangles);
-        }
-
-        private void UpdateAirLadderAccent(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon,
-            ChartNote note, double now, float start, bool horizontal)
-        {
-            buffers.BeginFrame();
-            buffers.EnsureCapacity(ribbon.SegmentCount * 2);
-            double duration = Math.Max(.001, note.EndTimeMs - note.TimeMs);
-            double cutoff = note.TimeMs + duration * Mathf.Clamp01(start);
-            int vertices = 0;
-            int triangles = 0;
-            for (int i = 0; i < ribbon.SegmentCount; i++) {
-                double segmentStart = Math.Max(cutoff, ribbon.AuthoredTimes[i]);
-                double segmentEnd = ribbon.AuthoredTimes[i + 1];
-                if (segmentEnd <= segmentStart + .001) continue;
-                int profile = ribbon.SegmentProfileIds[i];
-                CalculateAirLadderPoint(note, segmentStart, now, profile,
-                    out Vector3 leftA, out Vector3 rightA, out float uvA);
-                CalculateAirLadderPoint(note, segmentEnd, now, profile,
-                    out Vector3 leftB, out Vector3 rightB, out float uvB);
-                PadShortAirLadder(note, ribbon, i, ref leftA, ref rightA, ref leftB, ref rightB);
-                if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
-                        ref leftB, ref rightB, ref uvB,
-                        ChartSpace.NearZ, ChartSpace.FarZ + ChartSpace.JudgementZ + 8f))
-                    continue;
-
-                if (horizontal) {
-                    const float edge = .045f;
-                    buffers.AppendRibbonQuad(ref vertices, ref triangles,
-                        leftA - Vector3.right * edge, leftA + Vector3.right * edge, uvA,
-                        leftB - Vector3.right * edge, leftB + Vector3.right * edge, uvB);
-                    buffers.AppendRibbonQuad(ref vertices, ref triangles,
-                        rightA - Vector3.right * edge, rightA + Vector3.right * edge, uvA,
-                        rightB - Vector3.right * edge, rightB + Vector3.right * edge, uvB);
-                } else {
-                    Vector3 centerA = (leftA + rightA) * .5f;
-                    Vector3 centerB = (leftB + rightB) * .5f;
-                    float halfA = Mathf.Min(.055f, Vector3.Distance(leftA, rightA) * .22f);
-                    float halfB = Mathf.Min(.055f, Vector3.Distance(leftB, rightB) * .22f);
-                    buffers.AppendRibbonQuad(ref vertices, ref triangles,
-                        centerA - Vector3.right * halfA, centerA + Vector3.right * halfA, uvA,
-                        centerB - Vector3.right * halfB, centerB + Vector3.right * halfB, uvB);
-                }
-            }
-            CommitRibbon(mesh, buffers, vertices, triangles);
-        }
-
-        private void CalculateAirLadderPoint(ChartNote note, double authored, double now, int profile,
-            out Vector3 left, out Vector3 right, out float uv)
-        {
-            float p = note.EndTimeMs > note.TimeMs
-                ? Mathf.Clamp01((float)((authored - note.TimeMs) / (note.EndTimeMs - note.TimeMs)))
-                : 0f;
-            float lane = Mathf.Lerp(note.Lane, note.EndLane, p);
-            float width = Mathf.Lerp(note.Width, note.EndWidth, p);
-            float z = Distance(profile, authored, now);
-            float x = ChartSpace.NoteCenterX(lane, width, z);
-            float half = Mathf.Max(.035f, ChartSpace.NoteHalfWidth(width, z) * .96f);
-            float y = ChartSpace.AirY(Mathf.Lerp(note.AirHeight, note.EndAirHeight, p));
-            left = new Vector3(x - half, y, z);
-            right = new Vector3(x + half, y, z);
-            uv = p;
-        }
-
-        private static void PadShortAirLadder(ChartNote note, RibbonGeometry ribbon, int segmentIndex,
-            ref Vector3 leftA, ref Vector3 rightA, ref Vector3 leftB, ref Vector3 rightB)
-        {
-            if (note.EndTimeMs - note.TimeMs > 24.0) return;
-            const float halfDepth = .24f;
-            if (segmentIndex == 0) {
-                leftA.z -= halfDepth;
-                rightA.z -= halfDepth;
-            }
-            if (segmentIndex == ribbon.SegmentCount - 1) {
-                leftB.z += halfDepth;
-                rightB.z += halfDepth;
-            }
-        }
-
-        private static bool IsDefaultAirLadderColor(string color)
-        {
-            string key = (color ?? "").Trim().ToUpperInvariant();
-            return key.Length == 0 || key is "DEF" or "NON" or "12";
+                UpdateRibbon(visual.LineMesh, visual.LineBuffers, ribbon, note, now, start, air, true,
+                    RibbonGameplayNearClipZ);
         }
 
         private void UpdateHeavenHoldVisual(NoteVisual visual, RibbonGeometry ribbon, ChartNote note,
@@ -763,13 +891,13 @@ namespace ChunithmMobile.Rendering
 
             float roofY = ChartSpace.AirY(5f);
             UpdateHeavenSurface(visual.BodyMesh, visual.BodyBuffers, ribbon, note, now, start,
-                roofY, .70f);
+                roofY, .70f, RibbonGameplayNearClipZ);
             UpdateHeavenWalls(visual.LineMesh, visual.LineBuffers, ribbon, note, now, start,
-                roofY, .98f);
+                roofY, .98f, RibbonGameplayNearClipZ);
         }
 
         private void UpdateHeavenSurface(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon,
-            ChartNote note, double now, float start, float y, float widthScale)
+            ChartNote note, double now, float start, float y, float widthScale, float nearClip)
         {
             buffers.BeginFrame();
             buffers.EnsureCapacity(ribbon.SegmentCount);
@@ -788,7 +916,7 @@ namespace ChunithmMobile.Rendering
                     out Vector3 leftB, out Vector3 rightB, out float uvB);
                 if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
                         ref leftB, ref rightB, ref uvB,
-                        ChartSpace.NearZ, ChartSpace.FarZ + ChartSpace.JudgementZ + 8f))
+                        nearClip, RibbonBodyFarClipZ))
                     continue;
                 buffers.AppendRibbonQuad(ref vertices, ref triangles,
                     leftA, rightA, uvA, leftB, rightB, uvB);
@@ -797,7 +925,7 @@ namespace ChunithmMobile.Rendering
         }
 
         private void UpdateHeavenWalls(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon,
-            ChartNote note, double now, float start, float y, float widthScale)
+            ChartNote note, double now, float start, float y, float widthScale, float nearClip)
         {
             buffers.BeginFrame();
             buffers.EnsureCapacity(ribbon.SegmentCount * 2);
@@ -816,7 +944,7 @@ namespace ChunithmMobile.Rendering
                     out Vector3 leftB, out Vector3 rightB, out float uvB);
                 if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
                         ref leftB, ref rightB, ref uvB,
-                        ChartSpace.NearZ, ChartSpace.FarZ + ChartSpace.JudgementZ + 8f))
+                         nearClip, RibbonBodyFarClipZ))
                     continue;
 
                 buffers.AppendWallQuad(ref vertices, ref triangles,
@@ -847,66 +975,8 @@ namespace ChunithmMobile.Rendering
             uv = p;
         }
 
-        private Material AirLineMaterial(string color)
-        {
-            string key = NormalizeAirLineColor(color);
-            return airLineMaterials.TryGetValue(key, out Material material)
-                ? material : airLineMaterials["GRN"];
-        }
-
-        private Material AirLineBodyMaterial(string color)
-        {
-            string key = NormalizeAirLineColor(color);
-            return airLineBodyMaterials.TryGetValue(key, out Material material)
-                ? material : airLineBodyMaterials["GRN"];
-        }
-
-        private void BuildAirLineMaterials()
-        {
-            var colors = new Dictionary<string, Color>(StringComparer.OrdinalIgnoreCase) {
-                { "RED", new Color(1f, .12f, .12f, 1f) },
-                { "ORN", new Color(1f, .42f, .06f, 1f) },
-                { "YEL", new Color(1f, .90f, .08f, 1f) },
-                { "LIM", new Color(.55f, 1f, .08f, 1f) },
-                { "GRN", new Color(.08f, 1f, .38f, 1f) },
-                { "DGR", new Color(.02f, .58f, .20f, 1f) },
-                { "AQA", new Color(.06f, .95f, 1f, 1f) },
-                { "CYN", new Color(.02f, .62f, .72f, 1f) },
-                { "BLU", new Color(.12f, .40f, 1f, 1f) },
-                { "PPL", new Color(.42f, .12f, .92f, 1f) },
-                { "VLT", new Color(.68f, .18f, 1f, 1f) },
-                { "PNK", new Color(1f, .22f, .72f, 1f) },
-                { "GRY", new Color(.68f, .72f, .78f, 1f) },
-                { "BLK", new Color(.15f, .16f, .20f, 1f) },
-                { "NON", new Color(.34f, .95f, .76f, 1f) }
-            };
-            foreach (var pair in colors) {
-                Color lineColor = pair.Value;
-                lineColor.a = .94f;
-                Material line = MeshFactory.Material(lineColor, true);
-                line.renderQueue = AirLineQueue;
-                airLineMaterials[pair.Key] = line;
-
-                Color bodyColor = pair.Value;
-                bodyColor.a = .34f;
-                Material body = MeshFactory.Material(bodyColor, true);
-                body.renderQueue = AirDecorationQueue;
-                airLineBodyMaterials[pair.Key] = body;
-            }
-        }
-
-        private static string NormalizeAirLineColor(string color)
-        {
-            string key = (color ?? "").Trim().ToUpperInvariant();
-            return key switch {
-                "1" => "RED", "2" => "ORN", "3" => "YEL", "4" => "LIM",
-                "5" or "DEF" => "GRN", "6" => "AQA",
-                "7" => "BLU", "8" => "VLT", "9" => "PNK",
-                "10" => "GRY", "11" => "BLK", "12" => "NON", _ => key
-            };
-        }
-
-        private void UpdateRibbon(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon, ChartNote note, double now, float start, bool air, bool line)
+        private void UpdateRibbon(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon, ChartNote note,
+            double now, float start, bool air, bool line, float nearClip)
         {
             buffers.BeginFrame();
             buffers.EnsureCapacity(ribbon.SegmentCount);
@@ -923,13 +993,15 @@ namespace ChunithmMobile.Rendering
                 // Otherwise a profile switch joins unrelated Z positions and
                 // creates the large diagonal triangles seen on complex charts.
                 int profile = ribbon.SegmentProfileIds[i];
-                CalculateRibbonPoint(note, segmentStart, now, profile, air, line,
+                CalculateRibbonPoint(note, segmentStart, now, profile, ribbon.Lanes[i], ribbon.Widths[i],
+                    ribbon.AirHeights[i], ribbon.Uv[i], air, line,
                     out Vector3 leftA, out Vector3 rightA, out float uvA);
-                CalculateRibbonPoint(note, segmentEnd, now, profile, air, line,
+                CalculateRibbonPoint(note, segmentEnd, now, profile, ribbon.Lanes[i + 1], ribbon.Widths[i + 1],
+                    ribbon.AirHeights[i + 1], ribbon.Uv[i + 1], air, line,
                     out Vector3 leftB, out Vector3 rightB, out float uvB);
                 if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
                         ref leftB, ref rightB, ref uvB,
-                        ChartSpace.NearZ, ChartSpace.FarZ + ChartSpace.JudgementZ + 8f))
+                        nearClip, RibbonBodyFarClipZ))
                     continue;
                 buffers.AppendRibbonQuad(ref vertices, ref triangles,
                     leftA, rightA, uvA, leftB, rightB, uvB);
@@ -938,28 +1010,24 @@ namespace ChunithmMobile.Rendering
         }
 
         private void CalculateRibbonPoint(ChartNote note, double authored, double now, int profile,
-            bool air, bool line, out Vector3 left, out Vector3 right, out float uv)
+            float lane, float width, float airHeight, float uvValue, bool air, bool line,
+            out Vector3 left, out Vector3 right, out float uv)
         {
-            float p = note.EndTimeMs > note.TimeMs
-                ? Mathf.Clamp01((float)((authored - note.TimeMs) / (note.EndTimeMs - note.TimeMs)))
-                : 0f;
-            float lane = Mathf.Lerp(note.Lane, note.EndLane, p);
-            float width = Mathf.Lerp(note.Width, note.EndWidth, p);
             float z = Distance(profile, authored, now);
             float x = ChartSpace.NoteCenterX(lane, width, z);
-            float half = line ? FixedLineHalfWidth(air ? .115f : .032f) : ChartSpace.NoteHalfWidth(width, z) * .93f;
+            float half = line
+                ? FixedLineHalfWidth(air ? .115f : .032f)
+                : ChartSpace.NoteHalfWidth(width, z) * .93f;
             if (air && !line) {
                 // AIR-HOLD has a full-width translucent sheet and a separate
-                // narrow centre line. Decorative lines remain thin.
-                half = note.Kind == NoteKind.AirLine
-                    ? FixedLineHalfWidth(.115f)
-                    : note.Kind == NoteKind.AirHold ? half
+                // narrow centre line.
+                half = note.Kind == NoteKind.AirHold ? half
                     : Mathf.Max(FixedLineHalfWidth(.115f), half * .34f);
             }
-            float y = air ? ChartSpace.AirY(Mathf.Lerp(note.AirHeight, note.EndAirHeight, p)) : (line ? .085f : .055f);
+            float y = air ? ChartSpace.AirY(airHeight) : (line ? .085f : .055f);
             left = new Vector3(x - half, y, z);
             right = new Vector3(x + half, y, z);
-            uv = p;
+            uv = uvValue;
         }
 
         private static void CommitRibbon(Mesh mesh, RibbonBuffers buffers,
@@ -976,11 +1044,14 @@ namespace ChunithmMobile.Rendering
         private static bool ClipRibbonSegment(ref Vector3 leftA, ref Vector3 rightA, ref float uvA,
             ref Vector3 leftB, ref Vector3 rightB, ref float uvB, float near, float far)
         {
-            if ((leftA.z < near && leftB.z < near) || (leftA.z > far && leftB.z > far)) return false;
-            if (leftA.z < near) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, near);
-            else if (leftA.z > far) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, far);
-            if (leftB.z < near) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, near);
-            else if (leftB.z > far) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, far);
+            float stableNear = near - RibbonClipEpsilonZ;
+            float stableFar = far + RibbonClipEpsilonZ;
+            if ((leftA.z < stableNear && leftB.z < stableNear) ||
+                (leftA.z > stableFar && leftB.z > stableFar)) return false;
+            if (leftA.z < stableNear) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, stableNear);
+            else if (leftA.z > stableFar) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, stableFar);
+            if (leftB.z < stableNear) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, stableNear);
+            else if (leftB.z > stableFar) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, stableFar);
             return true;
         }
 
@@ -1013,34 +1084,27 @@ namespace ChunithmMobile.Rendering
             float x = ChartSpace.NoteCenterX(lane, width, z), half = ChartSpace.NoteHalfWidth(width, z);
             if (note.Kind == NoteKind.Air) {
                 if (!tail && pairedGroundByAir.TryGetValue(index, out ChartNote ground)) { lane = ground.Lane; width = Mathf.Clamp(ground.Width, 1, 16); x = ChartSpace.NoteCenterX(lane, width, z); half = ChartSpace.NoteHalfWidth(width, z); }
-                bool down = note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight;
-                bool tilted = note.AirDirection is AirDirection.UpLeft or AirDirection.UpRight or AirDirection.DownLeft or AirDirection.DownRight;
-                // The extracted tilted meshes are authored from the right
-                // facing base pose. Left-facing chart opcodes therefore use
-                // the mirrored mesh; this keeps AUL/ADL visually left of the
-                // lane just like the original playfield.
-                bool mirror = note.AirDirection is AirDirection.UpRight or AirDirection.DownRight;
-                string meshKind = down ? (tilted ? "airdwtilt" : "airdw") : (tilted ? "airuptilt" : "airup");
-                if (!SetOriginalAirMesh(target, filter, meshKind, width, x, z, note.AirHeight, mirror)) {
-                    filter.sharedMesh = fallbackMesh;
-                    SetAirTriangle(fallbackMesh, x, half, z, note.AirHeight, note.AirDirection);
-                    target.transform.localPosition = Vector3.zero;
-                    target.transform.localRotation = Quaternion.identity;
-                    target.transform.localScale = Vector3.one;
-                }
-                renderer.sharedMaterial = HeadMaterial(down ? "air_down" : "air_up", width);
+                UpdateDirectionalAirHead(target, filter, fallbackMesh, renderer, lane, width, z,
+                    note.AirHeight, note.AirDirection, connectToCap: false);
                 return;
             }
             if (note.Kind is NoteKind.AirHold or NoteKind.AirAction) {
                 float height = tail ? note.EndAirHeight : note.AirHeight;
                 bool action = note.Kind == NoteKind.AirAction;
-                string meshKind = action ? "ahact" : (tail ? "ahtapend" : "ahtap");
-                bool placed = action
+                // An ASC that starts from a ground TAP/CHR/HOLD is the entry
+                // of the green AIR trail. The original presentation uses the
+                // green AHTAP connector there; AHACT is reserved for authored
+                // action nodes inside the trail. This is a visual ownership
+                // rule, not an AIR direction: ASC still has AirDirection.None.
+                bool trailEntry = !tail && IsAirActionTrailEntry(note);
+                string meshKind = action && !trailEntry
+                    ? "ahact" : (tail ? "ahtapend" : "ahtap");
+                bool placed = action && !trailEntry
                     ? SetOriginalAirActionMesh(target, filter, meshKind, width, x, z, height)
                     : SetOriginalAirHoldMesh(target, filter, meshKind, width, x, z, height, tail);
                 if (!placed) {
                     filter.sharedMesh = fallbackMesh;
-                    SetAirCapQuad(fallbackMesh, x, half * (action ? .72f : .56f), z,
+                    SetAirCapQuad(fallbackMesh, x, half * (action && !trailEntry ? .72f : .56f), z,
                         ChartSpace.AirY(height), tail ? .38f : .52f);
                     target.transform.localPosition = Vector3.zero;
                     target.transform.localRotation = Quaternion.identity;
@@ -1093,6 +1157,36 @@ namespace ChunithmMobile.Rendering
             }
             string textureKey = key == "holdend" ? "hold" : key == "slideend" ? "slide" : key;
             renderer.sharedMaterial = HeadMaterial(textureKey, width);
+        }
+
+        private static bool IsAirActionTrailEntry(ChartNote note) =>
+            note != null && note.Kind == NoteKind.AirAction &&
+            note.OriginalType == "ASC" && note.HasVisualHead && !note.IsContinuation;
+
+        private void UpdateDirectionalAirHead(GameObject target, MeshFilter filter, Mesh fallbackMesh,
+            MeshRenderer renderer, int lane, int width, float z, float airHeight,
+            AirDirection direction, bool connectToCap)
+        {
+            width = Mathf.Clamp(width, 1, 16);
+            float x = ChartSpace.NoteCenterX(lane, width, z);
+            float half = ChartSpace.NoteHalfWidth(width, z);
+            bool down = direction is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight;
+            bool tilted = direction is AirDirection.UpLeft or AirDirection.UpRight or AirDirection.DownLeft or AirDirection.DownRight;
+            // The extracted tilted mesh points right in its original model
+            // space. AUR/ADR therefore use it directly; AUL/ADL use the
+            // mirrored copy. The synthesized ASC entry uses the straight UP
+            // mesh and extends it to the AHTAP cap to form one continuous shape.
+            bool mirror = ShouldMirrorAirMesh(direction);
+            string meshKind = down ? (tilted ? "airdwtilt" : "airdw") : (tilted ? "airuptilt" : "airup");
+            if (!SetOriginalAirMesh(target, filter, meshKind, width, x, z, airHeight, mirror,
+                    connectToCap ? 1f : .72f)) {
+                filter.sharedMesh = fallbackMesh;
+                SetAirTriangle(fallbackMesh, x, half, z, airHeight, direction);
+                target.transform.localPosition = Vector3.zero;
+                target.transform.localRotation = Quaternion.identity;
+                target.transform.localScale = Vector3.one;
+            }
+            renderer.sharedMaterial = HeadMaterial(down ? "air_down" : "air_up", width);
         }
 
         private bool SetOriginalAirHoldMesh(GameObject target, MeshFilter filter, string kind, int width,
@@ -1173,7 +1267,8 @@ namespace ChunithmMobile.Rendering
             return true;
         }
 
-        private bool SetOriginalAirMesh(GameObject target, MeshFilter filter, string kind, int width, float x, float z, float airHeight, bool mirror)
+        private bool SetOriginalAirMesh(GameObject target, MeshFilter filter, string kind, int width, float x, float z,
+            float airHeight, bool mirror, float heightScale)
         {
             string key = kind + "_" + Mathf.Clamp(width, 1, 16).ToString("00");
             if (!originalMeshes.TryGetValue(key, out Mesh mesh)) return false;
@@ -1185,7 +1280,7 @@ namespace ChunithmMobile.Rendering
             float scaleX = targetWidth / bounds.size.x;
             float airBaseY = .18f;
             float authoredTopY = Mathf.Max(airBaseY + .8f, ChartSpace.AirY(airHeight));
-            float targetTopY = airBaseY + (authoredTopY - airBaseY) * .72f;
+            float targetTopY = airBaseY + (authoredTopY - airBaseY) * Mathf.Clamp01(heightScale);
             float scaleY = (targetTopY - airBaseY) / bounds.max.y;
             // Diagonal models carry real authored Z depth. It is independent
             // from lane width; scaling it with X made wide AIR arrows become
@@ -1228,6 +1323,9 @@ namespace ChunithmMobile.Rendering
             return mirrored;
         }
 
+        private static bool ShouldMirrorAirMesh(AirDirection direction) =>
+            direction is AirDirection.UpLeft or AirDirection.DownLeft;
+
         private Material HeadMaterial(string kind, int width)
         {
             string key = kind + "_" + Mathf.Clamp(width, 1, 16).ToString("00");
@@ -1247,7 +1345,7 @@ namespace ChunithmMobile.Rendering
             var groundsByTime = new Dictionary<long, List<ChartNote>>();
             for (int i = 0; i < notes.Count; i++) {
                 ChartNote ground = notes[i];
-                if (ground.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction or NoteKind.AirLadder or NoteKind.AirLine)
+                if (ground.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction)
                     continue;
                 long key = AirPairTimeKey(ground.TimeMs);
                 if (!groundsByTime.TryGetValue(key, out List<ChartNote> grounds)) {
@@ -1274,7 +1372,7 @@ namespace ChunithmMobile.Rendering
                         if (timeDelta > .1) continue;
                         int overlap = Math.Max(0, Math.Min(ground.Lane + Math.Max(1, ground.Width),
                             air.Lane + Math.Max(1, air.Width)) - Math.Max(ground.Lane, air.Lane));
-                        if (overlap <= 0) continue;
+                        if (overlap <= 0 || !ground.VisibleHead) continue;
                         float groundCenter = ground.Lane + Math.Max(1, ground.Width) * .5f;
                         float airCenter = air.Lane + Math.Max(1, air.Width) * .5f;
                         float centerDistance = Mathf.Abs(groundCenter - airCenter);
@@ -1294,20 +1392,41 @@ namespace ChunithmMobile.Rendering
             }
         }
 
+        private void BuildAirActionArrowOwnership(IReadOnlyList<ChartNote> notes)
+        {
+            airActionEntriesWithDirectionalAir.Clear();
+            for (int actionIndex = 0; actionIndex < notes.Count; actionIndex++) {
+                ChartNote action = notes[actionIndex];
+                if (!IsAirActionTrailEntry(action)) continue;
+                int actionEnd = action.Lane + Math.Max(1, action.Width);
+                for (int airIndex = 0; airIndex < notes.Count; airIndex++) {
+                    ChartNote air = notes[airIndex];
+                    if (air.Kind != NoteKind.Air || Math.Abs(air.TimeMs - action.TimeMs) > .1) continue;
+                    int airEnd = air.Lane + Math.Max(1, air.Width);
+                    if (action.Lane < airEnd && air.Lane < actionEnd) {
+                        airActionEntriesWithDirectionalAir.Add(actionIndex);
+                        break;
+                    }
+                }
+            }
+        }
+
         private static long AirPairTimeKey(double timeMs) =>
             (long)Math.Round(timeMs * 10.0, MidpointRounding.AwayFromZero);
 
+        /// <summary>标记一个判定点已消费，使头、段、尾视觉可以独立决定回收时机。</summary>
         public void MarkJudged(int noteIndex, int pointIndex)
         {
             if (chart == null || noteIndex < 0 || noteIndex >= chart.Notes.Count) return;
             ChartNote note = chart.Notes[noteIndex];
-            if (note.HasVisualHead && note.VisibleHead && pointIndex == 0) judgedHeads.Add(noteIndex);
+            if (note.HasVisualHead && OwnsVisualHeadJudgement(note) && pointIndex == 0)
+                judgedHeads.Add(noteIndex);
         }
 
         private bool IsUnresolvedHead(ChartNote note, int noteIndex, double now)
         {
             if (note == null || !note.HasVisualHead || now < note.TimeMs || judgedHeads.Contains(noteIndex)) return false;
-            if (note.Kind == NoteKind.Slide && !note.VisibleHead) return false;
+            if (!OwnsVisualHeadJudgement(note) || note.JudgePointCount <= 0) return false;
             if (note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or NoteKind.Mine or
                 NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide)
                 return now <= note.TimeMs + JudgementEngine.MissWindowMs(note) * clock.Rate;
@@ -1316,6 +1435,10 @@ namespace ChunithmMobile.Rendering
             return now <= note.TimeMs + JudgementEngine.MissWindowMs(note.Kind, down, note.AirFlick) * clock.Rate;
         }
 
+        private static bool OwnsVisualHeadJudgement(ChartNote note) =>
+            note != null && (note.VisibleHead ||
+                note.Kind == NoteKind.AirHold && note.HasVisualHead && !note.IsContinuation);
+
         private RibbonGeometry BuildGeometry(ChartNote note)
         {
             // Keep uniform authored samples for ordinary curves, but always add
@@ -1323,10 +1446,14 @@ namespace ChunithmMobile.Rendering
             // boundary while its endpoints remain outside the screen; without
             // these knots the renderer draws a straight shortcut or loses the
             // visible middle section.
-            int minimumSamples = note.Kind is NoteKind.AirLadder or NoteKind.AirLine ? 48 : 12;
+            int minimumSamples = 12;
             if (note.EndTimeMs <= note.TimeMs) {
                 var point = new RibbonGeometry(2);
                 point.AuthoredTimes[0] = point.AuthoredTimes[1] = note.TimeMs;
+                point.Lanes[0] = point.Lanes[1] = note.Lane;
+                point.Widths[0] = point.Widths[1] = note.Width;
+                point.AirHeights[0] = point.AirHeights[1] = note.AirHeight;
+                point.Uv[0] = point.Uv[1] = 0f;
                 point.SegmentProfileIds[0] = playback.FindProfile(
                     note.TimeMs, note.Lane, Math.Max(1, note.Width));
                 return point;
@@ -1387,6 +1514,12 @@ namespace ChunithmMobile.Rendering
             var result = new RibbonGeometry(unique.Count);
             for (int i = 0; i < unique.Count; i++) {
                 result.AuthoredTimes[i] = unique[i];
+                float p = Mathf.Clamp01((float)((unique[i] - note.TimeMs) /
+                    (note.EndTimeMs - note.TimeMs)));
+                result.Lanes[i] = Mathf.Lerp(note.Lane, note.EndLane, p);
+                result.Widths[i] = Mathf.Lerp(note.Width, note.EndWidth, p);
+                result.AirHeights[i] = Mathf.Lerp(note.AirHeight, note.EndAirHeight, p);
+                result.Uv[i] = p;
             }
             for (int i = 0; i < result.SegmentCount; i++) {
                 double authored = (result.AuthoredTimes[i] + result.AuthoredTimes[i + 1]) * .5;
@@ -1400,12 +1533,133 @@ namespace ChunithmMobile.Rendering
             return result;
         }
 
+        // Only weld a proven one-to-one continuation. Parser chain IDs can
+        // contain forks, so the renderer keeps ambiguous branches separate.
+        private void BuildLongChainGeometry(IReadOnlyList<ChartNote> notes)
+        {
+            longChainGeometry.Clear();
+            longChainOwnerByNote.Clear();
+            var groups = new Dictionary<int, List<int>>();
+            for (int i = 0; i < notes.Count; i++) {
+                int chainId = notes[i].LongChainId;
+                if (chainId < 0) continue;
+                if (!groups.TryGetValue(chainId, out List<int> members))
+                    groups[chainId] = members = new List<int>();
+                members.Add(i);
+            }
+
+            foreach (var pair in groups) {
+                List<int> members = pair.Value;
+                members.Sort((a, b) => notes[a].TimeMs.CompareTo(notes[b].TimeMs));
+                foreach (int index in members) longChainOwnerByNote[index] = index;
+                if (members.Count < 2 || !IsLinearLongChain(notes, members)) continue;
+                foreach (int index in members) longChainOwnerByNote[index] = members[0];
+
+                var times = new List<double>();
+                foreach (int index in members)
+                    foreach (double time in geometry[index].AuthoredTimes)
+                        if (time >= notes[members[0]].TimeMs - .001 &&
+                            time <= notes[members[members.Count - 1]].EndTimeMs + .001)
+                            times.Add(time);
+                times.Sort();
+                var unique = new List<double>(times.Count);
+                foreach (double time in times)
+                    if (unique.Count == 0 || Math.Abs(time - unique[unique.Count - 1]) > .001)
+                        unique.Add(time);
+                if (unique.Count < 2) continue;
+
+                var ribbon = new RibbonGeometry(unique.Count);
+                double chainStart = notes[members[0]].TimeMs;
+                double chainEnd = notes[members[members.Count - 1]].EndTimeMs;
+                for (int i = 0; i < unique.Count; i++) {
+                    double authored = unique[i];
+                    ribbon.AuthoredTimes[i] = authored;
+                    ribbon.Uv[i] = chainEnd > chainStart
+                        ? Mathf.Clamp01((float)((authored - chainStart) / (chainEnd - chainStart))) : 0f;
+                    int segment = FindChainSegment(notes, members, authored);
+                    ChartNote current = notes[members[segment]];
+                    double duration = Math.Max(.001, current.EndTimeMs - current.TimeMs);
+                    float p = Mathf.Clamp01((float)((authored - current.TimeMs) / duration));
+                    GetSmoothChainPoint(notes, members, segment, p,
+                        out float center, out float width, out float airHeight);
+                    ribbon.Widths[i] = Mathf.Max(.25f, width);
+                    ribbon.Lanes[i] = center - ribbon.Widths[i] * .5f;
+                    ribbon.AirHeights[i] = airHeight;
+                }
+
+                for (int i = 0; i < ribbon.SegmentCount; i++) {
+                    double midpoint = (ribbon.AuthoredTimes[i] + ribbon.AuthoredTimes[i + 1]) * .5;
+                    int segment = FindChainSegment(notes, members, midpoint);
+                    int noteIndex = members[segment];
+                    RibbonGeometry source = geometry[noteIndex];
+                    double local = midpoint;
+                    int sourceSegment = 0;
+                    while (sourceSegment + 1 < source.SegmentCount &&
+                           source.AuthoredTimes[sourceSegment + 1] < local) sourceSegment++;
+                    ribbon.SegmentProfileIds[i] = source.SegmentProfileIds[Math.Min(sourceSegment,
+                        source.SegmentProfileIds.Length - 1)];
+                }
+                longChainGeometry[pair.Key] = new LongChainGeometry(ribbon, chainStart, chainEnd);
+            }
+        }
+
+        private static bool IsLinearLongChain(IReadOnlyList<ChartNote> notes, IReadOnlyList<int> members)
+        {
+            for (int i = 1; i < members.Count; i++) {
+                ChartNote previous = notes[members[i - 1]];
+                ChartNote current = notes[members[i]];
+                if (previous.Kind != current.Kind || Math.Abs(previous.EndTimeMs - current.TimeMs) > .1)
+                    return false;
+                int previousLeft = previous.EndLane;
+                int previousRight = previous.EndLane + Math.Max(1, previous.EndWidth);
+                int currentLeft = current.Lane;
+                int currentRight = current.Lane + Math.Max(1, current.Width);
+                if (currentLeft >= previousRight || previousLeft >= currentRight) return false;
+                float previousCenter = previous.EndLane + previous.EndWidth * .5f;
+                float currentCenter = current.Lane + current.Width * .5f;
+                if (Math.Abs(previousCenter - currentCenter) > .05f ||
+                    Math.Abs(previous.EndWidth - current.Width) > .05f ||
+                    (current.Kind is NoteKind.AirAction or NoteKind.AirHold &&
+                     Math.Abs(previous.EndAirHeight - current.AirHeight) > .01f)) return false;
+            }
+            return true;
+        }
+
+        private static int FindChainSegment(IReadOnlyList<ChartNote> notes, IReadOnlyList<int> members,
+            double timeMs)
+        {
+            for (int i = members.Count - 1; i > 0; i--)
+                if (timeMs >= notes[members[i]].TimeMs - .001) return i;
+            return 0;
+        }
+
+        private static void GetSmoothChainPoint(IReadOnlyList<ChartNote> notes, IReadOnlyList<int> members,
+            int segment, float t, out float center, out float width, out float airHeight)
+        {
+            ChartNote current = notes[members[segment]];
+            float c1 = current.Lane + current.Width * .5f;
+            float c2 = current.EndLane + current.EndWidth * .5f;
+            float w1 = current.Width, w2 = current.EndWidth;
+            // Long-note records already contain the authored endpoints. A
+            // Catmull-Rom pass here can overshoot when adjacent segments turn
+            // sharply, producing the snake-like "tail swing" seen on dense
+            // charts. Use bounded interpolation so the renderer never invents
+            // a lane or width outside this segment's authored range.
+            center = Mathf.Lerp(c1, c2, t);
+            width = Mathf.Lerp(w1, w2, t);
+            width = Mathf.Clamp(width, .25f, 16f);
+            center = Mathf.Clamp(center, width * .5f, 16f - width * .5f);
+            airHeight = Mathf.Lerp(current.AirHeight, current.EndAirHeight, t);
+        }
+
         private void OnDestroy()
         {
             foreach (var visual in active.Values) visual.Dispose();
             foreach (var visual in pool) visual.Dispose();
+            foreach (var visual in activeGuidePaths.Values) visual.Dispose();
             active.Clear();
             pool.Clear();
+            activeGuidePaths.Clear();
             noteSkinUvs.Clear();
         }
 
@@ -1464,7 +1718,7 @@ namespace ChunithmMobile.Rendering
             float centerY = ChartSpace.AirY(height);
             float low = Mathf.Max(.45f, centerY - .70f);
             float high = centerY + .70f;
-            float shift = direction is AirDirection.UpLeft or AirDirection.DownRight ? -half*.50f : direction is AirDirection.UpRight or AirDirection.DownLeft ? half*.50f : 0f;
+            float shift = direction is AirDirection.UpLeft or AirDirection.DownLeft ? -half*.50f : direction is AirDirection.UpRight or AirDirection.DownRight ? half*.50f : 0f;
             TriangleVertices[0] = new Vector3(x-half, down ? high : low, z);
             TriangleVertices[1] = new Vector3(x+half, down ? high : low, z);
             TriangleVertices[2] = new Vector3(x+shift, down ? low : high, z-.015f);
@@ -1507,6 +1761,63 @@ namespace ChunithmMobile.Rendering
             public readonly RibbonBuffers AccentBuffers = new RibbonBuffers();
             public NoteVisual(Transform parent) { Root=new GameObject("Pooled original note"); Root.transform.SetParent(parent,false); Create(Root.transform,"Accent",out Accent,out AccentMesh,out AccentFilter,out AccentRenderer); Create(Root.transform,"Body",out Body,out BodyMesh,out BodyFilter,out BodyRenderer); Create(Root.transform,"Centre line",out Line,out LineMesh,out LineFilter,out LineRenderer); Create(Root.transform,"Tail",out Tail,out TailMesh,out TailFilter,out TailRenderer); Create(Root.transform,"Head",out Head,out HeadMesh,out HeadFilter,out HeadRenderer); }
             private static void Create(Transform p,string n,out GameObject go,out Mesh mesh,out MeshFilter filter,out MeshRenderer renderer) { go=new GameObject(n); go.transform.SetParent(p,false); mesh=new Mesh{name="Dynamic "+n}; mesh.MarkDynamic(); filter=go.AddComponent<MeshFilter>(); filter.sharedMesh=mesh; renderer=go.AddComponent<MeshRenderer>(); renderer.sortingOrder=0; }
+        }
+
+        private sealed class GuidePathVisual
+        {
+            public readonly GameObject Root;
+            public readonly Mesh Mesh;
+            public readonly MeshFilter Filter;
+            public readonly MeshRenderer Renderer;
+            public readonly RibbonBuffers Buffers = new RibbonBuffers();
+            public GuidePathVisual(Transform parent)
+            {
+                Root = new GameObject("Chart visual guide path");
+                Root.transform.SetParent(parent, false);
+                Create(Root.transform, "Guide path line", out Mesh, out Filter, out Renderer);
+            }
+
+            public void Dispose()
+            {
+                ReleaseOwnedObject(Mesh);
+                ReleaseOwnedObject(Root);
+            }
+
+            private static void Create(Transform parent, string name, out Mesh mesh,
+                out MeshFilter filter, out MeshRenderer renderer)
+            {
+                GameObject go = new GameObject(name);
+                go.transform.SetParent(parent, false);
+                mesh = new Mesh { name = "Dynamic " + name };
+                mesh.MarkDynamic();
+                filter = go.AddComponent<MeshFilter>();
+                filter.sharedMesh = mesh;
+                renderer = go.AddComponent<MeshRenderer>();
+                renderer.sortingOrder = 0;
+            }
+        }
+
+        private sealed class GuidePathGeometry
+        {
+            public readonly double[] Times;
+            public readonly float[] Progress;
+            public readonly int[] Profiles;
+            public readonly bool Instant;
+            public readonly int ProfileId;
+
+            public GuidePathGeometry(double[] times, float[] progress, int[] profiles,
+                bool instant, int profileId)
+            {
+                Times = times;
+                Progress = progress;
+                Profiles = profiles;
+                Instant = instant;
+                ProfileId = profileId;
+            }
+
+            public static GuidePathGeometry CreateInstant(int profileId) =>
+                new GuidePathGeometry(Array.Empty<double>(), Array.Empty<float>(),
+                    Array.Empty<int>(), true, profileId);
         }
 
         private sealed class RibbonBuffers
@@ -1635,6 +1946,10 @@ namespace ChunithmMobile.Rendering
         {
             public readonly double[] AuthoredTimes;
             public readonly int[] SegmentProfileIds;
+            public readonly float[] Lanes;
+            public readonly float[] Widths;
+            public readonly float[] AirHeights;
+            public readonly float[] Uv;
             public int Count => AuthoredTimes.Length;
             public int SegmentCount => Math.Max(0, AuthoredTimes.Length - 1);
             public int EndProfileId => SegmentProfileIds.Length > 0
@@ -1644,6 +1959,24 @@ namespace ChunithmMobile.Rendering
             {
                 AuthoredTimes = new double[count];
                 SegmentProfileIds = new int[Math.Max(1, count - 1)];
+                Lanes = new float[count];
+                Widths = new float[count];
+                AirHeights = new float[count];
+                Uv = new float[count];
+            }
+        }
+
+        private sealed class LongChainGeometry
+        {
+            public readonly RibbonGeometry Ribbon;
+            public readonly double StartTimeMs;
+            public readonly double EndTimeMs;
+
+            public LongChainGeometry(RibbonGeometry ribbon, double startTimeMs, double endTimeMs)
+            {
+                Ribbon = ribbon;
+                StartTimeMs = startTimeMs;
+                EndTimeMs = endTimeMs;
             }
         }
     }

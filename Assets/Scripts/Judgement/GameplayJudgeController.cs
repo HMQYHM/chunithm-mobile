@@ -8,6 +8,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Judgement
 {
+    // 游玩判定编排器：读取输入快照，匹配已调度判定点，更新 Combo/分数/统计并通知视觉效果。
+    // 这里是状态机，不应重新实现时间窗口；窗口统一由 JudgementEngine 提供。
     public sealed class GameplayScoreState
     {
         public int JusticeCritical { get; private set; }
@@ -18,6 +20,7 @@ namespace ChunithmMobile.Judgement
         public int MaxCombo { get; private set; }
         public int Resolved => JusticeCritical + Justice + Attack + Miss;
 
+        /// <summary>根据本局已登记的统计计算分数；total 是原始判定点总数。</summary>
         public int Score(int total)
         {
             if (total <= 0) return 0;
@@ -26,6 +29,7 @@ namespace ChunithmMobile.Judgement
             return Mathf.Clamp((int)Math.Round(baseScore + criticalBonus), 0, 1_010_000);
         }
 
+        /// <summary>登记一次判定，更新各等级计数、当前 Combo 和最大 Combo。</summary>
         public void Add(Chart.Judgement judgement)
         {
             switch (judgement) {
@@ -38,6 +42,7 @@ namespace ChunithmMobile.Judgement
             else { Combo++; MaxCombo = Math.Max(MaxCombo, Combo); }
         }
 
+        /// <summary>清空本局成绩；重新游玩前必须调用，避免沿用上一局统计。</summary>
         public void Reset()
         {
             JusticeCritical = Justice = Attack = Miss = Combo = MaxCombo = 0;
@@ -78,6 +83,7 @@ namespace ChunithmMobile.Judgement
         private bool airLongNoMotion;
         private bool nonMissJusticeCritical;
         private bool mineImmunity;
+        private bool flickAllTap;
         private int judgementOffsetMs;
 
         private readonly struct GroundFrameCandidate
@@ -107,12 +113,15 @@ namespace ChunithmMobile.Judgement
             return false;
         }
 
+        /// <summary>
+        /// 绑定谱面、DSP 时钟和输入总线。Bind 只准备判定点，不启动时钟；播放会话负责最后的启动时机。
+        /// </summary>
         public void Bind(ParsedChart parsedChart, DspChartClock chartClock, ArcadeInputRig inputRig,
             bool enableAutoPlay = false, bool enableAirAreaAuto = false,
             bool enableDirectionalAirAuto = false, bool enableMineImmunity = false,
             bool enableAirLongNoMotion = false,
             int offsetMs = 0, bool enableNonMissJusticeCritical = false,
-            List<ScheduledJudgePoint> preparedPoints = null)
+            List<ScheduledJudgePoint> preparedPoints = null, bool enableFlickAllTap = false)
         {
             chart = parsedChart;
             clock = chartClock;
@@ -142,11 +151,13 @@ namespace ChunithmMobile.Judgement
             airLongNoMotion = enableAirLongNoMotion;
             nonMissJusticeCritical = enableNonMissJusticeCritical;
             mineImmunity = enableMineImmunity;
+            flickAllTap = enableFlickAllTap;
             judgementOffsetMs = Mathf.Clamp(offsetMs, -500, 500);
             Debug.Log($"Runtime judgement bound: {scoringPointCount} scoring judge points, " +
                 $"{points.Count - scoringPointCount} runtime hazard points");
         }
 
+        // 每帧只消费已排序判定点和输入快照；时间来自 DSP 时钟而不是渲染帧计数。
         private void Update()
         {
             if (chart == null || clock == null || input == null || points == null || !clock.Playing || clock.Preparing) return;
@@ -179,7 +190,7 @@ namespace ChunithmMobile.Judgement
                 ChartNote note = chart.Notes[point.NoteIndex];
 
                 bool automatic = autoPlay ||
-                    (airAreaAuto && note.Kind is (NoteKind.AirHold or NoteKind.AirAction or NoteKind.AirLadder)) ||
+                    (airAreaAuto && note.Kind is (NoteKind.AirHold or NoteKind.AirAction)) ||
                     (directionalAirAuto && note.Kind == NoteKind.Air);
                 if (automatic) {
                     // Never fall through to physical input while an AUTO mode owns
@@ -191,7 +202,7 @@ namespace ChunithmMobile.Judgement
 
                 if (note.Kind == NoteKind.Mine) {
                     if (mineImmunity) {
-                        if (point.TimeMs <= now) Resolve(index, point, Chart.Judgement.JusticeCritical, 0, false);
+                        if (point.TimeMs <= now) Resolve(index, point, Chart.Judgement.JusticeCritical, 0);
                         continue;
                     }
                     double mineDelta = RealDelta(now, point.TimeMs);
@@ -199,11 +210,11 @@ namespace ChunithmMobile.Judgement
                     // the later point at which an untouched hazard is retired;
                     // a late touch must never be able to trigger it.
                     if (JudgementEngine.IsMineTouchWindow(mineDelta) && IsGroundCovered(note)) {
-                        Resolve(index, point, Chart.Judgement.Miss, mineDelta, false);
+                        Resolve(index, point, Chart.Judgement.Miss, mineDelta);
                         continue;
                     }
                     if (JudgementEngine.IsMineCleanupDue(mineDelta))
-                        Resolve(index, point, Chart.Judgement.JusticeCritical, 0, false);
+                        Resolve(index, point, Chart.Judgement.JusticeCritical, 0);
                     continue;
                 }
 
@@ -223,11 +234,10 @@ namespace ChunithmMobile.Judgement
                     if (covered) lastKeepCoverageMs[index] = now;
                     bool airHold = note.Kind == NoteKind.AirHold;
                     bool airAction = note.Kind == NoteKind.AirAction;
-                    bool airLadder = note.Kind == NoteKind.AirLadder;
                     double keepWindowRealMs = airHold
                         ? JudgementEngine.AirHoldAttackMs
-                        : airAction || airLadder ? JudgementEngine.Frames(16.0)
-                        : JudgementEngine.Frames(JudgementEngine.KeepAttackFrames);
+                        : airAction ? 266.6666667
+                        : JudgementEngine.KeepAttackMs;
                     double keepWindow = keepWindowRealMs * rate;
                     // keepDelta is already in real milliseconds; only the
                     // chart-clock cleanup comparison below needs a scaled window.
@@ -235,7 +245,7 @@ namespace ChunithmMobile.Judgement
                         (covered || Math.Abs(keepDelta) <= keepWindowRealMs)) {
                         Chart.Judgement checkpoint = airHold
                             ? JudgementEngine.JudgeAirHoldCheckpoint(true, keepDelta)
-                            : airAction || airLadder
+                            : airAction
                                 ? JudgementEngine.JudgeAirActionCheckpoint(true, keepDelta)
                             : JudgementEngine.JudgeCheckpoint(true, keepDelta);
                         Resolve(index, point, checkpoint, keepDelta);
@@ -331,12 +341,14 @@ namespace ChunithmMobile.Judgement
         {
             // Mobile FLICK shares a fresh gesture across all open windows.
             // Other ground heads still use their single timing-plane selector.
-            double window = JudgementEngine.FlickWindowMs * rate;
+            double earlyWindow = JudgementEngine.FlickWindowMs * rate;
+            double lateWindow = JudgementEngine.FlickLateWindowMs * rate;
             foreach (GroundContact contact in input.Ground.Current.Ground) {
-                if (!input.Ground.IsFlick(contact)) continue;
+                if (!input.Ground.IsFlick(contact) &&
+                    contact.Phase != GroundPhase.Down) continue;
                 double inputChartTime = clock.AudioTimeMsToChartTimeMs(contact.TimeMs) - judgementOffsetMs * rate;
-                int first = LowerBoundPointTime(inputChartTime - window);
-                int end = UpperBoundPointTime(inputChartTime + window);
+                int first = LowerBoundPointTime(inputChartTime - earlyWindow);
+                int end = UpperBoundPointTime(inputChartTime + lateWindow);
                 for (int index = first; index < end; index++) {
                     if (resolved[index] || groundCandidatesByPoint.ContainsKey(index)) continue;
                     ScheduledJudgePoint point = points[index];
@@ -421,6 +433,11 @@ namespace ChunithmMobile.Judgement
                 return false;
             }
             bool simpleFlick = note.Kind == NoteKind.Flick;
+            if (simpleFlick && !FlickContactOverlaps(contact, note.Lane, note.Width))
+            {
+                result = default;
+                return false;
+            }
             if (!simpleFlick && !ContactOverlaps(contact, note.Lane, note.Width, note.Kind))
             {
                 result = default;
@@ -428,20 +445,23 @@ namespace ChunithmMobile.Judgement
             }
             if (note.Kind == NoteKind.Flick)
             {
-                if (!FlickDirectionMatches(note, contact))
+                bool flickGesture = input.Ground.IsFlick(contact);
+                bool edgeTap = input.Ground.IsEdgeFlickTap(contact);
+                bool normalTap = contact.Phase == GroundPhase.Down && !flickGesture;
+                if (!flickAllTap && !flickGesture && !normalTap)
                 {
                     result = default;
                     return false;
                 }
-                if (!input.Ground.IsFlick(contact))
+                if (!flickAllTap && normalTap && !edgeTap)
                 {
-                    result = default;
-                    return false;
+                    result = JudgementEngine.JudgeFlickTap(inputChartTime, point.TimeMs, clock.Rate);
+                    return result.Grade != Chart.Judgement.Miss;
                 }
             }
-            // Mobile FLICK is deliberately lane-independent. It models a
-            // horizontal gesture on the panel, so contact width and authored
-            // lane overlap must not make the note easier or harder.
+            // FLICK has passed its dedicated expanded hitbox above. Unlike a
+            // normal ground head, its gesture does not need a newly pressed
+            // lane because the horizontal movement is the input edge.
             if (!simpleFlick && AcceptedGroundLanes(point, note, contact, inputChartTime) == 0)
             {
                 result = default;
@@ -571,7 +591,7 @@ namespace ChunithmMobile.Judgement
 
         private bool IsCheckpointCovered(ChartNote note, double pointTime, double now)
         {
-            if (note.Kind is NoteKind.AirHold or NoteKind.AirLadder) return IsAirContactActive(now);
+            if (note.Kind == NoteKind.AirHold) return IsAirContactActive(now);
             if (note.Kind is NoteKind.AirAction)
                 return IsAirContactActive(now) &&
                        (airLongNoMotion && note.EndTimeMs > note.TimeMs ||
@@ -621,6 +641,20 @@ namespace ChunithmMobile.Judgement
             return (contact.CoveredLaneMask & mask) != 0;
         }
 
+        // A FLICK remains tied to its authored horizontal area. There is no
+        // additional half-cell forgiveness and the configurable touch radius
+        // is intentionally ignored here. A swipe may enter the authored area
+        // between samples, so only the actual line segment between the two
+        // lane positions is used.
+        private static bool FlickContactOverlaps(GroundContact contact, int lane, int width)
+        {
+            float left = lane;
+            float right = lane + Math.Max(1, width);
+            float segmentLeft = Mathf.Min(contact.PreviousLanePosition, contact.LanePosition);
+            float segmentRight = Mathf.Max(contact.PreviousLanePosition, contact.LanePosition);
+            return segmentRight >= left && segmentLeft <= right;
+        }
+
         private static bool HasGroundPress(GroundContact contact, int lane, int width)
         {
             int first = Mathf.Clamp(lane, 0, ArcadeTouchInput.LaneCount - 1);
@@ -631,17 +665,9 @@ namespace ChunithmMobile.Judgement
         }
 
         private static bool IsLong(NoteKind kind) => kind is NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide
-            or NoteKind.AirHold or NoteKind.AirAction or NoteKind.AirLadder;
+            or NoteKind.AirHold or NoteKind.AirAction;
 
-        private static bool FlickDirectionMatches(ChartNote note, GroundContact contact)
-        {
-            if (string.Equals(note.SourceType, "L", StringComparison.OrdinalIgnoreCase))
-                return contact.FlickDirection < 0;
-            if (string.Equals(note.SourceType, "R", StringComparison.OrdinalIgnoreCase))
-                return contact.FlickDirection > 0;
-            return true;
-        }
-
+        // 所有输入分支最终都必须经过 Resolve：这里统一更新统计、触发效果、标记渲染器并推进完成数。
         private void Resolve(int index, ScheduledJudgePoint point, Chart.Judgement grade, double deltaMs,
             bool countScore = true)
         {
