@@ -5642,9 +5642,9 @@ namespace ChunithmMobile.Runtime
             foreach (GroundContact contact in frame.Ground) {
                 if (contact.Phase == GroundPhase.Up) continue;
                 int lane = Mathf.Clamp(contact.LaneIndex, 0, 15);
-                bool top = contact.SurfaceY >= .5f;
-                if (lane < 8) { if (top) leftTop = true; else leftBottom = true; }
-                else { if (top) rightTop = true; else rightBottom = true; }
+                bool topZone = contact.SurfaceY >= .5f;
+                if (lane < 8) { if (topZone) leftTop = true; else leftBottom = true; }
+                else { if (topZone) rightTop = true; else rightBottom = true; }
             }
             GameplaySkinEvents.PublishTouchZones(new GameplaySkinEvents.TouchZoneSnapshot(
                 leftTop, leftBottom, rightTop, rightBottom));
