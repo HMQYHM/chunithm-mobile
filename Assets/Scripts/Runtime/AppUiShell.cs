@@ -3472,9 +3472,19 @@ namespace ChunithmMobile.Runtime
 
         private void BuildModal()
         {
-            modalLayer = Panel("Modal", UiRootTransform, new Color(0, 0, 0, .72f), Vector2.zero, Vector2.one);
+            // The modal must be a direct child of the root Canvas. The visual
+            // layout editor is also a Canvas child, so putting the modal below
+            // the safe-area container would leave the editor above it and steal
+            // all pointer events from the confirmation buttons.
+            modalLayer = Panel("Modal", canvas.transform, new Color(0, 0, 0, .72f), Vector2.zero, Vector2.one);
+            modalLayer.offsetMin = Vector2.zero;
+            modalLayer.offsetMax = Vector2.zero;
             Image modalImage = modalLayer.GetComponent<Image>();
             if (modalImage != null) modalImage.raycastTarget = true;
+            CanvasGroup modalGroup = modalLayer.gameObject.AddComponent<CanvasGroup>();
+            modalGroup.alpha = 1f;
+            modalGroup.interactable = false;
+            modalGroup.blocksRaycasts = false;
             RectTransform card = Panel("Modal Card", modalLayer, surfaceRaised, new Vector2(.31f, .25f), new Vector2(.69f, .75f));
             modalTitle = Label("提示", card, 34, TextAnchor.MiddleLeft, new Vector2(.08f, .72f), new Vector2(.92f, .90f), Color.white);
             modalBody = Label("", card, 23, TextAnchor.UpperLeft, new Vector2(.08f, .28f), new Vector2(.92f, .70f), muted);
@@ -6315,10 +6325,34 @@ namespace ChunithmMobile.Runtime
         {
             modalOptionA?.gameObject.SetActive(false); modalOptionB?.gameObject.SetActive(false);
             if (modalConfirm != null) modalConfirm.GetComponentInChildren<Text>().text = UiLocalization.Translate("确定");
-            modalTitle.text = title; modalBody.text = body; modalAction = action; modalConfirm.gameObject.SetActive(showConfirm); modalLayer.SetAsLastSibling(); modalLayer.gameObject.SetActive(true);
-            CanvasGroup group = modalLayer.GetComponent<CanvasGroup>() ?? modalLayer.gameObject.AddComponent<CanvasGroup>(); group.alpha = 0; StartCoroutine(Fade(group, 0, 1, .16f));
+            modalTitle.text = title; modalBody.text = body; modalAction = action;
+            modalConfirm.gameObject.SetActive(showConfirm);
+
+            // Re-assert the root order every time because lazily built pages and
+            // the layout editor can create/reorder siblings after startup.
+            modalLayer.SetParent(canvas.transform, false);
+            modalLayer.SetAsLastSibling();
+            CanvasGroup group = modalLayer.GetComponent<CanvasGroup>() ?? modalLayer.gameObject.AddComponent<CanvasGroup>();
+            group.interactable = true;
+            group.blocksRaycasts = true;
+            modalLayer.gameObject.SetActive(true);
+            group.alpha = 0;
+            StartCoroutine(Fade(group, 0, 1, .16f));
         }
-        private void HideModal() { if (modalLayer != null) modalLayer.gameObject.SetActive(false); modalAction = null; }
+        private void HideModal()
+        {
+            if (modalLayer != null)
+            {
+                CanvasGroup group = modalLayer.GetComponent<CanvasGroup>();
+                if (group != null)
+                {
+                    group.interactable = false;
+                    group.blocksRaycasts = false;
+                }
+                modalLayer.gameObject.SetActive(false);
+            }
+            modalAction = null;
+        }
         private void ConfirmModal() { UnityEngine.Events.UnityAction action = modalAction; HideModal(); action?.Invoke(); }
         private IEnumerator Fade(CanvasGroup group, float from, float to, float duration) { float time = 0; while (time < duration) { time += Time.unscaledDeltaTime; group.alpha = Mathf.Lerp(from, to, time / duration); yield return null; } group.alpha = to; }
         private void ToggleSetting(string title, string message) => ShowModal(title, message, null, false);
