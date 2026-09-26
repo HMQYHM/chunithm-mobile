@@ -3,6 +3,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Input
 {
+    // 地面触控适配器：将 Unity Pointer/Touch 事件转换成 16 分区的离散覆盖信息。
+    // 浮点位置用于视觉，LaneMask/阶段/移动脉冲用于判定；两者不能混用以避免触控范围改变判定平面。
     /// <summary>
     /// Maps the mobile touch surface to sixteen independent cabinet zones.
     /// Every finger has its own lane state; FirstLane/LastLane describe the
@@ -51,6 +53,7 @@ namespace ChunithmMobile.Input
 
         private struct PointerHistory {
             public float Lane;
+            public float SurfaceY;
             public float StartLane;
             public double StartTimeMs;
             public double TimeMs;
@@ -87,7 +90,7 @@ namespace ChunithmMobile.Input
                 PointerHistory old;
                 bool had = history.TryGetValue(touch.fingerId, out old);
                 if (!normalizedPlayArea.Contains(normalized)) {
-                    if (had) AddRelease(touch.fingerId, old.Lane, old.StartLane, now);
+                    if (had) AddRelease(touch.fingerId, old.Lane, old.StartLane, old.SurfaceY, now);
                     history.Remove(touch.fingerId);
                     continue;
                 }
@@ -135,12 +138,14 @@ namespace ChunithmMobile.Input
                     VelocityLanesPerSecond = (float)((lane - previous) / seconds),
                     FirstLane = Mathf.Min(laneIndex, previousLaneIndex), LastLane = Mathf.Max(laneIndex, previousLaneIndex),
                     CoveredLaneMask = mask, PressedLaneMask = 0, TouchSize = touchSize,
+                    SurfaceY = Mathf.Clamp01((normalized.y - normalizedPlayArea.yMin) / normalizedPlayArea.height),
                     FlickTravelLanes = lane - (had ? old.StartLane : lane),
                     HasFlickMove = hasFlickMove, FlickDirection = flickDirection
                 });
                 if (phase == GroundPhase.Up) history.Remove(touch.fingerId);
                 else history[touch.fingerId] = new PointerHistory {
-                    Lane = lane, StartLane = had ? old.StartLane : lane,
+                    Lane = lane, SurfaceY = Mathf.Clamp01((normalized.y - normalizedPlayArea.yMin) / normalizedPlayArea.height),
+                    StartLane = had ? old.StartLane : lane,
                     StartTimeMs = had ? old.StartTimeMs : now, TimeMs = now,
                     CoveredMask = mask, FlickDistance = flickDistance,
                     FlickDirection = flickDirection
@@ -152,7 +157,7 @@ namespace ChunithmMobile.Input
                 if (!seenPointers.Contains(pair.Key)) stalePointers.Add(pair.Key);
             foreach (int pointerId in stalePointers) {
                 PointerHistory old = history[pointerId];
-                AddRelease(pointerId, old.Lane, old.StartLane, now);
+                AddRelease(pointerId, old.Lane, old.StartLane, old.SurfaceY, now);
                 history.Remove(pointerId);
             }
 
@@ -171,7 +176,7 @@ namespace ChunithmMobile.Input
             previousActiveMask = activeMask;
         }
 
-        private void AddRelease(int pointerId, float lane, float startLane, double now)
+        private void AddRelease(int pointerId, float lane, float startLane, float surfaceY, double now)
         {
             int laneIndex = Mathf.FloorToInt(lane);
             current.Ground.Add(new GroundContact {
@@ -179,7 +184,7 @@ namespace ChunithmMobile.Input
                 LanePosition = lane, PreviousLanePosition = lane,
                 LaneIndex = laneIndex, PreviousLaneIndex = laneIndex,
                 VelocityLanesPerSecond = 0, FirstLane = laneIndex, LastLane = laneIndex,
-                CoveredLaneMask = BuildCoveredMask(lane), PressedLaneMask = 0,
+                CoveredLaneMask = BuildCoveredMask(lane), PressedLaneMask = 0, SurfaceY = surfaceY,
                 FlickTravelLanes = lane - startLane, HasFlickMove = false, FlickDirection = 0
             });
         }
@@ -238,12 +243,31 @@ namespace ChunithmMobile.Input
 
         public bool IsFlick(GroundContact contact)
         {
+            // Edge flicks can be triggered by a fresh tap on either outer two
+            // lanes. A held contact is intentionally not a new trigger.
+            int lane = Mathf.FloorToInt(contact.LanePosition);
+            bool edgeTap = contact.Phase == GroundPhase.Down &&
+                (lane < 2 || lane >= LaneCount - 2);
+            if (edgeTap) return true;
             // A previous slash is not a fresh gesture while the finger rests,
             // even on devices that keep reporting Moved at identical positions.
             if (contact.Phase != GroundPhase.Move ||
                 Mathf.Abs(contact.LanePosition - contact.PreviousLanePosition) <= .0001f)
                 return false;
             return contact.HasFlickMove;
+        }
+
+        /// <summary>
+        /// Returns true only for the special outer-panel press that the mobile
+        /// input path treats as a FLICK gesture. Keeping this separate from
+        /// IsFlick lets the judge distinguish an outer-panel tap from an
+        /// ordinary tap on a central FLICK note.
+        /// </summary>
+        public bool IsEdgeFlickTap(GroundContact contact)
+        {
+            if (contact.Phase != GroundPhase.Down) return false;
+            int lane = Mathf.FloorToInt(contact.LanePosition);
+            return lane < 2 || lane >= LaneCount - 2;
         }
     }
 }

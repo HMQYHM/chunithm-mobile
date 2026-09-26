@@ -10,8 +10,34 @@ namespace ChunithmMobile.Runtime
     /// </summary>
     public static class GameplaySkinEvents
     {
+        /// <summary>触控板四分区：左上、左下、右上、右下。</summary>
+        public enum TouchZone { LeftTop, LeftBottom, RightTop, RightBottom }
+
+        /// <summary>供皮肤读取的四区输入快照，不包含账号、设备或原始文件路径。</summary>
+        public readonly struct TouchZoneSnapshot
+        {
+            public readonly bool LeftTop;
+            public readonly bool LeftBottom;
+            public readonly bool RightTop;
+            public readonly bool RightBottom;
+            public readonly int ActiveCount;
+
+            public TouchZoneSnapshot(bool leftTop, bool leftBottom, bool rightTop, bool rightBottom)
+            {
+                LeftTop = leftTop;
+                LeftBottom = leftBottom;
+                RightTop = rightTop;
+                RightBottom = rightBottom;
+                ActiveCount = (leftTop ? 1 : 0) + (leftBottom ? 1 : 0) +
+                              (rightTop ? 1 : 0) + (rightBottom ? 1 : 0);
+            }
+        }
+
         /// <summary>每帧发布当前触控板和 AIR 采样结果。</summary>
         public static event Action<ArcadeInputFrame> InputUpdated;
+
+        /// <summary>每帧发布触控板四区的聚合状态。</summary>
+        public static event Action<TouchZoneSnapshot> TouchZonesUpdated;
 
         /// <summary>发布 Combo、当前分数、最高 Combo 和当前评级。</summary>
         public static event Action<int, int, int, string> MetricsUpdated;
@@ -24,6 +50,9 @@ namespace ChunithmMobile.Runtime
 
         /// <summary>将输入采样广播给所有已启用的皮肤表现层。</summary>
         public static void PublishInput(ArcadeInputFrame frame) => InputUpdated?.Invoke(frame);
+
+        /// <summary>发布四区触控状态；调用方只传递布尔状态，不暴露原始触控数据。</summary>
+        public static void PublishTouchZones(TouchZoneSnapshot zones) => TouchZonesUpdated?.Invoke(zones);
 
         /// <summary>将成绩指标广播给皮肤表现层。</summary>
         public static void PublishMetrics(int combo, int score, int maxCombo, string rank) =>

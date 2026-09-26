@@ -5638,6 +5638,16 @@ namespace ChunithmMobile.Runtime
             ArcadeInputFrame frame = inputRig?.Ground?.Current;
             if (frame == null) return;
             GameplaySkinEvents.PublishInput(frame);
+            bool leftTop = false, leftBottom = false, rightTop = false, rightBottom = false;
+            foreach (GroundContact contact in frame.Ground) {
+                if (contact.Phase == GroundPhase.Up) continue;
+                int lane = Mathf.Clamp(contact.LaneIndex, 0, 15);
+                bool top = contact.SurfaceY >= .5f;
+                if (lane < 8) { if (top) leftTop = true; else leftBottom = true; }
+                else { if (top) rightTop = true; else rightBottom = true; }
+            }
+            GameplaySkinEvents.PublishTouchZones(new GameplaySkinEvents.TouchZoneSnapshot(
+                leftTop, leftBottom, rightTop, rightBottom));
             UpdateTouchpadFeedback(settings, frame, false);
             if (gameplayAirGuide == null) return;
             bool show = !IsFullscreenTouchpadActive() && settings.ShowAirGuide &&

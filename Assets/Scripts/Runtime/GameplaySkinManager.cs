@@ -751,6 +751,7 @@ namespace ChunithmMobile.Runtime
                 extension == ".jpeg" || extension == ".webp" || extension == ".obj" ||
                 extension == ".wav" || extension == ".mp3" || extension == ".ogg" ||
                 name.Equals("README.txt", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("LICENSE-MIT.txt", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("checksums.sha256", StringComparison.OrdinalIgnoreCase);
         }
 
