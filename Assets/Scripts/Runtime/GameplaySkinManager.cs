@@ -65,6 +65,16 @@ namespace ChunithmMobile.Runtime
         public int JudgementSize = 16;
         public bool ScoreWarningEnabled;
         public int ScoreWarningThreshold;
+        public bool TouchOverlayEnabled;
+        public float TouchOverlayX = .02f;
+        public float TouchOverlayY = .36f;
+        public float TouchOverlayWidth = .21f;
+        public float TouchOverlayHeight = .28f;
+        public string TouchIdlePath = "ui/touch/left-top/idle.png";
+        public string TouchLeftTopPath = "ui/touch/left-top/idle.png";
+        public string TouchLeftBottomPath = "ui/touch/left-bottom/tap.png";
+        public string TouchRightTopPath = "ui/touch/right-top/air.png";
+        public string TouchRightBottomPath = "ui/touch/right-bottom/miss.png";
 
         public static GameplaySkinStyle Original()
         {
@@ -693,6 +703,18 @@ namespace ChunithmMobile.Runtime
                     result.ScoreWarningEnabled = manifest.effects.scoreWarningEnabled;
                     result.ScoreWarningThreshold = Mathf.Clamp(manifest.effects.scoreWarningThreshold, 0, 1010000);
                 }
+                if (manifest.touchZones != null) {
+                    result.TouchOverlayEnabled = manifest.touchZones.enabled;
+                    result.TouchOverlayX = Mathf.Clamp01(manifest.touchZones.x);
+                    result.TouchOverlayY = Mathf.Clamp01(manifest.touchZones.y);
+                    result.TouchOverlayWidth = Mathf.Clamp(manifest.touchZones.width, .01f, 1f - result.TouchOverlayX);
+                    result.TouchOverlayHeight = Mathf.Clamp(manifest.touchZones.height, .01f, 1f - result.TouchOverlayY);
+                    result.TouchIdlePath = SafeSkinRelativePath(manifest.touchZones.idle, result.TouchIdlePath);
+                    result.TouchLeftTopPath = SafeSkinRelativePath(manifest.touchZones.leftTop, result.TouchLeftTopPath);
+                    result.TouchLeftBottomPath = SafeSkinRelativePath(manifest.touchZones.leftBottom, result.TouchLeftBottomPath);
+                    result.TouchRightTopPath = SafeSkinRelativePath(manifest.touchZones.rightTop, result.TouchRightTopPath);
+                    result.TouchRightBottomPath = SafeSkinRelativePath(manifest.touchZones.rightBottom, result.TouchRightBottomPath);
+                }
             }
             catch (Exception exception)
             {
@@ -705,6 +727,15 @@ namespace ChunithmMobile.Runtime
         {
             return !string.IsNullOrWhiteSpace(value) && ColorUtility.TryParseHtmlString(value, out Color color)
                 ? color : fallback;
+        }
+
+        private static string SafeSkinRelativePath(string value, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return fallback;
+            string normalized = value.Replace('\\', '/').TrimStart('/');
+            if (normalized.Contains("..") || normalized.Contains(":") || normalized.StartsWith("//", StringComparison.Ordinal))
+                return fallback;
+            return normalized;
         }
 
         private static GameplaySkinInfo BuiltinInfo()
@@ -788,6 +819,7 @@ namespace ChunithmMobile.Runtime
             public SkinUiPart score;
             public SkinUiPart judgements;
             public SkinUiEffects effects;
+            public SkinTouchZoneManifest touchZones;
         }
 
         [Serializable]
@@ -795,6 +827,21 @@ namespace ChunithmMobile.Runtime
         {
             public bool scoreWarningEnabled;
             public int scoreWarningThreshold;
+        }
+
+        [Serializable]
+        private sealed class SkinTouchZoneManifest
+        {
+            public bool enabled;
+            public float x = .02f;
+            public float y = .36f;
+            public float width = .21f;
+            public float height = .28f;
+            public string idle;
+            public string leftTop;
+            public string leftBottom;
+            public string rightTop;
+            public string rightBottom;
         }
 
         [Serializable]

@@ -9,14 +9,9 @@ namespace ChunithmMobile.Runtime
     /// </summary>
     public sealed class GameplaySkinTouchOverlay : MonoBehaviour
     {
-        private const string Idle = "ui/touch/left-top/idle.png";
-        private const string LeftTop = "ui/touch/left-top/idle.png";
-        private const string LeftBottom = "ui/touch/left-bottom/tap.png";
-        private const string RightTop = "ui/touch/right-top/air.png";
-        private const string RightBottom = "ui/touch/right-bottom/miss.png";
-
         private RawImage image;
         private GameplaySkinInfo activeSkin;
+        private GameplaySkinStyle style;
 
         /// <summary>创建位于游玩画面左侧中部的非交互图片层。</summary>
         public void Initialize(RectTransform parent)
@@ -24,8 +19,6 @@ namespace ChunithmMobile.Runtime
             if (parent == null) return;
             RectTransform root = GetComponent<RectTransform>();
             root.SetParent(parent, false);
-            root.anchorMin = new Vector2(.02f, .36f);
-            root.anchorMax = new Vector2(.23f, .64f);
             root.offsetMin = Vector2.zero;
             root.offsetMax = Vector2.zero;
             GameObject child = new GameObject("Skin touch mascot image", typeof(RectTransform), typeof(RawImage));
@@ -38,6 +31,7 @@ namespace ChunithmMobile.Runtime
             image.rectTransform.offsetMax = Vector2.zero;
             RefreshSkin();
             GameplaySkinEvents.TouchZonesUpdated += OnTouchZonesUpdated;
+            ApplyConfiguredLayout();
         }
 
         private void OnDestroy() => GameplaySkinEvents.TouchZonesUpdated -= OnTouchZonesUpdated;
@@ -46,18 +40,30 @@ namespace ChunithmMobile.Runtime
         public void RefreshSkin()
         {
             activeSkin = GameplaySkinManager.Active;
-            SetImage(Idle);
+            style = GameplaySkinManager.Style;
+            ApplyConfiguredLayout();
+            SetImage(style.TouchIdlePath);
+        }
+
+        private void ApplyConfiguredLayout()
+        {
+            if (image == null || style == null) return;
+            RectTransform root = (RectTransform)transform;
+            root.anchorMin = new Vector2(style.TouchOverlayX, style.TouchOverlayY);
+            root.anchorMax = new Vector2(style.TouchOverlayX + style.TouchOverlayWidth,
+                style.TouchOverlayY + style.TouchOverlayHeight);
+            root.gameObject.SetActive(!activeSkin.BuiltIn && style.TouchOverlayEnabled);
         }
 
         private void OnTouchZonesUpdated(GameplaySkinEvents.TouchZoneSnapshot zones)
         {
-            if (activeSkin == null || activeSkin.BuiltIn) return;
+            if (activeSkin == null || activeSkin.BuiltIn || style == null || !style.TouchOverlayEnabled) return;
             // 多区同时触摸时使用固定优先级，保证图片不会在同一帧反复切换。
-            if (zones.RightBottom) SetImage(RightBottom);
-            else if (zones.RightTop) SetImage(RightTop);
-            else if (zones.LeftBottom) SetImage(LeftBottom);
-            else if (zones.LeftTop) SetImage(LeftTop);
-            else SetImage(Idle);
+            if (zones.RightBottom) SetImage(style.TouchRightBottomPath);
+            else if (zones.RightTop) SetImage(style.TouchRightTopPath);
+            else if (zones.LeftBottom) SetImage(style.TouchLeftBottomPath);
+            else if (zones.LeftTop) SetImage(style.TouchLeftTopPath);
+            else SetImage(style.TouchIdlePath);
         }
 
         private void SetImage(string path)
