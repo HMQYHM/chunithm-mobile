@@ -2071,7 +2071,23 @@ namespace ChunithmMobile.Runtime
         {
             SettingsHeader("画面", "轨道、触摸区域与游玩界面");
             SettingsVisualEditorButton();
-            SettingsSectionTitle("帧数显示", "查看游玩时的实际渲染帧率", cyan);
+            // Keep note-below metrics above the frame-rate switch so all
+            // gameplay display choices are grouped at the top of this page.
+            SettingsSectionTitle("显示", "音符下方信息与游玩时的实际渲染帧率", cyan);
+            bool belowCombo = settings.GameplayBelowNoteMetricMode <= 1;
+            SkinDropdown("音符下方显示", new[] { "Combo", "分数" }, belowCombo ? 0 : 1,
+                index => ChangeSetting(() => {
+                    bool selectCombo = index == 0;
+                    settings.GameplayBelowNoteMetricMode = selectCombo ? 0 : 2;
+                }), false);
+            if (belowCombo)
+                SkinDropdown("Combo 显示模式", new[] { "当前 Combo", "剩余 Combo" },
+                    settings.GameplayBelowNoteMetricMode,
+                    index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index, 0, 1)), false);
+            else
+                SkinDropdown("分数显示模式", new[] { "当前分数", "SSS+ 评级", "SSS 评级", "SS+ 评级", "SS 评级", "S+ 评级", "S 评级", "已损失分数", "距离最好成绩" },
+                    Mathf.Clamp(settings.GameplayBelowNoteMetricMode - 2, 0, 8),
+                    index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index + 2, 2, 10)), false);
             SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
                 value => ChangeSetting(() => settings.ShowGameplayFps = value));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
@@ -2125,20 +2141,6 @@ namespace ChunithmMobile.Runtime
                 value => ChangeSetting(() => settings.PauseRequiresDoubleTap = value));
             SkinToggle("游玩歌曲信息", "", settings.ShowGameplaySongInfo,
                 value => ChangeSetting(() => settings.ShowGameplaySongInfo = value));
-            bool belowCombo = settings.GameplayBelowNoteMetricMode <= 1;
-            SkinDropdown("音符下方显示", new[] { "Combo", "分数" }, belowCombo ? 0 : 1,
-                index => ChangeSetting(() => {
-                    bool selectCombo = index == 0;
-                    settings.GameplayBelowNoteMetricMode = selectCombo ? 0 : 2;
-                }), false);
-            if (belowCombo)
-                SkinDropdown("Combo 显示模式", new[] { "当前 Combo", "剩余 Combo" },
-                    settings.GameplayBelowNoteMetricMode,
-                    index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index, 0, 1)), false);
-            else
-                SkinDropdown("分数显示模式", new[] { "当前分数", "SSS+ 评级", "SSS 评级", "SS+ 评级", "SS 评级", "S+ 评级", "S 评级", "已损失分数", "距离最好成绩" },
-                    Mathf.Clamp(settings.GameplayBelowNoteMetricMode - 2, 0, 8),
-                    index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index + 2, 2, 10)), false);
             SettingsSlider("分数大小", "%", 50, 180, settings.GameplayScoreScale,
                 value => settings.GameplayScoreScale = Mathf.RoundToInt(value));
             SettingsSlider("COMBO 大小", "%", 50, 180, settings.GameplayComboScale,

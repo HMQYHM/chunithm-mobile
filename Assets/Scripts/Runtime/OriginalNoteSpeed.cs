@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 原版滚速参数表：将用户可见流速转换成谱面播放映射使用的倍率。
+    // 这里不推进时间；真正的时间推进由 DspChartClock 完成。
     /// <summary>Values decoded from the original PlayOptionSpeedTableRecord.bin.</summary>
     public static class OriginalNoteSpeed
     {
@@ -45,7 +47,11 @@ namespace ChunithmMobile.Runtime
             var labels = new string[Count];
             for (int option = 0; option <= 56; option++)
                 labels[option] = (1f + option * .25f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
-            for (int option = 57; option <= 60; option++) labels[option] = (option - 41).ToString();
+            // Keep the visible high-speed choices on the same quarter-step
+            // grid. The old integer branch jumped from 15.00 to 16/17/18/19,
+            // which made the setting appear to skip speeds above 10.
+            for (int option = 57; option <= 60; option++)
+                labels[option] = (15f + (option - 56) * .25f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
             labels[61] = "SONIC";
             return labels;
         }
