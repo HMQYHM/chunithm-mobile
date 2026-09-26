@@ -413,6 +413,7 @@ namespace ChunithmMobile.Runtime
         private Image gameplayAirBoundaryBottom;
         private Image gameplayAirBoundaryTop;
         private GameplayJudgementEffects gameplayEffects;
+        private GameplaySkinTouchOverlay gameplaySkinTouchOverlay;
         private TouchContactOverlay gameplayTouchContacts;
         private TrackMaskOverlay gameplayTrackMask;
         private readonly List<Image> gameplayLaneHighlights = new List<Image>();
@@ -3326,6 +3327,9 @@ namespace ChunithmMobile.Runtime
             gameplayTouchContacts = touchContacts.gameObject.AddComponent<TouchContactOverlay>();
             RectTransform effectsLayer = RectObject("Judgement effects", page, Vector2.zero, Vector2.one);
             gameplayEffects = effectsLayer.gameObject.AddComponent<GameplayJudgementEffects>();
+            RectTransform skinTouchLayer = RectObject("Gameplay skin touch overlay", page, Vector2.zero, Vector2.zero);
+            gameplaySkinTouchOverlay = skinTouchLayer.gameObject.AddComponent<GameplaySkinTouchOverlay>();
+            gameplaySkinTouchOverlay.Initialize(page);
             gameplayPauseButton = ButtonText("Ⅱ", page, new Vector2(.018f, .88f), new Vector2(.075f, .975f),
                 HighContrastUi ? UiThemeContrast.Yellow : new Color(.025f, .07f, .11f, .92f), RequestPauseGameplay);
             gameplayPauseButton.name = "Pause button";
@@ -5788,6 +5792,7 @@ namespace ChunithmMobile.Runtime
             }
             gameplayPlayfield?.RefreshSkin();
             gameplayEffects?.ConfigureSkin(gameplaySkin);
+            gameplaySkinTouchOverlay?.RefreshSkin();
             if (gameplayScore != null) gameplayScore.color = gameplaySkin.ScoreColor;
             if (gameplayCombo != null) gameplayCombo.color = gameplaySkin.ComboColor;
             RefreshJudgementSkin();
