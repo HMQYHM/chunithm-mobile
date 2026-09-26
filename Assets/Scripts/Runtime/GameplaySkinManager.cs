@@ -9,6 +9,8 @@ using UnityEngine.Rendering;
 
 namespace ChunithmMobile.Runtime
 {
+    // 游玩皮肤资源管理器：加载清单、纹理、Mesh、字段材质、判定效果和 UI 资源，并提供回退。
+    // 资源缓存跨音符复用；切换/删除皮肤时必须清除相关缓存，避免引用已销毁纹理。
     [Serializable]
     public sealed class GameplaySkinInfo
     {
@@ -61,6 +63,8 @@ namespace ChunithmMobile.Runtime
         public int ComboSize = 58;
         public int ScoreSize = 42;
         public int JudgementSize = 16;
+        public bool ScoreWarningEnabled;
+        public int ScoreWarningThreshold;
 
         public static GameplaySkinStyle Original()
         {
@@ -98,8 +102,7 @@ namespace ChunithmMobile.Runtime
         private static readonly string[] RequiredTrackFiles = {
             "track/runtime/field_blue_16.png", "track/runtime/barline_blue.png", "track/runtime/goal_line.png",
             "track/field/hold_joint.png", "track/field/slide_joint.png", "track/field/air_hold_joint.png",
-            "track/field/air_action_bar.png", "track/field/air_action_line.png", "track/field/air_ladder_top.png",
-            "track/field/air_train.png", "track/field/heaven_roof.png",
+            "track/field/air_action_bar.png", "track/field/air_action_line.png", "track/field/heaven_roof.png",
             "track/field/heaven_roof_pink.png", "track/field/heaven_wall.png", "track/field/heaven_shadow.png"
         };
         private static readonly string[] RequiredEffectFiles = {
@@ -127,6 +130,8 @@ namespace ChunithmMobile.Runtime
         public static IReadOnlyList<GameplaySkinInfo> Installed => installed;
         public static GameplaySkinInfo Active => active ?? BuiltinInfo();
         public static GameplaySkinStyle Style => style ?? GameplaySkinStyle.Original();
+        public static bool ScoreWarningEnabled => Style.ScoreWarningEnabled;
+        public static int ScoreWarningThreshold => Style.ScoreWarningThreshold;
 
         public static void Initialize(string requestedId)
         {
@@ -329,6 +334,11 @@ namespace ChunithmMobile.Runtime
                     UnityEngine.Object.Destroy(texture);
                     return null;
                 }
+                if (texture.width <= 0 || texture.height <= 0 || texture.width > 4096 || texture.height > 4096 ||
+                    (long)texture.width * texture.height > 16L * 1024L * 1024L) {
+                    UnityEngine.Object.Destroy(texture);
+                    return null;
+                }
                 texture.Apply(false, false);
                 externalTextures[cacheKey] = texture;
                 previewTextureOrder.Enqueue(cacheKey);
@@ -368,13 +378,35 @@ namespace ChunithmMobile.Runtime
             string normalized = (fileName ?? "").Replace('\\', '/').TrimStart('/');
             if (string.IsNullOrWhiteSpace(normalized) || normalized.Contains("..")) return null;
             if (Active.BuiltIn || string.IsNullOrWhiteSpace(Active.RootPath)) return null;
-            try
-            {
-                string path = SafePath(Active.RootPath, "audio/" + normalized);
-                return File.Exists(path) ? path : null;
+            try {
+                string relative = "audio/" + normalized;
+                string path = SafePath(Active.RootPath, relative);
+                if (IsReadableAudioFile(path)) return path;
+
+                // Android storage is case-sensitive while desktop extraction is
+                // often case-insensitive. Resolve each package path component
+                // without weakening the traversal check, so a package written
+                // as Audio/UI_ENTRY.MP3 does not randomly lose its music after
+                // being copied to an Android device.
+                string current = Active.RootPath;
+                foreach (string component in relative.Split('/')) {
+                    if (!Directory.Exists(current)) return null;
+                    string match = Directory.GetFileSystemEntries(current)
+                        .FirstOrDefault(item => string.Equals(Path.GetFileName(item), component,
+                            StringComparison.OrdinalIgnoreCase));
+                    if (string.IsNullOrWhiteSpace(match)) return null;
+                    current = match;
+                }
+                return IsReadableAudioFile(current) ? current : null;
             }
-            catch { return null; }
+            catch (Exception exception) {
+                Debug.LogWarning("Gameplay skin audio path failed: " + normalized + " | " + exception.Message);
+                return null;
+            }
         }
+
+        private static bool IsReadableAudioFile(string path) => File.Exists(path) &&
+            new FileInfo(path).Length > 0;
 
         /// <summary>
         /// Loads a skin-provided OBJ mesh. Unity cannot import arbitrary files
@@ -542,6 +574,8 @@ namespace ChunithmMobile.Runtime
                     foreach (ZipArchiveEntry entry in archive.Entries)
                     {
                         if (string.IsNullOrWhiteSpace(entry.FullName) || IsDirectoryEntry(entry)) continue;
+                        if (!IsAllowedPackageFile(entry.FullName))
+                            throw new InvalidDataException("皮肤包包含不允许的文件类型：" + entry.FullName);
                         if (entry.Length < 0 || entry.Length > MaxEntryBytes ||
                             expandedBytes > MaxPackageBytes - entry.Length)
                             throw new InvalidDataException("皮肤包过大，导入已取消");
@@ -556,7 +590,7 @@ namespace ChunithmMobile.Runtime
 
                 string manifestPath = Path.Combine(staging, "skin.json");
                 if (!TryReadManifest(manifestPath, out SkinManifest manifest) ||
-                    !manifest.gameplaySkin || !IsValidId(manifest.id))
+                    !manifest.gameplaySkin || !IsValidId(manifest.id) || manifest.formatVersion != 1)
                     throw new InvalidDataException("皮肤包缺少有效的 skin.json");
                 if (installed.Any(item => string.Equals(item.Id, manifest.id,
                         StringComparison.OrdinalIgnoreCase)))
@@ -611,6 +645,7 @@ namespace ChunithmMobile.Runtime
             try
             {
                 byte[] bytes = File.ReadAllBytes(fullPath);
+                if (bytes.Length == 0 || bytes.Length > MaxEntryBytes) return null;
                 var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false) {
                     name = "Gameplay skin " + Path.GetFileName(fullPath),
                     filterMode = FilterMode.Bilinear,
@@ -619,6 +654,12 @@ namespace ChunithmMobile.Runtime
                 if (!texture.LoadImage(bytes, false))
                 {
                     UnityEngine.Object.Destroy(texture);
+                    return null;
+                }
+                if (texture.width <= 0 || texture.height <= 0 || texture.width > 4096 || texture.height > 4096 ||
+                    (long)texture.width * texture.height > 16L * 1024L * 1024L) {
+                    UnityEngine.Object.Destroy(texture);
+                    Debug.LogWarning("Gameplay skin texture exceeds the safe size limit: " + relativePath);
                     return null;
                 }
                 texture.Apply(false, false);
@@ -648,6 +689,10 @@ namespace ChunithmMobile.Runtime
                 if (manifest.score != null && manifest.score.defaultSize > 0) result.ScoreSize = manifest.score.defaultSize;
                 if (manifest.judgements != null && manifest.judgements.defaultSize > 0)
                     result.JudgementSize = manifest.judgements.defaultSize;
+                if (manifest.effects != null) {
+                    result.ScoreWarningEnabled = manifest.effects.scoreWarningEnabled;
+                    result.ScoreWarningThreshold = Mathf.Clamp(manifest.effects.scoreWarningThreshold, 0, 1010000);
+                }
             }
             catch (Exception exception)
             {
@@ -698,6 +743,17 @@ namespace ChunithmMobile.Runtime
                    entry.FullName.EndsWith("\\", StringComparison.Ordinal);
         }
 
+        private static bool IsAllowedPackageFile(string path)
+        {
+            string extension = Path.GetExtension(path ?? "").ToLowerInvariant();
+            string name = Path.GetFileName(path ?? "");
+            return extension == ".json" || extension == ".png" || extension == ".jpg" ||
+                extension == ".jpeg" || extension == ".webp" || extension == ".obj" ||
+                extension == ".wav" || extension == ".mp3" || extension == ".ogg" ||
+                name.Equals("README.txt", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("checksums.sha256", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string SafeExtractPath(string root, string relative)
         {
             return SafePath(root, relative.Replace('/', Path.DirectorySeparatorChar));
@@ -730,6 +786,14 @@ namespace ChunithmMobile.Runtime
             public SkinUiPart combo;
             public SkinUiPart score;
             public SkinUiPart judgements;
+            public SkinUiEffects effects;
+        }
+
+        [Serializable]
+        private sealed class SkinUiEffects
+        {
+            public bool scoreWarningEnabled;
+            public int scoreWarningThreshold;
         }
 
         [Serializable]

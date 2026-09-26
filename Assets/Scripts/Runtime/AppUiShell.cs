@@ -19,6 +19,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 应用 UI 外壳：统一管理页面、导航、设置、歌曲选择、游玩入口和结算入口。
+    // 本文件与其他 AppUiShell.*.cs 是同一个 partial 类，拆分只为按业务域维护，字段和状态仍共享。
     /// <summary>
     /// Responsive non-gameplay application shell: loading, home, song select,
     /// settings, mods, confirmation dialogs and result presentation.
@@ -28,6 +30,8 @@ namespace ChunithmMobile.Runtime
         private const float LayoutEditorSafeInset = .08f;
         public bool AnswerSoundEnabled => settings != null && settings.AnswerSoundEnabled;
         public float AnswerSoundVolume => settings == null ? 0f : settings.AnswerSoundVolume / 100f;
+        // The answer cue offset is relative to the music latency, not an independent absolute offset.
+        public int AnswerSoundOffsetMs => settings == null ? 0 : settings.MusicOffsetMs + settings.AnswerSoundOffsetMs;
         public float GameplayMusicVolume => settings == null ? 1f : settings.MusicVolume / 100f;
 
         private bool HighContrastUi => settings != null && settings.HighContrastUi;
@@ -48,6 +52,7 @@ namespace ChunithmMobile.Runtime
         private const int UiCornerRadius = 12;
         private Sprite rounded;
         private Canvas canvas;
+        private RectTransform safeContentRoot;
         private AppPage currentPage = AppPage.Loading;
         private bool transitioning;
         private AppPage? queuedPage;
@@ -113,6 +118,9 @@ namespace ChunithmMobile.Runtime
         private Text detailMeta;
         private Image detailCover;
         private GameObject detailCoverPlaceholder;
+        private Button songPinButton;
+        private PinIconGraphic songPinIcon;
+        private Coroutine songScrollToTopAnimation;
         private Text bucketLabel;
         private Text sortLabel;
         private Text modLabel;
@@ -213,7 +221,10 @@ namespace ChunithmMobile.Runtime
         private Button airLongNoMotionButton;
         private Button nonMissJusticeCriticalButton;
         private Button mirrorChartButton;
+        private Button flickAllTapButton;
         private Button mineImmunityButton;
+        private Button fullscreenTouchpadButton;
+        private Button uniformSpeedButton;
         private readonly List<Button> rateButtons = new List<Button>();
         private ResultViewModel result = new ResultViewModel();
         private Image resultCover;
@@ -234,8 +245,52 @@ namespace ChunithmMobile.Runtime
         private string settingsCategory = "延迟";
         private static readonly string[] SettingsCategories = { "延迟", "画面", "皮肤", "音频", "更多" };
         private readonly Dictionary<string, Button> settingsCategoryButtons = new Dictionary<string, Button>();
-        private static readonly string[] UpdateLogVersions = { "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
+        private static readonly string[] UpdateLogVersions = { "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
         private static readonly string[][] UpdateLogLineKeys = {
+            new[] {
+                "0.3.1 更新日志",
+                "0.3.1 1. 修复长条显示 bug",
+                "0.3.1 2. 优化性能",
+                "0.3.1 3. 优化联机体验",
+                "0.3.1 4. 全屏触控板 MOD 可在联机模式使用",
+                "0.3.1 5. 优化延迟相关设置",
+                "0.3.1 6. 修补 iOS 相关 bug"
+            },
+            new[] {
+                "0.2.13 更新日志",
+                "0.2.13 1. 优化联机体验",
+                "0.2.13 2. 同步苹果端改为加密连接",
+                "0.2.13 3. 适配官方 QQ Bot",
+                "0.2.13 4. 优化服务端运行"
+            },
+            new[] {
+                "0.2.12 更新日志",
+                "0.2.12 1. 新增全屏触控板 MOD",
+                "0.2.12 2. 优化谱面播放",
+                "0.2.12 3. 修复蓝牙耳机游玩画面卡顿的 bug",
+                "0.2.12 4. 重做 MOD 展示界面",
+                "0.2.12 5. 更新感谢名单并为苹果端发布做准备"
+            },
+            new[] {
+                "0.2.11 更新日志",
+                "0.2.11 1. 优化不同设备上的音频时钟与判定同步",
+                "0.2.11 2. 优化高密度谱面中 AIR、长条与地面音符重叠时的显示层级",
+                "0.2.11 3. 修复 T_JUDGE_ALL 异常谱面的判定点数量",
+                "0.2.11 4. 修正 AIR 左右方向在具体原版谱面上的视觉方向",
+                "0.2.11 5. 优化 FLICK 滑动",
+                "0.2.11 6. 优化谱面播放"
+            },
+            new[] { "0.2.10 更新日志", "0.2.10 1. 优化 Flick 判定", "0.2.10 2. 增加 Flick 可点击判定 MOD", "0.2.10 3. 优化联机体验", "0.2.10 4. 优化谱面播放", "0.2.10 5. 增加触控板与 AIR 分界线可隐藏选项", "0.2.10 6. 增加触控板反馈亮度选项", "0.2.10 7. 增加屏幕旋转", "0.2.10 8. 优化可视化界面 UI" },
+            new[] {
+                "0.2.9 更新日志",
+                "0.2.9 1. 优化谱面音符显示",
+                "0.2.9 2. 画面设置增加帧数显示开关",
+                "0.2.9 3. 调整游玩背景亮度可到0",
+                "0.2.9 4. 优化切出游戏暂停",
+                "0.2.9 5. 优化地雷音符key音",
+                "0.2.9 6. 优化wd谱面歌曲列表显示",
+                "0.2.9 7. 修正半级的显示逻辑"
+            },
             new[] {
                 "0.2.8 更新日志",
                 "0.2.8 1. 优化折线判定",
@@ -281,11 +336,7 @@ namespace ChunithmMobile.Runtime
             },
             new[] {
                 "0.2.3 更新日志",
-                "0.2.3 AIR 拖尾与谱面装饰线分离渲染",
                 "0.2.3 1. 优化谱面音符显示",
-                "0.2.3 2. 优化多色谱面装饰线显示",
-                "0.2.3 3. 修复谱面装饰线显示异常",
-                "0.2.3 4. 增加装饰线采样精度，改善复杂谱面的显示效果",
                 "0.2.3 5. 增加彩虹拖尾设置与「皮肤」设置",
                 "0.2.3 6. 优化游玩体验",
                 "0.2.3 7. 修改延迟设置，调整为音乐延迟与判定延迟",
@@ -318,16 +369,21 @@ namespace ChunithmMobile.Runtime
         private RectTransform editorTrackMaskHandle;
         private RectTransform layoutEditorFloatingButton;
         private RectTransform layoutEditorMenu;
+        private RectTransform layoutEditorContent;
+        private Button layoutEditorTouchpadButton;
+        private Button layoutEditorBoundaryButton;
         private Slider editorBackgroundBrightnessSlider;
         private Slider editorTouchpadOpacitySlider;
+        private Slider editorTouchHighlightSlider;
         private Slider editorTouchRangeSlider;
-        private Slider editorTouchpadTiltSlider;
         private Slider editorNoteSpeedSlider;
+        private Slider editorGuideLengthSlider;
         private Text editorBackgroundBrightnessValue;
         private Text editorTouchpadOpacityValue;
+        private Text editorTouchHighlightValue;
         private Text editorTouchRangeValue;
-        private Text editorTouchpadTiltValue;
         private Text editorNoteSpeedValue;
+        private Text editorGuideLengthValue;
         private AppSettings draftSettings;
         private SongSelectionPreviewPlayer preview;
         private InterfaceAudioController interfaceAudio;
@@ -344,6 +400,9 @@ namespace ChunithmMobile.Runtime
         private Image gameplaySongInfoCover;
         private RectTransform gameplaySongInfoCoverMask;
         private RectTransform gameplayTouchpad;
+        private Image editorTouchRangeGuide;
+        private Image editorTouchRangeFill;
+        private readonly List<Image> gameplayTouchRangeGuides = new List<Image>();
         private RectTransform gameplayAirZone;
         private Image gameplayProgressTrack;
         private Image gameplayProgressFill;
@@ -386,6 +445,8 @@ namespace ChunithmMobile.Runtime
         private int playedDspBufferSize;
         private readonly List<double> playedDeltas = new List<double>();
 
+        // 首次场景初始化：恢复持久化设置，建立首页骨架，再异步加载歌曲索引。
+        // LoadLibrary 期间页面应保持可响应，不能把目录扫描或图片解码放在这里同步执行。
         private void Start()
         {
             MultiplayerLog.Initialize();
@@ -483,6 +544,8 @@ namespace ChunithmMobile.Runtime
             if (pages.ContainsKey(AppPage.Multiplayer)) RestoreMultiplayerViewV2();
         }
 
+        // 按需构建页面：大型列表和联机页面延迟到首次进入，减少启动首帧工作量。
+        // 页面对象一旦创建就复用，切换时刷新模型而不是重复创建整棵 UI 树。
         private void EnsurePageBuilt(AppPage page)
         {
             if (pages.ContainsKey(page)) return;
@@ -576,17 +639,35 @@ namespace ChunithmMobile.Runtime
             uiSession?.Save();
         }
 
+        // 目录加载协程：先使用已有索引显示列表，再在发现目录变化时分批重建。
+        // 每个 yield 都给 Unity 一次渲染机会，避免低端设备在启动时长时间白屏或卡住。
         private IEnumerator LoadLibrary()
         {
             SetLoading(.12f, "正在初始化界面…"); yield return null;
             SetLoading(.38f, "正在检查歌曲数据是否变化…");
+            IReadOnlyList<string> roots = PlatformStoragePaths.Current.GetSongRoots();
+            Task<string> signatureTask = Task.Run(() => SongCatalog.ComputeSignature(roots));
+            while (!signatureTask.IsCompleted)
+            {
+                SetLoading(.38f, "正在后台检查歌曲数据（磁盘读取可能需要一些时间）…");
+                yield return null;
+            }
+            try
+            {
+                catalog = SongCatalog.Load(roots, signatureTask.Result);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Background catalog signature failed; falling back to synchronous load: " + exception.Message);
+                catalog = SongCatalog.Load();
+            }
             yield return null;
-            catalog = SongCatalog.Load(); yield return null;
             SetLoading(.58f, SongCatalog.LastLoadUsedCache ? "数据未变化，正在读取现有索引…" : "检测到变化，歌曲索引已重建…");
             ApplyCatalogState(uiSession.SongRoot, uiSession.Difficulty, uiSession.ChartPath, uiSession.SongId);
             SetLoading(.72f, $"已读取 {catalog.Count} 首歌曲，正在整理列表…");
             RebuildSongGrid(false); yield return null;
             SetLoading(1f, "准备完成"); yield return new WaitForSecondsRealtime(.18f);
+            AppBootstrap.EnableLandscapeSensorRotation();
             SwitchTo(AppPage.Home, ShowUpdateNoticeIfNeeded);
         }
 
@@ -597,7 +678,17 @@ namespace ChunithmMobile.Runtime
             canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 300;
             var scaler = root.GetComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080); scaler.matchWidthOrHeight = .45f;
+
+            var safeObject = new GameObject("Safe content root", typeof(RectTransform), typeof(SafeAreaCanvasFitter));
+            safeObject.transform.SetParent(root.transform, false);
+            safeContentRoot = (RectTransform)safeObject.transform;
+            safeContentRoot.anchorMin = Vector2.zero;
+            safeContentRoot.anchorMax = Vector2.one;
+            safeContentRoot.offsetMin = Vector2.zero;
+            safeContentRoot.offsetMax = Vector2.zero;
         }
+
+        private Transform UiRootTransform => safeContentRoot != null ? safeContentRoot : canvas.transform;
 
         private void BuildLoading()
         {
@@ -648,7 +739,10 @@ namespace ChunithmMobile.Runtime
 
             RectTransform listFrame = songListPanel = Panel("Library Frame", page, Color.Lerp(surfaceRaised, cyan, .24f), new Vector2(.018f, .035f), new Vector2(.605f, .895f));
             RectTransform listPanel = Panel("Library Body", listFrame, surface, new Vector2(.008f, .008f), new Vector2(.992f, .992f));
-            songViewport = Panel("Viewport", listPanel, Color.clear, new Vector2(.018f, .115f), new Vector2(.982f, .982f)); songViewport.gameObject.AddComponent<RectMask2D>();
+            // Keep the sorting controls above the cards. The same song-select
+            // tree is used by solo and multiplayer, so this layout applies to
+            // both entry points without duplicating UI logic.
+            songViewport = Panel("Viewport", listPanel, Color.clear, new Vector2(.018f, .018f), new Vector2(.982f, .885f)); songViewport.gameObject.AddComponent<RectMask2D>();
             var content = new GameObject("Song Grid", typeof(RectTransform));
             songGrid = content.transform; songGrid.SetParent(songViewport, false);
             songGridGroup = content.AddComponent<CanvasGroup>();
@@ -657,11 +751,12 @@ namespace ChunithmMobile.Runtime
             contentRect.anchoredPosition = Vector2.zero; contentRect.sizeDelta = new Vector2(-SongGridInset * 2f, 0);
             songScroll = listPanel.gameObject.AddComponent<ScrollRect>(); songScroll.content = contentRect; songScroll.viewport = songViewport; songScroll.horizontal = false; songScroll.movementType = ScrollRect.MovementType.Elastic;
             songScroll.onValueChanged.AddListener(_ => RenderVirtualSongCards());
-            sortLabel = ButtonText("排序：" + (sortMode == SongSortMode.Category ? "分类" : "等级"), listPanel, new Vector2(.025f, .018f), new Vector2(.25f, .098f),
+            sortLabel = ButtonText("排序：" + (sortMode == SongSortMode.Category ? "分类" : "等级"), listPanel, new Vector2(.025f, .900f), new Vector2(.225f, .982f),
                 surfaceRaised, CycleSort).GetComponentInChildren<Text>();
-            bucketLabel = Label("—", listPanel, 24, TextAnchor.MiddleLeft, new Vector2(.29f, .018f), new Vector2(.68f, .098f), Color.white);
-            ArrowButton(listPanel, false, new Vector2(.76f, .018f), new Vector2(.845f, .098f), () => ShiftBucket(-1));
-            ArrowButton(listPanel, true, new Vector2(.865f, .018f), new Vector2(.95f, .098f), () => ShiftBucket(1));
+            ArrowButton(listPanel, false, new Vector2(.245f, .900f), new Vector2(.295f, .982f), () => ShiftBucket(-1));
+            bucketLabel = Label("—", listPanel, 24, TextAnchor.MiddleCenter, new Vector2(.305f, .900f), new Vector2(.555f, .982f), Color.white);
+            ArrowButton(listPanel, true, new Vector2(.565f, .900f), new Vector2(.615f, .982f), () => ShiftBucket(1));
+            TopArrowButton(listPanel, ScrollSongListToTop);
 
             RectTransform detail = songDetailPanel = Panel("Details", page, surface, new Vector2(.615f, .035f), new Vector2(.982f, .895f));
             RectTransform coverBox = Panel("Cover Box", detail, Color.clear, new Vector2(.055f, .60f), new Vector2(.40f, .94f));
@@ -670,6 +765,21 @@ namespace ChunithmMobile.Runtime
             var aspect = cover.gameObject.AddComponent<AspectRatioFitter>(); aspect.aspectMode = AspectRatioFitter.AspectMode.FitInParent; aspect.aspectRatio = 1;
             detailCover = cover.GetComponent<Image>();
             detailCoverPlaceholder = Label("♪", cover, 96, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, cyan).gameObject;
+            // LocalCoverLoader flips the cover RectTransform vertically to
+            // correct Android texture orientation. Keep controls on a separate,
+            // equally fitted overlay so their position and vector art are never
+            // inherited by that image-only flip.
+            var coverControlsObject = new GameObject("Cover controls", typeof(RectTransform), typeof(AspectRatioFitter));
+            coverControlsObject.transform.SetParent(coverBox, false);
+            RectTransform coverControls = (RectTransform)coverControlsObject.transform;
+            coverControls.anchorMin = Vector2.zero;
+            coverControls.anchorMax = Vector2.one;
+            coverControls.offsetMin = Vector2.zero;
+            coverControls.offsetMax = Vector2.zero;
+            AspectRatioFitter controlsAspect = coverControlsObject.GetComponent<AspectRatioFitter>();
+            controlsAspect.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            controlsAspect.aspectRatio = 1f;
+            songPinButton = CreatePinButton(coverControls, ToggleSelectedSongPin);
             detailTitle = MarqueeLabel("没有歌曲", detail, 34, new Vector2(.44f, .79f), new Vector2(.94f, .94f), Color.white);
             detailMeta = Label("请导入歌曲", detail, 21, TextAnchor.UpperLeft, new Vector2(.44f, .57f), new Vector2(.94f, .79f), muted);
             difficultyRow = Panel("Difficulties", detail, Color.clear, new Vector2(.055f, .22f), new Vector2(.945f, .53f));
@@ -770,7 +880,7 @@ namespace ChunithmMobile.Runtime
 
             Label("服务器地址", connection, 18, TextAnchor.MiddleLeft,
                 new Vector2(.08f, .72f), new Vector2(.34f, .78f), muted);
-            multiplayerServerInput = Input("例如 192.168.1.10:27960", connection,
+            multiplayerServerInput = Input("例如 hmqyhm.net 或 192.168.1.10:27960", connection,
                 new Vector2(.08f, .63f), new Vector2(.92f, .72f));
             multiplayerServerInput.SetTextWithoutNotify(PlayerPrefs.GetString("chunithm_mobile_multiplayer_server", "43.153.175.142:27960"));
             multiplayerServerInput.onEndEdit.AddListener(_ => SaveMultiplayerDraft());
@@ -980,6 +1090,10 @@ namespace ChunithmMobile.Runtime
                     directionalAirAuto = mods.DirectionalAirAuto, airLongNoMotion = mods.AirLongNoMotion,
                     mineImmunity = mods.MineImmunity,
                     mirrorChart = mods.MirrorChart,
+                    flickAllTap = mods.FlickAllTap,
+                    fullscreenTouchpad = mods.FullscreenTouchpad,
+                    nonMissJusticeCritical = mods.NonMissJusticeCritical,
+                    uniformSpeed = mods.UniformSpeed,
                     musicRate = mods.MusicRate
                 }
             };
@@ -1342,12 +1456,16 @@ namespace ChunithmMobile.Runtime
         {
             if (roomMods == null) return "NORMAL";
             List<string> labels = new List<string>();
+            if (roomMods.fullscreenTouchpad) labels.Add("全屏触控板");
             if (roomMods.autoPlay) labels.Add("AUTO");
             if (roomMods.airAreaAuto) labels.Add("AIR AUTO");
             if (roomMods.directionalAirAuto) labels.Add("AIR UP/DOWN AUTO");
-            if (roomMods.airLongNoMotion) labels.Add("AIR 长条简单");
             if (roomMods.mineImmunity) labels.Add("MINE OFF");
+            if (roomMods.airLongNoMotion) labels.Add("AIR 长条简单");
+            if (roomMods.nonMissJusticeCritical) labels.Add("简单判定");
             if (roomMods.mirrorChart) labels.Add("MIRROR");
+            if (roomMods.flickAllTap) labels.Add("FLICK 可点击判定");
+            if (roomMods.uniformSpeed) labels.Add("匀速模式");
             if (Math.Abs(roomMods.musicRate - 1f) > .01f) labels.Add(roomMods.musicRate.ToString("0.0") + "x");
             return labels.Count == 0 ? "NORMAL" : string.Join(" + ", labels);
         }
@@ -1833,9 +1951,9 @@ namespace ChunithmMobile.Runtime
         {
             SettingsHeader("延迟", "调整与校准");
             SettingsAction("进入延迟自测", "开始测试", OpenDelayCalibration);
-            SettingsStepper("音乐延迟", () => settings.MusicOffsetMs,
+            SettingsLatencyStepper("音乐延迟", () => settings.MusicOffsetMs,
                 value => settings.MusicOffsetMs = value);
-            SettingsStepper("判定延迟", () => settings.JudgeOffsetMs,
+            SettingsLatencyStepper("判定延迟", () => settings.JudgeOffsetMs,
                 value => settings.JudgeOffsetMs = value);
             SkinSection("判定时间显示", cyan);
             SkinToggle("JC", "", settings.ShowJusticeCriticalMs,
@@ -1895,6 +2013,7 @@ namespace ChunithmMobile.Runtime
             delayCalibrationActive = true;
             preview?.StopPreview();
             SetGameplayScene(true);
+            SetGameplayInputSuppressed(false);
             ApplyRuntimeSettings();
             gameplayBackdrop?.ClearJacket();
             SetGameplaySongInfo(playedSong, playedChart);
@@ -1981,12 +2100,12 @@ namespace ChunithmMobile.Runtime
                 value => SetSharedInputBoundary(settings, Mathf.RoundToInt(value)));
             SettingsSlider("触控板横向宽度", "%", 60, 100, settings.TouchpadWidth,
                 value => settings.TouchpadWidth = Mathf.RoundToInt(value));
-            SettingsSlider("触控板斜度", "°", -20, 20, settings.TouchpadTilt,
-                value => settings.TouchpadTilt = Mathf.RoundToInt(value));
             SettingsSlider("触控板透明度", "%", 0, 100, settings.TouchpadOpacity,
                 value => settings.TouchpadOpacity = Mathf.RoundToInt(value));
             SettingsSlider("触控特效透明度", "%", 0, 100, settings.TouchEffectOpacity,
                 value => settings.TouchEffectOpacity = Mathf.RoundToInt(value));
+            SettingsSlider("触控板按下亮度", "%", 0, 200, settings.TouchHighlightBrightness,
+                value => settings.TouchHighlightBrightness = Mathf.RoundToInt(value));
             SettingsSlider("手指触控范围", "", 5, 30, settings.TouchContactRangeTenths,
                 value => settings.TouchContactRangeTenths = Mathf.RoundToInt(value), false,
                 value => (value / 10f).ToString("0.0", CultureInfo.InvariantCulture) + " 格");
@@ -1996,11 +2115,29 @@ namespace ChunithmMobile.Runtime
                 value => ChangeSetting(() => settings.ShowAirGuide = value));
             SkinToggle("触摸反馈", "", settings.ShowTouchFeedback,
                 value => ChangeSetting(() => settings.ShowTouchFeedback = value));
+            SkinToggle("触控板显示", "游玩界面显示触控板", settings.ShowTouchpadVisual,
+                value => ChangeSetting(() => settings.ShowTouchpadVisual = value));
+            SkinToggle("触控板 / AIR 分界线", "", settings.ShowInputBoundary,
+                value => ChangeSetting(() => settings.ShowInputBoundary = value));
             SettingsSectionTitle("游玩 HUD", "暂停、分数、COMBO 与歌曲信息", violet);
             SkinToggle("暂停按钮需连续点击两次", "", settings.PauseRequiresDoubleTap,
                 value => ChangeSetting(() => settings.PauseRequiresDoubleTap = value));
             SkinToggle("游玩歌曲信息", "", settings.ShowGameplaySongInfo,
                 value => ChangeSetting(() => settings.ShowGameplaySongInfo = value));
+            bool belowCombo = settings.GameplayBelowNoteMetricMode <= 1;
+            SkinDropdown("音符下方显示", new[] { "Combo", "分数" }, belowCombo ? 0 : 1,
+                index => ChangeSetting(() => {
+                    bool selectCombo = index == 0;
+                    settings.GameplayBelowNoteMetricMode = selectCombo ? 0 : 2;
+                }), false);
+            if (belowCombo)
+                SkinDropdown("Combo 显示模式", new[] { "当前 Combo", "剩余 Combo" },
+                    settings.GameplayBelowNoteMetricMode,
+                    index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index, 0, 1)), false);
+            else
+                SkinDropdown("分数显示模式", new[] { "当前分数", "SSS+ 评级", "SSS 评级", "SS+ 评级", "SS 评级", "S+ 评级", "S 评级", "已损失分数", "距离最好成绩" },
+                    Mathf.Clamp(settings.GameplayBelowNoteMetricMode - 2, 0, 8),
+                    index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index + 2, 2, 10)), false);
             SettingsSlider("分数大小", "%", 50, 180, settings.GameplayScoreScale,
                 value => settings.GameplayScoreScale = Mathf.RoundToInt(value));
             SettingsSlider("COMBO 大小", "%", 50, 180, settings.GameplayComboScale,
@@ -2098,7 +2235,7 @@ namespace ChunithmMobile.Runtime
         {
             if (importRunning) return;
             gameplaySkinImportPending = true;
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
             try {
                 PlatformStoragePaths.OpenGameplaySkinPicker();
             }
@@ -2167,6 +2304,8 @@ namespace ChunithmMobile.Runtime
             SettingsAudioRow("正解音", settings.AnswerSoundEnabled, settings.AnswerSoundVolume,
                 value => settings.AnswerSoundEnabled = value, value => settings.AnswerSoundVolume = value,
                 () => PlaySettingsAudio("Audio/se_touch_answer", settings.AnswerSoundEnabled ? settings.AnswerSoundVolume / 100f : 0f));
+            SettingsLatencyStepper("正解音延迟", () => settings.AnswerSoundOffsetMs,
+                value => settings.AnswerSoundOffsetMs = value);
             SettingsFooter("更多", () => ShowSettingsCategory("更多"));
         }
 
@@ -2276,7 +2415,7 @@ namespace ChunithmMobile.Runtime
             var overlayObject = new GameObject("Background switch transition", typeof(RectTransform),
                 typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
             RectTransform overlay = (RectTransform)overlayObject.transform;
-            overlay.SetParent(canvas.transform, false);
+            overlay.SetParent(UiRootTransform, false);
             overlay.SetAsLastSibling();
             overlay.anchorMin = Vector2.zero;
             overlay.anchorMax = Vector2.one;
@@ -2436,6 +2575,30 @@ namespace ChunithmMobile.Runtime
             AttachHoldRepeat(plus, setPlus);
         }
 
+        private void SettingsLatencyStepper(string title, Func<int> current, Action<int> changed)
+        {
+            RectTransform row = SettingsRect(title, 108f, surfaceRaised);
+            Label(title, row, 23, TextAnchor.MiddleLeft,
+                new Vector2(.035f, .16f), new Vector2(.27f, .84f), Color.white);
+            Text valueLabel = Label("", row, 20, TextAnchor.MiddleCenter,
+                new Vector2(.47f, .16f), new Vector2(.68f, .84f), cyan);
+            Button minusTen = ButtonText("-10", row, new Vector2(.285f, .20f), new Vector2(.37f, .80f), surface, null);
+            Button minusOne = ButtonText("-1", row, new Vector2(.38f, .20f), new Vector2(.465f, .80f), surface, null);
+            Button plusOne = ButtonText("+1", row, new Vector2(.685f, .20f), new Vector2(.77f, .80f), surface, null);
+            Button plusTen = ButtonText("+10", row, new Vector2(.78f, .20f), new Vector2(.90f, .80f), surface, null);
+            Action<int> adjust = delta => {
+                int value = Mathf.Clamp((current != null ? current() : 0) + delta, -500, 500);
+                changed?.Invoke(value);
+                settings.Save();
+                valueLabel.text = value + " ms";
+            };
+            valueLabel.text = Mathf.Clamp(current != null ? current() : 0, -500, 500) + " ms";
+            AttachHoldRepeat(minusTen, () => adjust(-10));
+            AttachHoldRepeat(minusOne, () => adjust(-1));
+            AttachHoldRepeat(plusOne, () => adjust(1));
+            AttachHoldRepeat(plusTen, () => adjust(10));
+        }
+
         private static void AttachHoldRepeat(Button button, Action action)
         {
             if (button == null) return;
@@ -2546,6 +2709,8 @@ namespace ChunithmMobile.Runtime
 
         private void BuildLayoutEditor()
         {
+            // Layout guides edit gameplay coordinates and therefore must keep
+            // using the complete screen instead of the menu safe area.
             layoutEditorLayer = Panel("Visual layout editor", canvas.transform, Color.clear, Vector2.zero, Vector2.one);
             layoutEditorLayer.offsetMin = Vector2.zero; layoutEditorLayer.offsetMax = Vector2.zero;
             layoutEditorLayer.GetComponent<Image>().raycastTarget = false;
@@ -2556,15 +2721,15 @@ namespace ChunithmMobile.Runtime
             editorTouchpadHandle = EditorBoundary("触控板 / AIR 分界", new Color(.03f, .86f, .92f, .22f), value =>
                 SetSharedInputBoundary(draftSettings, Percent(value.y, 8, 45)));
             editorTouchpadWidthHandle = EditorVerticalBoundary("触控板横向宽度", new Color(.08f, .92f, .72f, .22f), value =>
-                draftSettings.TouchpadWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) * 200f), 60, 100), .08f, .96f);
+                draftSettings.TouchpadWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) * 200f), 60, 100));
             editorAirTopHandle = EditorBoundary("AIR 区域上边界", new Color(.68f, .72f, 1f, .22f), value =>
                 draftSettings.AirAreaTop = Mathf.Max(Percent(value.y, 20, 100), draftSettings.AirAreaBottom + 5));
             editorTrackHandle = EditorBoundary("轨道整体上下位置", new Color(.22f, 1f, .62f, .20f), value =>
                 draftSettings.TrackVerticalOffset = Mathf.Clamp(Mathf.RoundToInt((value.y - .5f) * 100f), -40, 40));
             editorTrackWidthHandle = EditorVerticalBoundary("轨道下端宽度", new Color(1f, .48f, .20f, .24f), value =>
-                draftSettings.TrackWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) / .28f * 100f), 60, 140), 0f, .38f);
+                draftSettings.TrackWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) / .28f * 100f), 60, 140));
             editorTrackTopWidthHandle = EditorVerticalBoundary("轨道上端宽度", new Color(.72f, .48f, 1f, .24f), value =>
-                draftSettings.TrackTopWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) / .28f * 100f), 45, 160), .62f, 1f);
+                draftSettings.TrackTopWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) / .28f * 100f), 45, 160));
             editorTrackMaskHandle = EditorBoundary("轨道遮罩下边缘", new Color(.46f, .58f, .72f, .24f), value => {
                 draftSettings.TrackMaskEnabled = true;
                 draftSettings.TrackMaskHeight = Mathf.Clamp(Mathf.RoundToInt((1f - value.y) * 100f), 4, 45);
@@ -2592,47 +2757,98 @@ namespace ChunithmMobile.Runtime
             }, delta => draftSettings.GameplaySongInfoScale = Mathf.Clamp(
                 draftSettings.GameplaySongInfoScale + Mathf.RoundToInt(delta), 50, 180));
 
-            Button menuButton = ButtonText("≡", layoutEditorLayer, new Vector2(.92f, .89f), new Vector2(.92f, .89f),
+            Button menuButton = ButtonText("", layoutEditorLayer, Vector2.one, Vector2.one,
                 new Color(.02f, .36f, .44f, .98f), ToggleLayoutEditorMenu);
             layoutEditorFloatingButton = (RectTransform)menuButton.transform;
-            layoutEditorFloatingButton.sizeDelta = new Vector2(76, 76);
             layoutEditorFloatingButton.pivot = new Vector2(.5f, .5f);
-            UiDragHandle menuDrag = layoutEditorFloatingButton.gameObject.AddComponent<UiDragHandle>();
+            layoutEditorFloatingButton.sizeDelta = new Vector2(70, 70);
+            UiDragHandle menuDrag = menuButton.gameObject.AddComponent<UiDragHandle>();
             menuDrag.Changed = PositionLayoutEditorFloatingButton;
+            PositionLayoutEditorFloatingButton(new Vector2(.96f, .94f));
+            CreateLayoutEditorHamburgerIcon(layoutEditorFloatingButton);
 
-            layoutEditorMenu = Panel("Editor menu", layoutEditorFloatingButton, new Color(.012f, .028f, .045f, .98f),
-                new Vector2(.5f, .5f), new Vector2(.5f, .5f));
-            layoutEditorMenu.sizeDelta = new Vector2(410, 650);
-            Label("可视化布局", layoutEditorMenu, 28, TextAnchor.MiddleLeft,
-                new Vector2(.07f, .89f), new Vector2(.93f, .97f), Color.white);
-            Label("描边框可移动；角点可调大小；橙色调下端宽度，紫色调上端宽度，灰线调遮罩。",
-                layoutEditorMenu, 16, TextAnchor.UpperLeft, new Vector2(.07f, .78f), new Vector2(.93f, .89f), muted);
+            // The sidebar is a direct child of the full-screen editor layer. It is
+            // deliberately independent from the draggable preview guides and safe inset.
+            layoutEditorMenu = Panel("Editor sidebar", layoutEditorLayer, new Color(.012f, .028f, .045f, .985f),
+                new Vector2(1f, 0f), new Vector2(1f, 1f));
+            layoutEditorMenu.offsetMin = new Vector2(-440f, 0f);
+            layoutEditorMenu.offsetMax = Vector2.zero;
+            RectTransform sidebarHeader = Panel("Editor sidebar header", layoutEditorMenu,
+                new Color(.03f, .095f, .14f, .99f), new Vector2(0f, .90f), new Vector2(1f, 1f));
+            Label("可视化布局", sidebarHeader, 27, TextAnchor.MiddleLeft,
+                new Vector2(.30f, .12f), new Vector2(.80f, .88f), Color.white);
+            ButtonText("收起", sidebarHeader, new Vector2(.04f, .12f), new Vector2(.25f, .88f),
+                surfaceRaised, ToggleLayoutEditorMenu);
+
+            RectTransform editorViewport = RectObject("Editor sidebar viewport", layoutEditorMenu,
+                new Vector2(0f, .13f), new Vector2(1f, .90f));
+            editorViewport.offsetMin = Vector2.zero;
+            editorViewport.offsetMax = Vector2.zero;
+            editorViewport.gameObject.AddComponent<RectMask2D>();
+            layoutEditorContent = RectObject("Editor sidebar scroll content", editorViewport,
+                new Vector2(0f, 1f), new Vector2(1f, 1f));
+            layoutEditorContent.pivot = new Vector2(.5f, 1f);
+            layoutEditorContent.sizeDelta = new Vector2(0f, 1120f);
+            layoutEditorContent.anchoredPosition = Vector2.zero;
+            ScrollRect editorScroll = layoutEditorMenu.gameObject.AddComponent<ScrollRect>();
+            editorScroll.viewport = editorViewport;
+            editorScroll.content = layoutEditorContent;
+            editorScroll.horizontal = false;
+            editorScroll.vertical = true;
+            editorScroll.movementType = ScrollRect.MovementType.Clamped;
+            editorScroll.scrollSensitivity = 40f;
+            editorScroll.verticalNormalizedPosition = 1f;
+
+            Label("拖动预览中的描边框调整位置，角点调整大小。指示线长度会统一按比例变化。",
+                layoutEditorContent, 16, TextAnchor.UpperLeft, new Vector2(.07f, .90f), new Vector2(.93f, .985f), muted);
             editorBackgroundBrightnessSlider = LayoutEditorSliderRow("背景亮度", "%", 0, 100,
-                settings.BackgroundBrightness, .68f, value => {
+                settings.BackgroundBrightness, .80f, value => {
                     if (draftSettings != null) draftSettings.BackgroundBrightness = Mathf.Clamp(value, 0, 100);
                 }, value => Mathf.RoundToInt(value) + "%", out editorBackgroundBrightnessValue);
             editorTouchpadOpacitySlider = LayoutEditorSliderRow("触控板透明度", "%", 0, 100,
-                settings.TouchpadOpacity, .59f, value => {
+                settings.TouchpadOpacity, .72f, value => {
                     if (draftSettings != null) draftSettings.TouchpadOpacity = Mathf.Clamp(value, 0, 100);
                 }, value => Mathf.RoundToInt(value) + "%", out editorTouchpadOpacityValue);
+            editorTouchHighlightSlider = LayoutEditorSliderRow("触控板按下亮度", "%", 0, 200,
+                settings.TouchHighlightBrightness, .64f, value => {
+                    if (draftSettings != null) draftSettings.TouchHighlightBrightness = Mathf.Clamp(value, 0, 200);
+                }, value => Mathf.RoundToInt(value) + "%", out editorTouchHighlightValue);
             editorTouchRangeSlider = LayoutEditorSliderRow("触控范围", "格", 5, 30,
-                settings.TouchContactRangeTenths, .50f, value => {
+                settings.TouchContactRangeTenths, .56f, value => {
                     if (draftSettings != null) draftSettings.TouchContactRangeTenths = Mathf.Clamp(value, 5, 30);
                 }, value => (Mathf.RoundToInt(value) / 10f).ToString("0.0", CultureInfo.InvariantCulture) + " 格",
                 out editorTouchRangeValue);
-            editorTouchpadTiltSlider = LayoutEditorSliderRow("触控板斜度", "°", -20, 20,
-                settings.TouchpadTilt, .41f, value => {
-                    if (draftSettings != null) draftSettings.TouchpadTilt = Mathf.Clamp(Mathf.RoundToInt(value), -20, 20);
-                }, value => Mathf.RoundToInt(value) + "°", out editorTouchpadTiltValue);
             editorNoteSpeedSlider = LayoutEditorSliderRow("流速", "", 0, OriginalNoteSpeed.Count - 1,
-                settings.NoteSpeedOption, .32f, value => {
+                settings.NoteSpeedOption, .48f, value => {
                     if (draftSettings != null) draftSettings.NoteSpeedOption = OriginalNoteSpeed.ClampOption(value);
                 }, value => OriginalNoteSpeed.Label(Mathf.RoundToInt(value)), out editorNoteSpeedValue);
-            ButtonText("保存外观", layoutEditorMenu, new Vector2(.07f, .27f), new Vector2(.93f, .37f), cyan, SaveLayoutDraft);
-            ButtonText("恢复默认布局", layoutEditorMenu, new Vector2(.07f, .14f), new Vector2(.93f, .24f), surfaceRaised, ResetLayoutDraft);
-            ButtonText("取消并返回", layoutEditorMenu, new Vector2(.07f, .02f), new Vector2(.93f, .11f), surfaceRaised, CloseLayoutEditor);
-            layoutEditorMenu.gameObject.SetActive(true);
+            editorGuideLengthSlider = LayoutEditorSliderRow("指示线长度", "%", 50, 150,
+                settings.EditorGuideLengthPercent, .40f, value => {
+                    if (draftSettings != null) draftSettings.EditorGuideLengthPercent = Mathf.Clamp(value, 50, 150);
+                }, value => Mathf.RoundToInt(value) + "%", out editorGuideLengthValue);
+            layoutEditorTouchpadButton = ButtonText("触控板显示", layoutEditorContent, new Vector2(.07f, .30f), new Vector2(.47f, .375f), surfaceRaised,
+                () => { draftSettings.ShowTouchpadVisual = !draftSettings.ShowTouchpadVisual; RefreshLayoutEditor(); });
+            layoutEditorBoundaryButton = ButtonText("分界线显示", layoutEditorContent, new Vector2(.53f, .30f), new Vector2(.93f, .375f), surfaceRaised,
+                () => { draftSettings.ShowInputBoundary = !draftSettings.ShowInputBoundary; RefreshLayoutEditor(); });
+            RectTransform sidebarFooter = Panel("Editor sidebar footer", layoutEditorMenu,
+                new Color(.022f, .055f, .08f, .99f), new Vector2(0f, 0f), new Vector2(1f, .13f));
+            ButtonText("保存外观", sidebarFooter, new Vector2(.07f, .54f), new Vector2(.93f, .96f), cyan, SaveLayoutDraft);
+            ButtonText("恢复默认布局", sidebarFooter, new Vector2(.07f, .08f), new Vector2(.47f, .48f), surfaceRaised, ResetLayoutDraft);
+            ButtonText("取消并返回", sidebarFooter, new Vector2(.53f, .08f), new Vector2(.93f, .48f), surfaceRaised, CloseLayoutEditor);
+            layoutEditorMenu.gameObject.SetActive(false);
             layoutEditorLayer.gameObject.SetActive(false);
+        }
+
+        private static void CreateLayoutEditorHamburgerIcon(Transform parent)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                RectTransform bar = RectObject("Hamburger bar " + (i + 1), parent,
+                    new Vector2(.24f, .30f + i * .20f), new Vector2(.76f, .37f + i * .20f));
+                Image image = bar.gameObject.AddComponent<Image>();
+                image.color = Color.white;
+                image.raycastTarget = false;
+            }
         }
 
         private RectTransform EditorBoundary(string label, Color color, Action<Vector2> changed)
@@ -2706,7 +2922,8 @@ namespace ChunithmMobile.Runtime
         private Slider LayoutEditorSliderRow(string title, string suffix, float minimum, float maximum,
             float current, float bottom, Action<int> changed, Func<float, string> formatter, out Text valueLabel)
         {
-            RectTransform row = Panel(title + " editor setting", layoutEditorMenu, surfaceRaised,
+            Transform parent = layoutEditorContent != null ? layoutEditorContent : layoutEditorMenu;
+            RectTransform row = Panel(title + " editor setting", parent, surfaceRaised,
                 new Vector2(.07f, bottom), new Vector2(.93f, bottom + .075f));
             Label(title, row, 17, TextAnchor.MiddleLeft, new Vector2(.035f, .16f),
                 new Vector2(.43f, .84f), Color.white);
@@ -2735,6 +2952,7 @@ namespace ChunithmMobile.Runtime
             slider.targetGraphic = handle.GetComponent<Image>();
             slider.SetValueWithoutNotify(Mathf.Clamp(current, minimum, maximum));
             slider.onValueChanged.AddListener(value => {
+                if (CanvasUpdateRegistry.IsRebuildingLayout() || CanvasUpdateRegistry.IsRebuildingGraphics()) return;
                 int rounded = Mathf.Clamp(Mathf.RoundToInt(value), Mathf.RoundToInt(minimum), Mathf.RoundToInt(maximum));
                 if (displayLabel != null) displayLabel.text = formatter != null ? formatter(rounded) : rounded + suffix;
                 changed?.Invoke(rounded);
@@ -2757,8 +2975,9 @@ namespace ChunithmMobile.Runtime
             gameplayCombo.text = "128\nCOMBO";
             ShowGameplayJudgement(ChunithmMobile.Chart.Judgement.JusticeCritical, 12.3, true);
             SetGameplaySongInfo(selectedSong, selectedChart, true);
-            PositionLayoutEditorFloatingButton(new Vector2(.94f, .92f));
+            PositionLayoutEditorFloatingButton(new Vector2(.96f, .94f));
             layoutEditorMenu.gameObject.SetActive(true);
+            layoutEditorFloatingButton.SetAsLastSibling();
             RefreshLayoutEditor();
             layoutEditorLayer.gameObject.SetActive(true);
         }
@@ -2770,13 +2989,17 @@ namespace ChunithmMobile.Runtime
                 draftSettings.BackgroundBrightness, value => Mathf.RoundToInt(value) + "%");
             SetLayoutEditorSliderValue(editorTouchpadOpacitySlider, editorTouchpadOpacityValue,
                 draftSettings.TouchpadOpacity, value => Mathf.RoundToInt(value) + "%");
+            SetLayoutEditorSliderValue(editorTouchHighlightSlider, editorTouchHighlightValue,
+                draftSettings.TouchHighlightBrightness, value => Mathf.RoundToInt(value) + "%");
             SetLayoutEditorSliderValue(editorTouchRangeSlider, editorTouchRangeValue,
                 draftSettings.TouchContactRangeTenths,
                 value => (Mathf.RoundToInt(value) / 10f).ToString("0.0", CultureInfo.InvariantCulture) + " 格");
-            SetLayoutEditorSliderValue(editorTouchpadTiltSlider, editorTouchpadTiltValue,
-                draftSettings.TouchpadTilt, value => Mathf.RoundToInt(value) + "°");
             SetLayoutEditorSliderValue(editorNoteSpeedSlider, editorNoteSpeedValue,
                 draftSettings.NoteSpeedOption, value => OriginalNoteSpeed.Label(Mathf.RoundToInt(value)));
+            SetLayoutEditorSliderValue(editorGuideLengthSlider, editorGuideLengthValue,
+                draftSettings.EditorGuideLengthPercent, value => Mathf.RoundToInt(value) + "%");
+            SetButtonLabel(layoutEditorTouchpadButton, UiLocalization.Translate("触控板显示") + "  " + OnOff(draftSettings.ShowTouchpadVisual));
+            SetButtonLabel(layoutEditorBoundaryButton, UiLocalization.Translate("分界线显示") + "  " + OnOff(draftSettings.ShowInputBoundary));
             PositionEditorBox(editorPauseHandle, draftSettings.GameplayPauseX, draftSettings.GameplayPauseY);
             PositionEditorBox(editorHudHandle, draftSettings.GameplayHudX, draftSettings.GameplayHudY);
             PositionEditorBox(editorComboHandle, draftSettings.GameplayComboX, draftSettings.GameplayComboY);
@@ -2802,10 +3025,10 @@ namespace ChunithmMobile.Runtime
                 gameplayTouchpad.anchorMin = new Vector2((1f - width) * .5f, 0);
                 gameplayTouchpad.anchorMax = new Vector2((1f + width) * .5f, draftSettings.TouchpadHeight / 100f);
                 gameplayTouchpad.offsetMin = Vector2.zero; gameplayTouchpad.offsetMax = Vector2.zero;
-                gameplayTouchpad.localRotation = Quaternion.Euler(0f, 0f, -draftSettings.TouchpadTilt);
                 Image touchpadImage = gameplayTouchpad.GetComponent<Image>();
                 if (touchpadImage != null)
                     touchpadImage.color = new Color(.015f, .08f, .105f, .82f * draftSettings.TouchpadOpacity / 100f);
+                gameplayTouchpad.gameObject.SetActive(draftSettings.ShowTouchpadVisual);
             }
             float editorGroundHeight = Mathf.Clamp(draftSettings.GroundAreaHeight / 100f, .08f, .45f);
             inputRig?.Ground?.SetPlayArea(new Rect(0, 0, 1, editorGroundHeight));
@@ -2819,6 +3042,11 @@ namespace ChunithmMobile.Runtime
             UpdateAirZone(gameplayAirZone, draftSettings.TouchpadHeight / 100f, draftSettings.AirAreaTop / 100f);
             PositionHorizontalLine(gameplayAirBoundaryBottom, draftSettings.TouchpadHeight / 100f);
             PositionHorizontalLine(gameplayAirBoundaryTop, draftSettings.AirAreaTop / 100f);
+            gameplayAirBoundaryBottom.gameObject.SetActive(draftSettings.ShowInputBoundary);
+            gameplayAirBoundaryTop.gameObject.SetActive(draftSettings.ShowInputBoundary);
+            editorTouchpadHandle.gameObject.SetActive(draftSettings.ShowInputBoundary);
+            editorAirTopHandle.gameObject.SetActive(draftSettings.ShowInputBoundary);
+            UpdateTouchpadFeedback(draftSettings, null, true);
             if (gameplaySession != null) {
                 gameplaySession.transform.localPosition = new Vector3(0, draftSettings.TrackVerticalOffset * .04f, 0);
                 gameplaySession.transform.localScale = new Vector3(draftSettings.TrackWidth / 100f, 1f, 1f);
@@ -2863,20 +3091,24 @@ namespace ChunithmMobile.Runtime
 
         private void ToggleLayoutEditorMenu()
         {
-            if (layoutEditorMenu != null) layoutEditorMenu.gameObject.SetActive(!layoutEditorMenu.gameObject.activeSelf);
+            if (layoutEditorMenu == null) return;
+            bool show = !layoutEditorMenu.gameObject.activeSelf;
+            layoutEditorMenu.gameObject.SetActive(show);
+            if (show)
+            {
+                layoutEditorMenu.SetAsLastSibling();
+                layoutEditorFloatingButton?.SetAsLastSibling();
+            }
         }
 
         private void PositionLayoutEditorFloatingButton(Vector2 value)
         {
             if (layoutEditorFloatingButton == null) return;
-            value = new Vector2(Mathf.Clamp(value.x, LayoutEditorSafeInset, 1f - LayoutEditorSafeInset),
-                Mathf.Clamp(value.y, LayoutEditorSafeInset, 1f - LayoutEditorSafeInset));
-            layoutEditorFloatingButton.anchorMin = layoutEditorFloatingButton.anchorMax = value;
+            Rect bounds = layoutEditorLayer.rect;
+            Vector2 inset = new Vector2(43f / Mathf.Max(86f, bounds.width), 43f / Mathf.Max(86f, bounds.height));
+            layoutEditorFloatingButton.anchorMin = layoutEditorFloatingButton.anchorMax = new Vector2(
+                Mathf.Clamp(value.x, inset.x, 1f - inset.x), Mathf.Clamp(value.y, inset.y, 1f - inset.y));
             layoutEditorFloatingButton.anchoredPosition = Vector2.zero;
-            if (layoutEditorMenu == null) return;
-            bool right = value.x >= .5f, top = value.y >= .5f;
-            layoutEditorMenu.pivot = new Vector2(right ? 1 : 0, top ? 1 : 0);
-            layoutEditorMenu.anchoredPosition = new Vector2(right ? 36 : -36, top ? -36 : 36);
         }
 
         private static void PositionEditorBox(RectTransform rect, int x, int y)
@@ -2894,33 +3126,51 @@ namespace ChunithmMobile.Runtime
             rect.sizeDelta = baseSize * (Mathf.Clamp(scalePercent, 50, 180) / 100f);
         }
 
-        private static void PositionEditorBoundary(RectTransform rect, int y)
+        private float EditorGuideLengthScale()
+        {
+            int percent = draftSettings != null ? draftSettings.EditorGuideLengthPercent
+                : settings != null ? settings.EditorGuideLengthPercent : 100;
+            return Mathf.Clamp(percent, 50, 150) / 100f;
+        }
+
+        private void GuideBounds(float center, float halfSpan, out float minimum, out float maximum)
+        {
+            float span = Mathf.Clamp(halfSpan * EditorGuideLengthScale(), .02f, .49f);
+            minimum = Mathf.Clamp(center - span, .01f, .98f);
+            maximum = Mathf.Clamp(center + span, .02f, .99f);
+            if (maximum <= minimum) maximum = Mathf.Min(.99f, minimum + .02f);
+        }
+
+        private void PositionEditorBoundary(RectTransform rect, int y)
         {
             if (rect == null) return;
             float value = y / 100f;
-            rect.anchorMin = new Vector2(LayoutEditorSafeInset, value - .0075f);
-            rect.anchorMax = new Vector2(1f - LayoutEditorSafeInset, value + .0075f);
+            GuideBounds(.5f, .42f, out float left, out float right);
+            rect.anchorMin = new Vector2(left, value - .0075f);
+            rect.anchorMax = new Vector2(right, value + .0075f);
             rect.offsetMin = Vector2.zero; rect.offsetMax = Vector2.zero;
         }
 
-        private static void PositionEditorTrackWidth(RectTransform rect, int width, int minimum, int maximum,
+        private void PositionEditorTrackWidth(RectTransform rect, int width, int minimum, int maximum,
             float bottom, float top)
         {
             if (rect == null) return;
             float value = Mathf.Clamp(.5f + Mathf.Clamp(width, minimum, maximum) / 100f * .28f,
                 LayoutEditorSafeInset, 1f - LayoutEditorSafeInset);
-            rect.anchorMin = new Vector2(value - .004f, bottom);
-            rect.anchorMax = new Vector2(value + .004f, top);
+            GuideBounds((bottom + top) * .5f, (top - bottom) * .5f, out float lineBottom, out float lineTop);
+            rect.anchorMin = new Vector2(value - .004f, lineBottom);
+            rect.anchorMax = new Vector2(value + .004f, lineTop);
             rect.offsetMin = Vector2.zero; rect.offsetMax = Vector2.zero;
         }
 
-        private static void PositionEditorTouchWidth(RectTransform rect, int width)
+        private void PositionEditorTouchWidth(RectTransform rect, int width)
         {
             if (rect == null) return;
             float right = Mathf.Clamp(.5f + Mathf.Clamp(width, 60, 100) / 200f,
                 LayoutEditorSafeInset, 1f - LayoutEditorSafeInset);
-            rect.anchorMin = new Vector2(right - .004f, .08f);
-            rect.anchorMax = new Vector2(right + .004f, .45f);
+            GuideBounds(.265f, .185f, out float lineBottom, out float lineTop);
+            rect.anchorMin = new Vector2(right - .004f, lineBottom);
+            rect.anchorMax = new Vector2(right + .004f, lineTop);
             rect.offsetMin = Vector2.zero; rect.offsetMax = Vector2.zero;
         }
 
@@ -2966,9 +3216,12 @@ namespace ChunithmMobile.Runtime
             draftSettings.GameplayPauseScale = defaults.GameplayPauseScale;
             draftSettings.BackgroundBrightness = defaults.BackgroundBrightness;
             draftSettings.TouchpadOpacity = defaults.TouchpadOpacity;
+            draftSettings.TouchHighlightBrightness = defaults.TouchHighlightBrightness;
             draftSettings.TouchContactRangeTenths = defaults.TouchContactRangeTenths;
-            draftSettings.TouchpadTilt = defaults.TouchpadTilt;
+            draftSettings.ShowTouchpadVisual = defaults.ShowTouchpadVisual;
+            draftSettings.ShowInputBoundary = defaults.ShowInputBoundary;
             draftSettings.NoteSpeedOption = defaults.NoteSpeedOption;
+            draftSettings.EditorGuideLengthPercent = defaults.EditorGuideLengthPercent;
             RefreshLayoutEditor();
         }
 
@@ -3026,9 +3279,10 @@ namespace ChunithmMobile.Runtime
                 new Vector2((1f - initialTouchpadWidth) * .5f, 0),
                 new Vector2((1f + initialTouchpadWidth) * .5f, settings.TouchpadHeight / 100f));
             gameplayTouchpad.offsetMin = Vector2.zero; gameplayTouchpad.offsetMax = Vector2.zero;
-            gameplayTouchpad.localRotation = Quaternion.Euler(0f, 0f, -settings.TouchpadTilt);
-            gameplayTouchpad.GetComponent<Image>().raycastTarget = false;
+            Image touchpadBase = gameplayTouchpad.GetComponent<Image>();
+            touchpadBase.raycastTarget = false;
             gameplayLaneHighlights.Clear();
+            gameplayTouchRangeGuides.Clear();
             for (int lane = 0; lane < 16; lane++) {
                 RectTransform cell = Panel("Touch lane " + (lane + 1), gameplayTouchpad,
                     new Color(.02f, .15f, .19f, .72f), new Vector2(lane / 16f, .04f),
@@ -3036,7 +3290,22 @@ namespace ChunithmMobile.Runtime
                 cell.offsetMin = new Vector2(1, 1); cell.offsetMax = new Vector2(-1, -1);
                 Image image = cell.GetComponent<Image>(); image.raycastTarget = false;
                 gameplayLaneHighlights.Add(image);
+                Image guide = Panel("Contact range " + lane, gameplayTouchpad, GameplayAccent,
+                    new Vector2(lane / 16f, 1f), new Vector2((lane + 1f) / 16f, 1f)).GetComponent<Image>();
+                guide.rectTransform.offsetMin = new Vector2(0, 5);
+                guide.rectTransform.offsetMax = new Vector2(0, 9);
+                guide.raycastTarget = false;
+                guide.gameObject.SetActive(false);
+                gameplayTouchRangeGuides.Add(guide);
             }
+            editorTouchRangeGuide = Panel("Preview contact range", gameplayTouchpad, GameplayAccent,
+                new Vector2(.45f, 1f), new Vector2(.55f, 1f)).GetComponent<Image>();
+            editorTouchRangeGuide.raycastTarget = false;
+            editorTouchRangeGuide.gameObject.SetActive(false);
+            editorTouchRangeFill = Panel("Preview contact highlight", gameplayTouchpad, GameplayAccent,
+                new Vector2(.45f, .04f), new Vector2(.55f, .96f)).GetComponent<Image>();
+            editorTouchRangeFill.raycastTarget = false;
+            editorTouchRangeFill.gameObject.SetActive(false);
             gameplayAirZone = Panel("AIR input zone", page, new Color(.05f, .34f, .42f, .10f),
                 new Vector2(0, settings.TouchpadHeight / 100f), new Vector2(1, settings.AirAreaTop / 100f));
             gameplayAirZone.offsetMin = Vector2.zero; gameplayAirZone.offsetMax = Vector2.zero;
@@ -3199,7 +3468,9 @@ namespace ChunithmMobile.Runtime
 
         private void BuildModal()
         {
-            modalLayer = Panel("Modal", canvas.transform, new Color(0, 0, 0, .72f), Vector2.zero, Vector2.one);
+            modalLayer = Panel("Modal", UiRootTransform, new Color(0, 0, 0, .72f), Vector2.zero, Vector2.one);
+            Image modalImage = modalLayer.GetComponent<Image>();
+            if (modalImage != null) modalImage.raycastTarget = true;
             RectTransform card = Panel("Modal Card", modalLayer, surfaceRaised, new Vector2(.31f, .25f), new Vector2(.69f, .75f));
             modalTitle = Label("提示", card, 34, TextAnchor.MiddleLeft, new Vector2(.08f, .72f), new Vector2(.92f, .90f), Color.white);
             modalBody = Label("", card, 23, TextAnchor.UpperLeft, new Vector2(.08f, .28f), new Vector2(.92f, .70f), muted);
@@ -3213,7 +3484,7 @@ namespace ChunithmMobile.Runtime
 
         private void BuildUpdateNotice()
         {
-            updateNoticeLayer = Panel("Version update notice", canvas.transform, Color.clear, Vector2.zero, Vector2.one);
+            updateNoticeLayer = Panel("Version update notice", UiRootTransform, Color.clear, Vector2.zero, Vector2.one);
             updateNoticeLayer.offsetMin = Vector2.zero;
             updateNoticeLayer.offsetMax = Vector2.zero;
             Image layerImage = updateNoticeLayer.GetComponent<Image>();
@@ -3276,44 +3547,53 @@ namespace ChunithmMobile.Runtime
         private void BuildMods()
         {
             RectTransform card = BuildModDialog("Mods", out modsLayer, out _, "MODS", HideMods);
-            airLongNoMotionButton = ModOption(card, 0, .77f, true, () => {
+            airLongNoMotionButton = ModOption(card, 0, 0, true, () => {
                 mods.AirLongNoMotion = !mods.AirLongNoMotion; RefreshMods();
             });
-            mirrorChartButton = ModOption(card, 1, .77f, true, () => {
+            mirrorChartButton = ModOption(card, 1, 0, true, () => {
                 mods.MirrorChart = !mods.MirrorChart; RefreshMods();
             });
-            autoPlayButton = ModOption(card, 0, .60f, false, () => {
+            fullscreenTouchpadButton = ModOption(card, 0, 0, false, ToggleFullscreenTouchpad);
+            autoPlayButton = ModOption(card, 0, 0, false, () => {
                 mods.AutoPlay = !mods.AutoPlay; RefreshMods();
             });
-            airAreaAutoButton = ModOption(card, 1, .60f, false, () => {
+            airAreaAutoButton = ModOption(card, 1, 0, false, () => {
+                if (mods.FullscreenTouchpad) return;
                 mods.AirAreaAuto = !mods.AirAreaAuto; RefreshMods();
             });
-            directionalAirAutoButton = ModOption(card, 0, .49f, false, () => {
+            directionalAirAutoButton = ModOption(card, 0, 1, false, () => {
+                if (mods.FullscreenTouchpad) return;
                 mods.DirectionalAirAuto = !mods.DirectionalAirAuto; RefreshMods();
             });
-            mineImmunityButton = ModOption(card, 1, .49f, false, () => {
+            mineImmunityButton = ModOption(card, 1, 1, false, () => {
                 mods.MineImmunity = !mods.MineImmunity; RefreshMods();
             });
-            nonMissJusticeCriticalButton = ModOption(card, 0, .38f, false, () => {
+            nonMissJusticeCriticalButton = ModOption(card, 0, 2, false, () => {
                 mods.NonMissJusticeCritical = !mods.NonMissJusticeCritical; RefreshMods();
+            });
+            flickAllTapButton = ModOption(card, 1, 2, false, () => {
+                mods.FlickAllTap = !mods.FlickAllTap; RefreshMods();
+            });
+            uniformSpeedButton = ModOption(card, 0, 3, true, () => {
+                mods.UniformSpeed = !mods.UniformSpeed; RefreshMods();
             });
             float[] rates = { .8f, 1.2f, 1.5f };
             rateButtons.Clear();
             for (int i = 0; i < rates.Length; i++) {
                 float rate = rates[i];
-                Button button = ModOption(card, i, .21f, false,
-                    () => { mods.MusicRate = Math.Abs(mods.MusicRate - rate) < .01f ? 1f : rate; RefreshMods(); });
+                Button button = ModOption(card, i, 0, false,
+                    () => { mods.MusicRate = Math.Abs(mods.MusicRate - rate) < .01f ? 1f : rate; RefreshMods(); }, true);
                 rateButtons.Add(button);
             }
-            ButtonText("恢复默认", card, new Vector2(.05f, .045f), new Vector2(.27f, .135f), surface,
+            ButtonText("恢复默认", card, new Vector2(.05f, .035f), new Vector2(.27f, .125f), surface,
                 ResetSinglePlayerMods);
-            ButtonText("完成", card, new Vector2(.73f, .045f), new Vector2(.95f, .135f), cyan, HideMods);
+            ButtonText("完成", card, new Vector2(.73f, .035f), new Vector2(.95f, .125f), cyan, HideMods);
             modsLayer.gameObject.SetActive(false);
         }
 
         private void BuildMetadataEditor()
         {
-            metadataLayer = Panel("Metadata editor", canvas.transform, new Color(0, 0, 0, .76f), Vector2.zero, Vector2.one);
+            metadataLayer = Panel("Metadata editor", UiRootTransform, new Color(0, 0, 0, .76f), Vector2.zero, Vector2.one);
             metadataLayer.offsetMin = Vector2.zero;
             metadataLayer.offsetMax = Vector2.zero;
             RectTransform card = Panel("Metadata editor body", metadataLayer, surfaceRaised,
@@ -3389,7 +3669,7 @@ namespace ChunithmMobile.Runtime
 
         private void BuildImportOverlay()
         {
-            importLayer = Panel("Import progress", canvas.transform, new Color(0, 0, 0, .80f), Vector2.zero, Vector2.one);
+            importLayer = Panel("Import progress", UiRootTransform, new Color(0, 0, 0, .80f), Vector2.zero, Vector2.one);
             importLayer.offsetMin = Vector2.zero;
             importLayer.offsetMax = Vector2.zero;
             RectTransform card = Panel("Import progress body", importLayer, surfaceRaised,
@@ -3677,7 +3957,8 @@ namespace ChunithmMobile.Runtime
                         Song = song,
                         Chart = ChartFor(song, selectedChart?.Difficulty) ?? HighestChart(song)
                     })
-                    .OrderBy(item => LevelValue(item.Chart?.Level))
+                    .OrderByDescending(item => SongPinStore.IsPinned(item.Song))
+                    .ThenBy(item => LevelValue(item.Chart?.Level))
                     .ThenBy(item => item.Song.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ThenBy(item => item.Song.Root, StringComparer.OrdinalIgnoreCase);
             }
@@ -3690,7 +3971,8 @@ namespace ChunithmMobile.Runtime
                     .SelectMany(song => song.Charts
                         .Where(chart => string.Equals(LevelBucketKey(chart), bucket, StringComparison.OrdinalIgnoreCase))
                         .Select(chart => new SongListItem { Song = song, Chart = chart }))
-                    .OrderBy(item => DifficultyPriority(item.Chart?.Difficulty))
+                    .OrderByDescending(item => SongPinStore.IsPinned(item.Song))
+                    .ThenBy(item => DifficultyPriority(item.Chart?.Difficulty))
                     .ThenBy(item => item.Song.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ThenBy(item => item.Song.Root, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(item => item.Chart.Path, StringComparer.OrdinalIgnoreCase);
@@ -3955,6 +4237,7 @@ namespace ChunithmMobile.Runtime
                 detailTitle.text = "没有符合条件的歌曲"; detailMeta.text = "请更改搜索条件";
                 LocalCoverLoader.Reset(detailCover);
                 detailCover.sprite = rounded; detailCover.type = Image.Type.Sliced; detailCover.color = new Color(.12f, .06f, .22f); detailCoverPlaceholder.SetActive(true);
+                UpdateSongPinButton();
                 return;
             }
             detailTitle.text = selectedSong.Name;
@@ -3964,6 +4247,7 @@ namespace ChunithmMobile.Runtime
             detailCover.sprite = rounded; detailCover.type = Image.Type.Sliced; detailCover.color = new Color(.12f, .06f, .22f);
             detailCoverPlaceholder.SetActive(string.IsNullOrWhiteSpace(selectedSong.JacketPath));
             if (!string.IsNullOrWhiteSpace(selectedSong.JacketPath)) LocalCoverLoader.Load(this, selectedSong.JacketPath, detailCover);
+            UpdateSongPinButton();
             float height = 1f / Mathf.Max(1, selectedSong.Charts.Count);
             for (int i = 0; i < selectedSong.Charts.Count; i++)
             {
@@ -3997,6 +4281,34 @@ namespace ChunithmMobile.Runtime
                 RenderSongDetails();
                 SaveSongSelectionState();
             }, false, false);
+        }
+
+        private void ToggleSelectedSongPin()
+        {
+            if (selectedSong == null) return;
+            SongPinStore.Toggle(selectedSong);
+            UpdateSongPinButton();
+            // Rebuild and locate the selected chart again. A pin changes the row
+            // index, so preserving the old scroll offset would leave the card in
+            // the wrong place after both pinning and unpinning.
+            // Pinning changes the card order, but it should not pull the user
+            // away from the part of the list they are currently browsing.
+            RebuildSongGrid(false, true);
+        }
+
+        private void UpdateSongPinButton()
+        {
+            if (songPinButton == null) return;
+            bool pinned = SongPinStore.IsPinned(selectedSong);
+            songPinButton.interactable = selectedSong != null;
+            // Selected follows the active UI palette (cyan/yellow). In the
+            // daytime high-contrast palette, white keeps the unselected vector
+            // readable without making it look selected.
+            Color color = pinned ? cyan : HighContrastUi
+                ? Color.white
+                : new Color(.70f, .74f, .80f, 1f);
+            Graphic icon = songPinIcon != null ? songPinIcon : songPinButton.targetGraphic;
+            if (icon != null) icon.color = color;
         }
 
         private void RefreshSongCardSelection()
@@ -4324,6 +4636,7 @@ namespace ChunithmMobile.Runtime
         {
             var availableRoots = new HashSet<string>(catalog.Select(song => song.Root), StringComparer.OrdinalIgnoreCase);
             managedSongRoots.RemoveWhere(root => !availableRoots.Contains(root));
+            SongPinStore.Prune(catalog);
             categories = catalog.Select(song => song.Category)
                 .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().OrderBy(value => value).ToList();
             levels = catalog.SelectMany(song => song.Charts).Select(LevelBucketKey)
@@ -4406,35 +4719,60 @@ namespace ChunithmMobile.Runtime
 
         private void RefreshMods()
         {
+            SetModButton(fullscreenTouchpadButton, "全屏触控板", mods.FullscreenTouchpad);
             SetModButton(autoPlayButton, "全谱面 AUTO", mods.AutoPlay);
-            SetModButton(airAreaAutoButton, "AIR 区域 AUTO", mods.AirAreaAuto);
-            SetModButton(directionalAirAutoButton, "上下 AIR AUTO", mods.DirectionalAirAuto);
+            SetModButton(airAreaAutoButton, "AIR 区域 AUTO", mods.AirAreaAuto, mods.FullscreenTouchpad);
+            SetModButton(directionalAirAutoButton, "上下 AIR AUTO", mods.DirectionalAirAuto, mods.FullscreenTouchpad);
             SetModButton(mineImmunityButton, "免疫地雷音符", mods.MineImmunity);
             SetModButton(airLongNoMotionButton, "air长条简单模式", mods.AirLongNoMotion);
             SetModButton(nonMissJusticeCriticalButton, "简单判定", mods.NonMissJusticeCritical);
             SetModButton(mirrorChartButton, "谱面镜像", mods.MirrorChart);
+            SetModButton(flickAllTapButton, "Flick 可点击判定", mods.FlickAllTap);
+            SetModButton(uniformSpeedButton, "匀速模式", mods.UniformSpeed);
             float[] rates = { .8f, 1.2f, 1.5f };
             for (int i = 0; i < rateButtons.Count && i < rates.Length; i++)
                 SetModButton(rateButtons[i], rates[i].ToString("0.0") + "x", Math.Abs(mods.MusicRate - rates[i]) < .01f);
             UpdateModLabel();
         }
 
-        private void SetModButton(Button button, string label, bool selected)
+        private void SetModButton(Button button, string label, bool selected, bool disabled = false)
         {
             if (button == null) return;
-            UpdateModOption(button, label, selected, false);
+            UpdateModOption(button, label, selected, disabled);
+        }
+
+        // This accessibility MOD owns both AIR helpers while active. Saving their
+        // previous values means closing it returns the player to their own setup.
+        private void ToggleFullscreenTouchpad()
+        {
+            if (!mods.FullscreenTouchpad) {
+                mods.FullscreenTouchpadRestoreAirAreaAuto = mods.AirAreaAuto;
+                mods.FullscreenTouchpadRestoreDirectionalAirAuto = mods.DirectionalAirAuto;
+                mods.FullscreenTouchpad = true;
+                mods.AirAreaAuto = true;
+                mods.DirectionalAirAuto = true;
+            } else {
+                mods.FullscreenTouchpad = false;
+                mods.AirAreaAuto = mods.FullscreenTouchpadRestoreAirAreaAuto;
+                mods.DirectionalAirAuto = mods.FullscreenTouchpadRestoreDirectionalAirAuto;
+            }
+            ApplyRuntimeSettings();
+            RefreshMods();
         }
 
         private string CurrentModSummary()
         {
             var labels = new List<string>();
+            if (mods.FullscreenTouchpad) labels.Add("全屏触控板");
             if (mods.AutoPlay) labels.Add("AUTO");
-            if (mods.AirAreaAuto) labels.Add("AIR AREA");
-            if (mods.DirectionalAirAuto) labels.Add("AIR UP/DOWN");
+            if (mods.AirAreaAuto && !mods.FullscreenTouchpad) labels.Add("AIR AREA");
+            if (mods.DirectionalAirAuto && !mods.FullscreenTouchpad) labels.Add("AIR UP/DOWN");
+            if (mods.MineImmunity) labels.Add("MINE OFF");
             if (mods.AirLongNoMotion) labels.Add("AIR HOLD SIMPLE");
             if (mods.NonMissJusticeCritical) labels.Add("简单判定");
             if (mods.MirrorChart) labels.Add("MIRROR");
-            if (mods.MineImmunity) labels.Add("MINE OFF");
+            if (mods.FlickAllTap) labels.Add("FLICK 可点击判定");
+            if (mods.UniformSpeed) labels.Add("匀速模式");
             if (Math.Abs(mods.MusicRate - 1f) > .01f) labels.Add(mods.MusicRate.ToString("0.0") + "x");
             return labels.Count == 0 ? "NORMAL" : string.Join(" + ", labels);
         }
@@ -4521,6 +4859,8 @@ namespace ChunithmMobile.Runtime
                 musicOffsetMs: playedMusicOffsetMs, judgementOffsetMs: playedJudgeOffsetMs,
                 mirrorChart: mods.MirrorChart,
                 nonMissJusticeCritical: mods.NonMissJusticeCritical,
+                flickAllTap: mods.FlickAllTap,
+                uniformSpeed: mods.UniformSpeed,
                 onFailed: message => StartCoroutine(HandleGameplayLoadFailure(
                     FindObjectOfType<RuntimeLoadingOverlay>(), message)));
         }
@@ -4548,6 +4888,8 @@ namespace ChunithmMobile.Runtime
                 musicOffsetMs: playedMusicOffsetMs, judgementOffsetMs: playedJudgeOffsetMs,
                 mirrorChart: mods.MirrorChart,
                 nonMissJusticeCritical: mods.NonMissJusticeCritical,
+                flickAllTap: mods.FlickAllTap,
+                uniformSpeed: mods.UniformSpeed,
                 onReady: () => StartCoroutine(RevealGameplayAfterLoading(loading)),
                 onFailed: message => StartCoroutine(HandleGameplayLoadFailure(loading, message)),
                 keepLoadingVisible: true, deferStart: true);
@@ -4576,14 +4918,33 @@ namespace ChunithmMobile.Runtime
 
         private void SetGameplayScene(bool active)
         {
-            if (!active) CancelGameplayResume();
+            if (!active) {
+                CancelGameplayResume();
+                SetGameplayInputSuppressed(false);
+                SetGameplayJudgementSuppressed(false);
+            }
             if (gameplayCamera != null) gameplayCamera.SetActive(active);
             if (gameplaySession != null) gameplaySession.gameObject.SetActive(active);
+        }
+
+        private void SetGameplayInputSuppressed(bool suppressed)
+        {
+            inputRig?.SetInputSuppressed(suppressed);
+            gameplayTouchContacts?.SetInputSuppressed(suppressed);
+            if (suppressed && gameplayAirGuide != null)
+                gameplayAirGuide.gameObject.SetActive(false);
+        }
+
+        private void SetGameplayJudgementSuppressed(bool suppressed)
+        {
+            gameplayJudge?.SetJudgementSuppressed(suppressed);
         }
 
         private void PauseGameplay()
         {
             if (currentPage != AppPage.Gameplay || gameplaySession == null) return;
+            SetGameplayInputSuppressed(true);
+            SetGameplayJudgementSuppressed(true);
             gameplaySession.PausePlayback();
             ShowGameplayPause();
         }
@@ -4593,6 +4954,8 @@ namespace ChunithmMobile.Runtime
             if (currentPage != AppPage.Gameplay) return;
             CancelGameplayResume();
             pauseTapPendingUntil = 0f;
+            SetGameplayInputSuppressed(true);
+            SetGameplayJudgementSuppressed(true);
             ConfigureMultiplayerPauseV2();
             gameplayPausePanel?.gameObject.SetActive(true);
         }
@@ -4624,8 +4987,13 @@ namespace ChunithmMobile.Runtime
             if (currentPage != AppPage.Gameplay) return;
             CancelGameplayResume();
             gameplayPausePanel.gameObject.SetActive(false);
+            // The pause menu blocks game input, but the user explicitly needs
+            // touch/AIR feedback during the visible 3-2-1 resume countdown.
+            SetGameplayInputSuppressed(false);
+            SetGameplayJudgementSuppressed(true);
             if (gameplaySession != null && gameplaySession.Clock.Preparing) {
                 gameplaySession.ResumePlayback();
+                SetGameplayJudgementSuppressed(false);
                 return;
             }
             gameplayResumeRoutine = StartCoroutine(ResumeCountdown());
@@ -4642,6 +5010,7 @@ namespace ChunithmMobile.Runtime
             gameplayCountdown.text = "";
             gameplayResumeRoutine = null;
             gameplaySession?.ResumePlayback();
+            SetGameplayJudgementSuppressed(false);
         }
 
         private void RestartGameplay()
@@ -4649,6 +5018,8 @@ namespace ChunithmMobile.Runtime
             if (playedSong == null || playedChart == null || gameplaySession == null) return;
             CancelGameplayResume();
             pauseTapPendingUntil = 0f;
+            SetGameplayInputSuppressed(false);
+            SetGameplayJudgementSuppressed(false);
             gameplayPausePanel.gameObject.SetActive(false);
             gameplayCountdown.text = "";
             playedDeltas.Clear();
@@ -4657,6 +5028,7 @@ namespace ChunithmMobile.Runtime
                 mods.AirAreaAuto, mods.DirectionalAirAuto, mods.MineImmunity, mods.AirLongNoMotion,
                 musicOffsetMs: playedMusicOffsetMs, judgementOffsetMs: playedJudgeOffsetMs,
                 mirrorChart: mods.MirrorChart, nonMissJusticeCritical: mods.NonMissJusticeCritical,
+                flickAllTap: mods.FlickAllTap, uniformSpeed: mods.UniformSpeed,
                 onFailed: message => StartCoroutine(HandleGameplayLoadFailure(
                     FindObjectOfType<RuntimeLoadingOverlay>(), message)));
         }
@@ -4664,8 +5036,8 @@ namespace ChunithmMobile.Runtime
         private void CaptureGameplayTimingSettings()
         {
             AppSettings latest = AppSettings.Load();
-            playedMusicOffsetMs = AppSettings.NormalizeLatencyOffset(latest.MusicOffsetMs);
-            playedJudgeOffsetMs = AppSettings.NormalizeLatencyOffset(latest.JudgeOffsetMs);
+            playedMusicOffsetMs = AppSettings.NormalizeGameplayLatencyOffset(latest.MusicOffsetMs);
+            playedJudgeOffsetMs = AppSettings.NormalizeGameplayLatencyOffset(latest.JudgeOffsetMs);
             playedDspBufferSize = AppSettings.NormalizeDspBufferSize(latest.DspBufferSize);
             LowLatencyAudioController.Apply(playedDspBufferSize);
             AudioConfiguration active = AudioSettings.GetConfiguration();
@@ -4683,6 +5055,8 @@ namespace ChunithmMobile.Runtime
                 return;
             }
             pauseTapPendingUntil = 0f;
+            SetGameplayInputSuppressed(false);
+            SetGameplayJudgementSuppressed(false);
             gameplayPausePanel.gameObject.SetActive(false);
             gameplayCountdown.text = "";
             gameplaySession?.StopPlayback();
@@ -4726,7 +5100,7 @@ namespace ChunithmMobile.Runtime
         private void BeginSongImport()
         {
             if (importRunning) return;
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
             try {
                 PlatformStoragePaths.OpenSongImportPicker();
             }
@@ -4746,7 +5120,7 @@ namespace ChunithmMobile.Runtime
         private void BeginBackgroundImageImport()
         {
             if (importRunning) return;
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
             try
             {
                 PlatformStoragePaths.OpenBackgroundImagePicker();
@@ -4760,7 +5134,7 @@ namespace ChunithmMobile.Runtime
             string importFolder = Path.Combine(PlatformServices.Current.PersistentDataPath,
                 "Import", "BackgroundImages");
             Directory.CreateDirectory(importFolder);
-            ShowModal("导入背景图片", "Android 版本可直接选择图片。\n编辑器测试请把 PNG/JPG 放入：\n" + importFolder, null, false);
+            ShowModal("导入背景图片", "移动端可直接选择图片。\n编辑器测试请把 PNG/JPG 放入：\n" + importFolder, null, false);
 #endif
         }
 
@@ -5005,8 +5379,14 @@ namespace ChunithmMobile.Runtime
 
         public void OnImportCopyFailed(string message)
         {
+            // The native picker reports copy failures before it can call
+            // OnImportFilePicked.  Clear the skin intent here as well, or the
+            // next song ZIP selected by the user would accidentally be routed
+            // through the gameplay-skin installer.
+            bool wasGameplaySkin = gameplaySkinImportPending;
+            gameplaySkinImportPending = false;
             if (importLayer == null || !importLayer.gameObject.activeSelf) ShowImportOverlay();
-            FailImportOverlay(new IOException("复制所选文件失败：" + message));
+            FailImportOverlay(new IOException((wasGameplaySkin ? "复制所选皮肤包失败：" : "复制所选文件失败：") + message));
         }
 
         private static string FormatBytes(long bytes)
@@ -5141,12 +5521,88 @@ namespace ChunithmMobile.Runtime
                 : 0f);
             GameplayScoreState score = gameplaySession.ScoreState;
             if (score == null) return;
-            gameplayScore.text = score.Score(gameplaySession.JudgeTotal).ToString("D7");
-            gameplayCombo.text = score.Combo > 0 ? score.Combo + "\nCOMBO" : "";
+            int currentScore = score.Score(gameplaySession.JudgeTotal);
+            int totalPoints = Mathf.Max(0, gameplaySession.JudgeTotal);
+            int remainingCombo = Mathf.Max(0, totalPoints - score.Resolved);
+            int metricMode = settings?.GameplayBelowNoteMetricMode ?? 3;
+            if (metricMode <= 1) {
+                // Combo below the notes means the main HUD remains the
+                // increasing score counter.
+                gameplayScore.text = currentScore.ToString("D7");
+                gameplayCombo.text = metricMode == 0
+                    ? score.Combo + "\nCOMBO"
+                    : remainingCombo > 0 ? remainingCombo + "\n剩余COMBO" : "";
+            } else {
+                // Score below the notes means the main HUD becomes the
+                // increasing combo counter. Mode 2 is increasing score; the
+                // remaining modes count down the allowed loss to a rank.
+                gameplayScore.text = score.Combo + "\nCOMBO";
+                if (metricMode == 2)
+                    gameplayCombo.text = currentScore + "\n分数";
+                else if (metricMode <= 8) {
+                    int remainingScore = RemainingRankAllowance(score, gameplaySession.JudgeTotal,
+                        metricMode - 3);
+                    gameplayCombo.text = remainingScore > 0 ? remainingScore + "\n剩余分数" : "";
+                }
+                else if (metricMode == 9) {
+                    int lostScore = LostScore(score, gameplaySession.JudgeTotal);
+                    gameplayCombo.text = lostScore + "\n已损失分数";
+                }
+                else {
+                    int bestScore = 0;
+                    if (playedSong != null && playedChart != null)
+                        SongRecordStore.TryGet(playedSong.Root, playedChart.Difficulty, playedChart.Path, out bestScore);
+                    int remaining = RemainingBestScoreAllowance(score, gameplaySession.JudgeTotal, bestScore);
+                    gameplayCombo.text = remaining > 0 ? remaining + "\n距离最好成绩" : "";
+                }
+            }
             gameplayJudgements.text = $"JC {score.JusticeCritical}   J {score.Justice}   AT {score.Attack}   MISS {score.Miss}";
+            GameplaySkinEvents.PublishMetrics(score.Combo, currentScore, score.MaxCombo, ResultViewModel.RankForScore(currentScore));
             if (gameplayJudgementBlock != null && gameplayJudgementBlock.gameObject.activeSelf && Time.unscaledTime >= gameplayTimingHideAt)
                 gameplayJudgementBlock.gameObject.SetActive(false);
             UpdateGameplayInputFeedback();
+        }
+
+        private static int TargetScoreForRank(int rank)
+        {
+            return rank switch {
+                0 => 1009000, // SSS+
+                1 => 1007500, // SSS
+                2 => 1005000, // SS+
+                3 => 1000000, // SS
+                4 => 975000,  // S+
+                _ => 950000   // S
+            };
+        }
+
+        private static int RemainingRankAllowance(GameplayScoreState score, int total, int rank)
+        {
+            if (score == null || total <= 0) return 0;
+            int target = TargetScoreForRank(rank);
+            double allowance = 1010000.0 - target;
+            // Relative to a full JC result, J loses 10,000 points per
+            // million, AT loses 510,000, and MISS loses 1,010,000. Divide
+            // by the chart's judge-point total to get the current loss.
+            double loss = (10000.0 * score.Justice +
+                510000.0 * score.Attack + 1010000.0 * score.Miss) / total;
+            return Mathf.Max(0, Mathf.CeilToInt((float)(allowance - loss)));
+        }
+
+        private static int LostScore(GameplayScoreState score, int total)
+        {
+            if (score == null || total <= 0) return 0;
+            double loss = (10000.0 * score.Justice +
+                510000.0 * score.Attack + 1010000.0 * score.Miss) / total;
+            return Mathf.Max(0, Mathf.RoundToInt((float)loss));
+        }
+
+        private static int RemainingBestScoreAllowance(GameplayScoreState score, int total, int bestScore)
+        {
+            if (score == null || total <= 0 || bestScore <= 0) return 0;
+            double allowance = Math.Max(0, 1010000.0 - bestScore);
+            double loss = (10000.0 * score.Justice +
+                510000.0 * score.Attack + 1010000.0 * score.Miss) / total;
+            return Mathf.Max(0, Mathf.CeilToInt((float)(allowance - loss)));
         }
 
         private void UpdateGameplayFps()
@@ -5181,17 +5637,11 @@ namespace ChunithmMobile.Runtime
         {
             ArcadeInputFrame frame = inputRig?.Ground?.Current;
             if (frame == null) return;
-            for (int lane = 0; lane < gameplayLaneHighlights.Count; lane++) {
-                bool touched = settings.ShowTouchFeedback && frame.Covers(lane, 1);
-                float baseOpacity = settings.TouchpadOpacity / 100f;
-                float effectOpacity = settings.TouchEffectOpacity / 100f;
-                Color baseColor = new Color(.02f, .15f, .19f, .72f * baseOpacity);
-                Color activeColor = new Color(.08f, .92f, 1f, .84f);
-                gameplayLaneHighlights[lane].color = touched
-                    ? Color.Lerp(baseColor, activeColor, effectOpacity) : baseColor;
-            }
+            GameplaySkinEvents.PublishInput(frame);
+            UpdateTouchpadFeedback(settings, frame, false);
             if (gameplayAirGuide == null) return;
-            bool show = settings.ShowAirGuide && frame.Air.Present && frame.Air.ContactCount > 0;
+            bool show = !IsFullscreenTouchpadActive() && settings.ShowAirGuide &&
+                frame.Air.Present && frame.Air.ContactCount > 0;
             gameplayAirGuide.gameObject.SetActive(show);
             if (!show) return;
             float bottom = settings.AirAreaBottom / 100f;
@@ -5204,6 +5654,51 @@ namespace ChunithmMobile.Runtime
             float edge = Mathf.Abs(frame.Air.MeanHeight - .5f) * 2f;
             gameplayAirGuide.color = Color.Lerp(new Color(.95f, .98f, 1f, .95f),
                 new Color(1f, .16f, .32f, .95f), edge);
+        }
+
+        private void UpdateTouchpadFeedback(AppSettings source, ArcadeInputFrame frame, bool previewRange)
+        {
+            bool fullscreenTouchpad = !previewRange && IsFullscreenTouchpadActive();
+            // The full-screen MOD still uses a logical 100% touchpad opacity,
+            // but its entire touchpad visual is hidden and feedback brightness
+            // is forced to zero. Layout preview must always show saved values.
+            float effectiveTouchpadOpacity = fullscreenTouchpad ? 1f : source.TouchpadOpacity / 100f;
+            float brightness = fullscreenTouchpad ? 0f :
+                Mathf.Clamp(source.TouchHighlightBrightness / 100f, 0f, 2f);
+            Color baseColor = new Color(.02f, .15f, .19f, .72f * effectiveTouchpadOpacity);
+            Color activeColor = Color.Lerp(new Color(.08f, .92f, 1f, .84f),
+                new Color(1f, 1f, 1f, .84f), Mathf.Clamp01(brightness - 1f));
+            float strength = (fullscreenTouchpad ? 0f : source.TouchEffectOpacity / 100f) *
+                Mathf.Min(1f, brightness);
+            float halfRange = source.TouchContactRangeTenths / 20f;
+            // A centred sample makes the configured finger width visible even
+            // while the user is operating the sidebar slider.
+            float left = 7.5f - halfRange, right = 7.5f + halfRange;
+            for (int lane = 0; lane < gameplayLaneHighlights.Count; lane++) {
+                bool touched = previewRange ? lane + 1f > left && lane < right
+                    : source.ShowTouchFeedback && frame != null && frame.Covers(lane, 1);
+                gameplayLaneHighlights[lane].color = touched && !previewRange ? Color.Lerp(baseColor, activeColor, strength) : baseColor;
+                if (lane < gameplayTouchRangeGuides.Count) {
+                    Image guide = gameplayTouchRangeGuides[lane];
+                    guide.gameObject.SetActive(!previewRange && touched && brightness > 0f);
+                    guide.color = new Color(activeColor.r, activeColor.g, activeColor.b, strength);
+                }
+            }
+            if (editorTouchRangeGuide != null) {
+                editorTouchRangeGuide.gameObject.SetActive(previewRange);
+                editorTouchRangeGuide.rectTransform.anchorMin = new Vector2(left / 16f, 1f);
+                editorTouchRangeGuide.rectTransform.anchorMax = new Vector2(right / 16f, 1f);
+                editorTouchRangeGuide.rectTransform.offsetMin = new Vector2(0, 18);
+                editorTouchRangeGuide.rectTransform.offsetMax = new Vector2(0, 22);
+                editorTouchRangeGuide.color = new Color(activeColor.r, activeColor.g, activeColor.b, strength);
+            }
+            if (editorTouchRangeFill != null) {
+                editorTouchRangeFill.gameObject.SetActive(previewRange);
+                editorTouchRangeFill.rectTransform.anchorMin = new Vector2(left / 16f, .04f);
+                editorTouchRangeFill.rectTransform.anchorMax = new Vector2(right / 16f, .96f);
+                editorTouchRangeFill.rectTransform.offsetMin = editorTouchRangeFill.rectTransform.offsetMax = Vector2.zero;
+                editorTouchRangeFill.color = new Color(activeColor.r, activeColor.g, activeColor.b, .84f * strength);
+            }
         }
 
         private void ApplyRuntimeSettings()
@@ -5228,28 +5723,45 @@ namespace ChunithmMobile.Runtime
                 settings.BackgroundMusicVolume / 100f);
             interfaceAudio?.RefreshSkinAudio();
             float groundHeight = Mathf.Clamp(settings.GroundAreaHeight / 100f, .08f, .45f);
+            // Multiplayer always uses its room-approved input layout. Fullscreen touchpad
+            // is a solo-only MOD and must not change a synchronized round. Its effective
+            // values are runtime-only: the saved layout remains intact for the editor and
+            // immediately resumes when the MOD is disabled.
+            bool fullscreenTouchpad = IsFullscreenTouchpadActive();
+            float activeGroundHeight = fullscreenTouchpad ? .95f : groundHeight;
             float airBottom = Mathf.Clamp(settings.AirAreaBottom / 100f, .08f, .85f);
             float airTop = Mathf.Clamp(settings.AirAreaTop / 100f, airBottom + .05f, 1f);
-            inputRig?.Ground?.SetPlayArea(new Rect(0, 0, 1, groundHeight));
+            float activeAirBottom = fullscreenTouchpad ? 0f : airBottom;
+            float activeAirTop = fullscreenTouchpad ? 0f : airTop;
+            inputRig?.Ground?.SetPlayArea(new Rect(0, 0, 1, activeGroundHeight));
             inputRig?.Ground?.SetTouchpadWidth(settings.TouchpadWidth / 100f);
             inputRig?.Ground?.SetContactRangeLanes(settings.TouchContactRangeTenths / 10f);
-            inputRig?.Air?.SetAirArea(new Rect(0, airBottom, 1, airTop - airBottom));
+            inputRig?.Air?.SetAirArea(new Rect(0, activeAirBottom, 1, activeAirTop - activeAirBottom));
             if (gameplayTouchpad != null) {
                 float width = Mathf.Clamp(settings.TouchpadWidth / 100f, .6f, 1f);
                 gameplayTouchpad.anchorMin = new Vector2((1f - width) * .5f, 0);
                 gameplayTouchpad.anchorMax = new Vector2((1f + width) * .5f,
-                    Mathf.Clamp(settings.TouchpadHeight / 100f, .05f, .45f));
+                    fullscreenTouchpad ? .95f : Mathf.Clamp(settings.TouchpadHeight / 100f, .05f, .45f));
                 gameplayTouchpad.offsetMin = Vector2.zero; gameplayTouchpad.offsetMax = Vector2.zero;
-                gameplayTouchpad.localRotation = Quaternion.Euler(0f, 0f, -settings.TouchpadTilt);
+                gameplayTouchpad.localRotation = Quaternion.identity;
                 Image touchpadImage = gameplayTouchpad.GetComponent<Image>();
                 if (touchpadImage != null)
-                    touchpadImage.color = new Color(.015f, .08f, .105f, .82f * settings.TouchpadOpacity / 100f);
+                    touchpadImage.color = new Color(.015f, .08f, .105f,
+                        .82f * (fullscreenTouchpad ? 1f : settings.TouchpadOpacity / 100f) *
+                        (fullscreenTouchpad ? 0f : settings.ShowTouchpadVisual ? 1f : 0f));
+                gameplayTouchpad.gameObject.SetActive(!fullscreenTouchpad && settings.ShowTouchpadVisual);
             }
-            UpdateAirZone(gameplayAirZone, airBottom, airTop);
-            PositionHorizontalLine(gameplayAirBoundaryBottom, airBottom);
-            PositionHorizontalLine(gameplayAirBoundaryTop, airTop);
-            gameplayTouchContacts?.Configure(settings.ShowTouchFeedback, groundHeight,
-                settings.TouchEffectOpacity / 100f);
+            UpdateAirZone(gameplayAirZone, activeAirBottom, activeAirTop);
+            if (gameplayAirZone != null) gameplayAirZone.gameObject.SetActive(!fullscreenTouchpad);
+            PositionHorizontalLine(gameplayAirBoundaryBottom, activeAirBottom);
+            PositionHorizontalLine(gameplayAirBoundaryTop, activeAirTop);
+            if (gameplayAirBoundaryBottom != null) gameplayAirBoundaryBottom.gameObject.SetActive(
+                !fullscreenTouchpad && settings.ShowInputBoundary);
+            if (gameplayAirBoundaryTop != null) gameplayAirBoundaryTop.gameObject.SetActive(
+                !fullscreenTouchpad && settings.ShowInputBoundary);
+            UpdateTouchpadFeedback(settings, null, false);
+            gameplayTouchContacts?.Configure(!fullscreenTouchpad && settings.ShowTouchFeedback,
+                activeGroundHeight, fullscreenTouchpad ? 0f : settings.TouchEffectOpacity / 100f);
             gameplayPlayfield?.ConfigureTopWidth(settings.TrackTopWidth);
             gameplayTrackMask?.Configure(settings.TrackMaskEnabled, settings.TrackMaskHeight, settings.TrackMaskOpacity);
             if (gameplaySession != null) {
@@ -5278,6 +5790,12 @@ namespace ChunithmMobile.Runtime
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
             FindObjectOfType<RuntimeLoadingOverlay>()?.SetHighContrastPalette(HighContrastUi);
         }
+
+        // This is intentionally separate from the serialized MOD toggle: an in-room
+        // multiplayer round must never receive a local full-screen input override.
+        private bool IsFullscreenTouchpadActive() => multiplayerInRound
+            ? activeMultiplayerRoom?.mods?.fullscreenTouchpad == true
+            : mods != null && mods.FullscreenTouchpad;
 
         private static void UpdateAirZone(RectTransform zone, float bottom, float top)
         {
@@ -5373,6 +5891,7 @@ namespace ChunithmMobile.Runtime
                 }
             }
             bool miss = judgement.Grade == ChunithmMobile.Chart.Judgement.Miss;
+            GameplaySkinEvents.PublishJudgement(judgement.Grade);
             if (point.IsScoring && (!miss || (!delayCalibrationActive && !settings.ExcludeMissFromAverage)))
                 playedDeltas.Add(judgement.DeltaMs);
             bool showMilliseconds = judgement.Grade switch {
@@ -5701,7 +6220,11 @@ namespace ChunithmMobile.Runtime
         }
         private RectTransform Page(AppPage page, Color color)
         {
-            RectTransform rect = Panel(page.ToString(), canvas.transform, color, Vector2.zero, Vector2.one);
+            // Gameplay input and track rendering use raw full-screen coordinates.
+            // Keep that page full screen; menu and management pages stay inside
+            // the iOS safe area so controls are not clipped by a notch or corner.
+            Transform parent = page == AppPage.Gameplay ? canvas.transform : UiRootTransform;
+            RectTransform rect = Panel(page.ToString(), parent, color, Vector2.zero, Vector2.one);
             // Panel() adds breathing room for cards; a page is a true full-screen
             // surface and must cover the camera all the way to every pixel edge.
             rect.offsetMin = Vector2.zero;
@@ -5777,7 +6300,7 @@ namespace ChunithmMobile.Runtime
         {
             modalOptionA?.gameObject.SetActive(false); modalOptionB?.gameObject.SetActive(false);
             if (modalConfirm != null) modalConfirm.GetComponentInChildren<Text>().text = UiLocalization.Translate("确定");
-            modalTitle.text = title; modalBody.text = body; modalAction = action; modalConfirm.gameObject.SetActive(showConfirm); modalLayer.gameObject.SetActive(true);
+            modalTitle.text = title; modalBody.text = body; modalAction = action; modalConfirm.gameObject.SetActive(showConfirm); modalLayer.SetAsLastSibling(); modalLayer.gameObject.SetActive(true);
             CanvasGroup group = modalLayer.GetComponent<CanvasGroup>() ?? modalLayer.gameObject.AddComponent<CanvasGroup>(); group.alpha = 0; StartCoroutine(Fade(group, 0, 1, .16f));
         }
         private void HideModal() { if (modalLayer != null) modalLayer.gameObject.SetActive(false); modalAction = null; }
@@ -5817,12 +6340,8 @@ namespace ChunithmMobile.Runtime
                 string fileName = "chunithm-mobile-logs-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".txt";
                 string path = Path.Combine(directory, fileName);
                 File.WriteAllText(path, BuildDiagnosticLog(), new UTF8Encoding(false));
-#if UNITY_ANDROID && !UNITY_EDITOR
-                using (var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.LogExportActivity"))
-                    bridge.CallStatic("exportFile", path);
-#else
-                ShowModal("日志已生成", path, null, false);
-#endif
+                if (!PlatformStoragePaths.TryShareFile(path))
+                    ShowModal("日志已生成", path, null, false);
             }
             catch (Exception exception)
             {
@@ -5844,6 +6363,10 @@ namespace ChunithmMobile.Runtime
             output.AppendLine("CPU: " + SystemInfo.processorType + " (" + SystemInfo.processorCount + ")");
             output.AppendLine("GPU: " + SystemInfo.graphicsDeviceName + " / " + SystemInfo.graphicsDeviceVersion);
             output.AppendLine("Memory MB: " + SystemInfo.systemMemorySize);
+            long availableMemory = PlatformMemoryInfo.GetAvailableMemoryBytes();
+            long availableDisk = PlatformStoragePaths.GetAvailableDiskSpace(PlatformServices.Current.PersistentDataPath);
+            output.AppendLine("Available memory: " + (availableMemory >= 0 ? FormatBytes(availableMemory) : "unavailable"));
+            output.AppendLine("Available storage: " + (availableDisk >= 0 ? FormatBytes(availableDisk) : "unavailable"));
             output.AppendLine("Screen: " + Screen.width + "x" + Screen.height + " @ " + Screen.currentResolution.refreshRateRatio.value.ToString("0.00", CultureInfo.InvariantCulture));
             output.AppendLine("Persistent data: " + PlatformServices.Current.PersistentDataPath);
             output.AppendLine("Catalog songs: " + catalog.Count);
@@ -6036,6 +6559,44 @@ namespace ChunithmMobile.Runtime
             songDetailPanel.offsetMin = new Vector2(3, 3); songDetailPanel.offsetMax = new Vector2(-3, -3);
         }
 
+        private void ScrollSongListToTop()
+        {
+            if (songScroll == null || songGrid == null) return;
+            if (songScrollToTopAnimation != null) StopCoroutine(songScrollToTopAnimation);
+            songScrollToTopAnimation = StartCoroutine(AnimateSongListToTop());
+        }
+
+        private IEnumerator AnimateSongListToTop()
+        {
+            songScroll.StopMovement();
+            RectTransform grid = (RectTransform)songGrid;
+            float startY = Mathf.Max(0f, grid.anchoredPosition.y);
+            if (startY <= 1f)
+            {
+                grid.anchoredPosition = Vector2.zero;
+                songScroll.verticalNormalizedPosition = 1f;
+                RenderVirtualSongCards();
+                songScrollToTopAnimation = null;
+                yield break;
+            }
+
+            float duration = Mathf.Clamp(startY / 1800f, .22f, .65f);
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+                grid.anchoredPosition = new Vector2(0f, Mathf.Lerp(startY, 0f, t));
+                RenderVirtualSongCards();
+                yield return null;
+            }
+
+            grid.anchoredPosition = Vector2.zero;
+            songScroll.verticalNormalizedPosition = 1f;
+            RenderVirtualSongCards();
+            songScrollToTopAnimation = null;
+        }
+
         private void ScrollToCurrentSong()
         {
             if (songScroll == null || selectedSong == null || visibleSongs.Count == 0) return;
@@ -6078,6 +6639,62 @@ namespace ChunithmMobile.Runtime
             RectTransform iconRect = (RectTransform)iconObject.transform; iconRect.anchorMin = new Vector2(.30f, .24f); iconRect.anchorMax = new Vector2(.70f, .76f); iconRect.offsetMin = Vector2.zero; iconRect.offsetMax = Vector2.zero;
             Image icon = iconObject.GetComponent<Image>(); icon.sprite = CreateArrowSprite(!pointsRight); icon.color = HighContrastUi ? UiThemeContrast.Navy : Color.white; icon.preserveAspect = true; icon.raycastTarget = false;
             return button;
+        }
+
+        private Button TopArrowButton(Transform parent, UnityEngine.Events.UnityAction action)
+        {
+            // Match the left sorting control: rounded surface, Unity tint
+            // feedback and the same press animation, with only an arrow icon.
+            RectTransform rect = Panel("Scroll To Top", parent, surfaceRaised,
+                new Vector2(.855f, .900f), new Vector2(.975f, .982f));
+            Button button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = rect.GetComponent<Image>();
+            ColorBlock colors = button.colors;
+            colors.highlightedColor = Color.Lerp(surfaceRaised, Color.white, .12f);
+            colors.pressedColor = Color.Lerp(surfaceRaised, Color.black, .25f);
+            colors.fadeDuration = .08f;
+            button.colors = colors;
+            button.onClick.AddListener(action);
+            rect.gameObject.AddComponent<UiPressAnimation>();
+            var iconObject = new GameObject("Top Arrow Icon", typeof(RectTransform), typeof(Image));
+            iconObject.transform.SetParent(rect, false);
+            RectTransform iconRect = (RectTransform)iconObject.transform;
+            iconRect.anchorMin = new Vector2(.24f, .18f);
+            iconRect.anchorMax = new Vector2(.76f, .82f);
+            iconRect.offsetMin = Vector2.zero;
+            iconRect.offsetMax = Vector2.zero;
+            Image icon = iconObject.GetComponent<Image>();
+            icon.sprite = CreateScrollTopSprite();
+            icon.color = HighContrastUi ? UiThemeContrast.Navy : Color.white;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            return button;
+        }
+
+        private static Sprite CreateScrollTopSprite()
+        {
+            const int size = 64;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "Scroll To Top Icon",
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++) for (int x = 0; x < size; x++)
+            {
+                bool shaft = x >= 28 && x <= 35 && y >= 16 && y <= 48;
+                bool head = y >= 44 && y <= 52 && x >= 18 && x <= 45 &&
+                    Mathf.Abs(x - 31.5f) <= (52 - y) * 1.05f;
+                bool baseLine = y >= 10 && y <= 16 && x >= 14 && x <= 49;
+                pixels[y * size + x] = shaft || head || baseLine
+                    ? new Color32(255, 255, 255, 255)
+                    : new Color32(255, 255, 255, 0);
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return Sprite.Create(texture, new Rect(0, 0, size, size),
+                new Vector2(.5f, .5f), 100);
         }
 
         private static Sprite CreateArrowSprite(bool right)
@@ -6160,6 +6777,91 @@ namespace ChunithmMobile.Runtime
             rect.gameObject.AddComponent<UiPressAnimation>();
             if (themeButton && value == "Ⅱ") rect.name = "Pause button";
             Label(value, rect, 23, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, Color.white, preserveColor); return button;
+        }
+
+        private Button CreatePinButton(Transform parent, UnityEngine.Events.UnityAction action)
+        {
+            var gameObject = new GameObject("Song pin control", typeof(RectTransform), typeof(Button));
+            gameObject.transform.SetParent(parent, false);
+            RectTransform rect = (RectTransform)gameObject.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = Vector2.one;
+            rect.localRotation = Quaternion.identity;
+            rect.localScale = Vector3.one;
+            rect.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Right, 8f, 58f);
+            rect.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Top, 8f, 58f);
+            rect.SetAsLastSibling();
+
+            // The pin is intentionally transparent so the cover remains visible
+            // underneath it. Its shadow and vector shape match the top button.
+            // A separate vector shadow keeps the transparent icon legible on
+            // white or highly detailed jackets without adding a background box.
+            PinIconGraphic shadow = CreatePinVector("Contrast outline", rect,
+                new Color(0f, 0f, 0f, .72f), new Vector2(1.5f, -1.5f));
+            shadow.raycastTarget = false;
+            PinIconGraphic icon = CreatePinVector("Icon", rect,
+                new Color(.70f, .74f, .80f, 1f), Vector2.zero);
+            songPinIcon = icon;
+            Button button = gameObject.GetComponent<Button>();
+            button.targetGraphic = icon;
+            button.transition = Selectable.Transition.None;
+            if (action != null) button.onClick.AddListener(action);
+            rect.gameObject.AddComponent<UiPressAnimation>();
+            return button;
+        }
+
+        private static PinIconGraphic CreatePinVector(string name, Transform parent, Color color,
+            Vector2 offset)
+        {
+            var layer = new GameObject(name, typeof(RectTransform), typeof(PinIconGraphic));
+            layer.transform.SetParent(parent, false);
+            RectTransform rect = (RectTransform)layer.transform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = offset;
+            rect.offsetMax = offset;
+            PinIconGraphic graphic = layer.GetComponent<PinIconGraphic>();
+            graphic.color = color;
+            return graphic;
+        }
+
+        /// <summary>
+        /// Runtime vector for an upward arrow meeting a horizontal top line.
+        /// It has no background image, so the jacket remains visible beneath it.
+        /// </summary>
+        private sealed class PinIconGraphic : Graphic
+        {
+            protected override void OnPopulateMesh(VertexHelper vh)
+            {
+                vh.Clear();
+                Rect rect = rectTransform.rect;
+                float width = Mathf.Max(1f, rect.width);
+                float height = Mathf.Max(1f, rect.height);
+                Vector2 P(float x, float y) => new Vector2(rect.xMin + x * width, rect.yMin + y * height);
+                // Upload icon: horizontal stop line, upward arrowhead, then stem.
+                AddQuad(vh, P(.17f, .84f), P(.83f, .84f), P(.83f, .94f), P(.17f, .94f));
+                AddQuad(vh, P(.43f, .16f), P(.57f, .16f), P(.57f, .56f), P(.43f, .56f));
+                AddTriangle(vh, P(.23f, .50f), P(.77f, .50f), P(.50f, .78f));
+            }
+
+            private void AddQuad(VertexHelper vh, Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+            {
+                int start = vh.currentVertCount;
+                AddVertex(vh, a); AddVertex(vh, b); AddVertex(vh, c); AddVertex(vh, d);
+                vh.AddTriangle(start, start + 1, start + 2);
+                vh.AddTriangle(start, start + 2, start + 3);
+            }
+
+            private void AddTriangle(VertexHelper vh, Vector2 a, Vector2 b, Vector2 c)
+            {
+                int start = vh.currentVertCount;
+                AddVertex(vh, a); AddVertex(vh, b); AddVertex(vh, c);
+                vh.AddTriangle(start, start + 1, start + 2);
+            }
+
+            private void AddVertex(VertexHelper vh, Vector2 position)
+            {
+                vh.AddVert(position, color, Vector2.zero);
+            }
         }
         private InputField Input(string placeholder, Transform parent, Vector2 min, Vector2 max)
         {
