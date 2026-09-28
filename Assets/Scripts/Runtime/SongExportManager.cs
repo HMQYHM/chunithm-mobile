@@ -12,7 +12,8 @@ namespace ChunithmMobile.Runtime
     {
         public static void Export(IReadOnlyList<SongEntry> songs, string archivePath)
         {
-            if (songs == null || songs.Count == 0)
+            SongEntry[] exportSongs = songs?.Where(item => item != null).ToArray() ?? Array.Empty<SongEntry>();
+            if (exportSongs.Length == 0)
                 throw new InvalidOperationException("没有选择要导出的歌曲");
             if (string.IsNullOrWhiteSpace(archivePath))
                 throw new ArgumentException("导出路径不可为空", nameof(archivePath));
@@ -21,21 +22,34 @@ namespace ChunithmMobile.Runtime
             Directory.CreateDirectory(Path.GetDirectoryName(output));
             if (File.Exists(output)) File.Delete(output);
 
-            using (FileStream stream = File.Create(output))
-            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, false))
+            try
             {
-                foreach (SongEntry song in songs.Where(item => item != null))
+                using (FileStream stream = File.Create(output))
+                using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, false))
                 {
-                    string root = ValidateSongRoot(song.Root);
-                    string folder = SafeName(string.IsNullOrWhiteSpace(song.Id)
-                        ? Path.GetFileName(root) : song.Id);
-                    foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                    var usedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (SongEntry song in exportSongs)
                     {
-                        string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
-                        string entryName = folder + "/" + relative;
-                        archive.CreateEntryFromFile(file, entryName, CompressionLevel.Fastest);
+                        string root = ValidateSongRoot(song.Root);
+                        string baseFolder = SafeName(string.IsNullOrWhiteSpace(song.Id)
+                            ? Path.GetFileName(root) : song.Id);
+                        string folder = baseFolder;
+                        int suffix = 2;
+                        while (!usedFolders.Add(folder)) folder = baseFolder + "_" + suffix++;
+                        foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                        {
+                            string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+                            string entryName = folder + "/" + relative;
+                            archive.CreateEntryFromFile(file, entryName, CompressionLevel.Fastest);
+                        }
                     }
                 }
+            }
+            catch
+            {
+                // 不把中断或失败的半成品留在导出目录，避免下次分享时误选损坏 ZIP。
+                try { if (File.Exists(output)) File.Delete(output); } catch { }
+                throw;
             }
         }
 
