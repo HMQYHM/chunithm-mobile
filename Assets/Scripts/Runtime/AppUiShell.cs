@@ -1595,10 +1595,14 @@ namespace ChunithmMobile.Runtime
             }
             string directory = Path.Combine(Application.temporaryCachePath, "Exports");
             Directory.CreateDirectory(directory);
-            string prefix = selected.Length == 1
-                ? (string.IsNullOrWhiteSpace(selected[0].Id) ? "song" : selected[0].Id)
-                : "songs-" + selected.Length;
-            string path = Path.Combine(directory, prefix + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".zip");
+            // 导出文件名使用歌曲显示名，方便在系统文件管理器中直接识别。
+            // 多选时保留第一首歌名，并明确显示其余歌曲数量。
+            string firstName = string.IsNullOrWhiteSpace(selected[0].Name) ? selected[0].Id : selected[0].Name;
+            firstName = SafeExportFileName(string.IsNullOrWhiteSpace(firstName) ? "歌曲" : firstName);
+            string fileName = selected.Length == 1
+                ? firstName + ".zip"
+                : firstName + "与另外" + (selected.Length - 1) + "首歌.zip";
+            string path = Path.Combine(directory, fileName);
             try
             {
                 ShowImportOverlay("导出歌曲");
@@ -1621,6 +1625,15 @@ namespace ChunithmMobile.Runtime
                 Debug.LogError("Song export failed: " + exception);
                 FailImportOverlay(exception);
             }
+        }
+
+        // 系统保存窗口和 ZIP 内部路径都不能包含平台保留字符；保留中文名称本身。
+        private static string SafeExportFileName(string value)
+        {
+            string result = value ?? "歌曲";
+            foreach (char invalid in Path.GetInvalidFileNameChars()) result = result.Replace(invalid, '_');
+            result = result.Trim().TrimEnd('.', ' ');
+            return string.IsNullOrWhiteSpace(result) ? "歌曲" : result;
         }
 
         private async void ExportManagedSkin()
@@ -6577,6 +6590,14 @@ namespace ChunithmMobile.Runtime
             string value = string.IsNullOrWhiteSpace(message) ? "日志导出已取消。" : message;
             bool success = value.StartsWith("OK|", StringComparison.Ordinal);
             ShowModal(success ? "日志导出完成" : "日志导出", success ? value.Substring(3) : value, null, false);
+        }
+
+        // Android 保存窗口对歌曲 ZIP、皮肤包和日志统一回调到这里；日志保留旧回调兼容。
+        public void OnFileExported(string message)
+        {
+            string value = string.IsNullOrWhiteSpace(message) ? "文件导出已取消。" : message;
+            bool success = value.StartsWith("OK|", StringComparison.Ordinal);
+            ShowModal(success ? "文件导出完成" : "文件导出", success ? value.Substring(3) : value, null, false);
         }
 
         private void MenuButton(string title, string subtitle, Transform parent, float bottom, Color color, UnityEngine.Events.UnityAction action)

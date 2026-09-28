@@ -12,12 +12,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Locale;
 
 public final class LogExportActivity extends Activity {
-    private static final int CREATE_LOG = 7841;
+    private static final int CREATE_FILE = 7841;
     private static final String UNITY_OBJECT = "CHUNITHM Mobile Runtime";
     private static final String EXTRA_SOURCE = "source";
     private String sourcePath;
@@ -41,18 +39,18 @@ public final class LogExportActivity extends Activity {
         super.onCreate(state);
         sourcePath = getIntent().getStringExtra(EXTRA_SOURCE);
         if (sourcePath == null || !new File(sourcePath).isFile()) {
-            sendResult("待导出的日志文件不存在。");
+            sendResult("待导出的文件不存在。");
             finish();
             return;
         }
         if (state != null) return;
         Intent picker = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         picker.addCategory(Intent.CATEGORY_OPENABLE);
-        picker.setType("text/plain");
-        picker.putExtra(Intent.EXTRA_TITLE, "chunithm-mobile-logs-" +
-            new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date()) + ".txt");
+        File source = new File(sourcePath);
+        picker.setType(mimeTypeFor(source.getName()));
+        picker.putExtra(Intent.EXTRA_TITLE, source.getName());
         try {
-            startActivityForResult(picker, CREATE_LOG);
+            startActivityForResult(picker, CREATE_FILE);
         } catch (Exception exception) {
             Log.e("CHUNITHM_LOG", "No document creator is available", exception);
             sendResult("设备没有可用的系统文件保存窗口。");
@@ -62,9 +60,9 @@ public final class LogExportActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != CREATE_LOG) return;
+        if (requestCode != CREATE_FILE) return;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            sendResult("日志导出已取消。");
+            sendResult("文件导出已取消。");
             finish();
             return;
         }
@@ -80,15 +78,24 @@ public final class LogExportActivity extends Activity {
             int read;
             while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
             output.flush();
-            sendResult("OK|日志文件已保存。");
+            sendResult("OK|文件已保存。");
         } catch (Exception exception) {
             Log.e("CHUNITHM_LOG", "Log export failed", exception);
-            sendResult("日志保存失败：" + exception.getMessage());
+            sendResult("文件保存失败：" + exception.getMessage());
         }
         runOnUiThread(this::finish);
     }
 
     private static void sendResult(String message) {
-        UnityPlayer.UnitySendMessage(UNITY_OBJECT, "OnLogExported", message == null ? "" : message);
+        UnityPlayer.UnitySendMessage(UNITY_OBJECT, "OnFileExported", message == null ? "" : message);
+    }
+
+    // 保存窗口的 MIME 必须与源文件一致，否则 Android 会按文本日志处理 ZIP。
+    private static String mimeTypeFor(String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.US);
+        if (lower.endsWith(".zip")) return "application/zip";
+        if (lower.endsWith(".txt")) return "text/plain";
+        if (lower.endsWith(".json")) return "application/json";
+        return "application/octet-stream";
     }
 }
