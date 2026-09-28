@@ -416,6 +416,7 @@ namespace ChunithmMobile.Runtime
         private Image gameplayAirBoundaryTop;
         private GameplayJudgementEffects gameplayEffects;
         private GameplaySkinTouchOverlay gameplaySkinTouchOverlay;
+        private GameplaySkinLive2DBridge gameplaySkinLive2D;
         private TouchContactOverlay gameplayTouchContacts;
         private TrackMaskOverlay gameplayTrackMask;
         private readonly List<Image> gameplayLaneHighlights = new List<Image>();
@@ -3449,6 +3450,9 @@ namespace ChunithmMobile.Runtime
             RectTransform skinTouchLayer = RectObject("Gameplay skin touch overlay", page, Vector2.zero, Vector2.zero);
             gameplaySkinTouchOverlay = skinTouchLayer.gameObject.AddComponent<GameplaySkinTouchOverlay>();
             gameplaySkinTouchOverlay.Initialize(page);
+            RectTransform live2DLayer = RectObject("Gameplay skin Live2D bridge", page, Vector2.zero, Vector2.zero);
+            gameplaySkinLive2D = live2DLayer.gameObject.AddComponent<GameplaySkinLive2DBridge>();
+            gameplaySkinLive2D.Initialize();
             gameplayPauseButton = ButtonText("Ⅱ", page, new Vector2(.018f, .88f), new Vector2(.075f, .975f),
                 HighContrastUi ? UiThemeContrast.Yellow : new Color(.025f, .07f, .11f, .92f), RequestPauseGameplay);
             gameplayPauseButton.name = "Pause button";
@@ -5796,6 +5800,10 @@ namespace ChunithmMobile.Runtime
             }
             GameplaySkinEvents.PublishTouchZones(new GameplaySkinEvents.TouchZoneSnapshot(
                 leftTop, leftBottom, rightTop, rightBottom));
+            GameplaySkinEvents.PublishTouchTelemetry(new GameplaySkinEvents.TouchTelemetrySnapshot(
+                BuildTouchTrack(frame, true), BuildTouchTrack(frame, false),
+                frame.Ground.Count > 0 ? frame.Ground[0].TimeMs : Time.unscaledTime * 1000.0,
+                inputRig != null && !inputRig.InputSuppressed));
             UpdateTouchpadFeedback(settings, frame, false);
             if (gameplayAirGuide == null) return;
             bool show = !IsFullscreenTouchpadActive() && settings.ShowAirGuide &&
@@ -5812,6 +5820,32 @@ namespace ChunithmMobile.Runtime
             float edge = Mathf.Abs(frame.Air.MeanHeight - .5f) * 2f;
             gameplayAirGuide.color = Color.Lerp(new Color(.95f, .98f, 1f, .95f),
                 new Color(1f, .16f, .32f, .95f), edge);
+        }
+
+        /// <summary>
+        /// 将当前帧的独立触点聚合成一侧的中心点，供皮肤动画使用。
+        /// 这里只读 GroundContact，不改变任何判定输入。
+        /// </summary>
+        private static GameplaySkinEvents.TouchTrack BuildTouchTrack(ArcadeInputFrame frame, bool left)
+        {
+            if (frame == null) return new GameplaySkinEvents.TouchTrack(false, 0, .5f, .5f, 0, 0);
+            int count = 0;
+            float sumX = 0f, sumY = 0f, sumVelocityX = 0f, sumVelocityY = 0f;
+            foreach (GroundContact contact in frame.Ground)
+            {
+                if (contact.Phase == GroundPhase.Up) continue;
+                bool contactLeft = contact.LaneIndex < ArcadeTouchInput.LaneCount / 2;
+                if (contactLeft != left) continue;
+                count++;
+                sumX += Mathf.Clamp01(contact.SurfaceX);
+                sumY += Mathf.Clamp01(contact.SurfaceY);
+                sumVelocityX += contact.VelocitySurfaceXPerSecond;
+                sumVelocityY += contact.VelocitySurfaceYPerSecond;
+            }
+            if (count == 0) return new GameplaySkinEvents.TouchTrack(false, 0, left ? .25f : .75f, .52f, 0, 0);
+            float divisor = count;
+            return new GameplaySkinEvents.TouchTrack(true, count, sumX / divisor, sumY / divisor,
+                sumVelocityX / divisor, sumVelocityY / divisor);
         }
 
         private void UpdateTouchpadFeedback(AppSettings source, ArcadeInputFrame frame, bool previewRange)
@@ -5937,6 +5971,7 @@ namespace ChunithmMobile.Runtime
             gameplayPlayfield?.RefreshSkin();
             gameplayEffects?.ConfigureSkin(gameplaySkin);
             gameplaySkinTouchOverlay?.RefreshSkin();
+            gameplaySkinLive2D?.RefreshSkin();
             if (gameplayScore != null) gameplayScore.color = gameplaySkin.ScoreColor;
             if (gameplayCombo != null) gameplayCombo.color = gameplaySkin.ComboColor;
             RefreshJudgementSkin();

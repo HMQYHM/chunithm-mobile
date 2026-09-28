@@ -15,6 +15,13 @@ namespace ChunithmMobile.Input
         public double StartTimeMs;
         public float LanePosition;
         public float PreviousLanePosition;
+        // Normalized position inside the configured touchpad. Skin overlays use
+        // this value for visual tracking; judgement continues to use lanes.
+        public float SurfaceX;
+        public float PreviousSurfaceX;
+        public float VelocitySurfaceXPerSecond;
+        public float PreviousSurfaceY;
+        public float VelocitySurfaceYPerSecond;
         // Discrete cabinet lane indices. The float positions remain available
         // for visual feedback, while judgement uses these 16 zones.
         public int LaneIndex;

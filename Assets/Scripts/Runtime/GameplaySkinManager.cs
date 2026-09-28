@@ -76,6 +76,41 @@ namespace ChunithmMobile.Runtime
         public string TouchRightTopPath = "ui/touch/right-top/air.png";
         public string TouchRightBottomPath = "ui/touch/right-bottom/miss.png";
 
+        // Optional touch-tracking overlay. All positions are normalized to the
+        // gameplay canvas so a skin controls its own tablet placement.
+        public bool TouchTabletEnabled;
+        public string TouchTabletPath = "ui/touch/tablet.png";
+        public string TouchLeftPawPath = "ui/touch/left-paw.png";
+        public string TouchRightPawPath = "ui/touch/right-paw.png";
+        public float TouchTabletX = .24f;
+        public float TouchTabletY = .08f;
+        public float TouchTabletWidth = .52f;
+        public float TouchTabletHeight = .30f;
+        public float TouchLeftPawWidth = .14f;
+        public float TouchLeftPawHeight = .18f;
+        public float TouchRightPawWidth = .14f;
+        public float TouchRightPawHeight = .18f;
+        public float TouchLeftPawOffsetX = 0f;
+        public float TouchLeftPawOffsetY = 0f;
+        public float TouchRightPawOffsetX = 0f;
+        public float TouchRightPawOffsetY = 0f;
+        public float TouchLeftPawSmoothing = .18f;
+        public float TouchRightPawSmoothing = .18f;
+
+        // Live2D model metadata is intentionally declarative. The game will
+        // only map the whitelisted touch values to these named parameters.
+        public bool Live2DEnabled;
+        public string Live2DModelPath = "model/cat.model3.json";
+        public string Live2DIdleMotion = "";
+        public string Live2DLeftPressMotion = "";
+        public string Live2DRightPressMotion = "";
+        public string Live2DLeftXParameter = "ParamMouseX";
+        public string Live2DLeftYParameter = "ParamMouseY";
+        public string Live2DRightXParameter = "ParamMouseX";
+        public string Live2DRightYParameter = "ParamMouseY";
+        public string Live2DLeftDownParameter = "ParamMouseLeftDown";
+        public string Live2DRightDownParameter = "ParamMouseRightDown";
+
         public static GameplaySkinStyle Original()
         {
             return new GameplaySkinStyle();
@@ -739,6 +774,39 @@ namespace ChunithmMobile.Runtime
                     result.TouchRightTopPath = SafeSkinRelativePath(manifest.touchZones.rightTop, result.TouchRightTopPath);
                     result.TouchRightBottomPath = SafeSkinRelativePath(manifest.touchZones.rightBottom, result.TouchRightBottomPath);
                 }
+                if (manifest.touchOverlay != null) {
+                    result.TouchTabletEnabled = manifest.touchOverlay.enabled;
+                    SkinTouchOverlayManifest overlay = manifest.touchOverlay;
+                    if (overlay.tablet != null) {
+                        result.TouchTabletPath = SafeSkinRelativePath(overlay.tablet.image, result.TouchTabletPath);
+                        result.TouchTabletX = Mathf.Clamp01(overlay.tablet.x);
+                        result.TouchTabletY = Mathf.Clamp01(overlay.tablet.y);
+                        result.TouchTabletWidth = Mathf.Clamp(overlay.tablet.width, .01f, 1f - result.TouchTabletX);
+                        result.TouchTabletHeight = Mathf.Clamp(overlay.tablet.height, .01f, 1f - result.TouchTabletY);
+                    }
+                    if (overlay.leftPaw != null) ApplyPawManifest(overlay.leftPaw, true, result);
+                    if (overlay.rightPaw != null) ApplyPawManifest(overlay.rightPaw, false, result);
+                }
+                if (manifest.live2d != null) {
+                    result.Live2DEnabled = manifest.live2d.enabled;
+                    result.Live2DModelPath = SafeSkinRelativePath(manifest.live2d.model,
+                        result.Live2DModelPath);
+                    result.Live2DIdleMotion = SafeMotionName(manifest.live2d.idleMotion);
+                    result.Live2DLeftPressMotion = SafeMotionName(manifest.live2d.leftPressMotion);
+                    result.Live2DRightPressMotion = SafeMotionName(manifest.live2d.rightPressMotion);
+                    result.Live2DLeftXParameter = SafeParameterName(manifest.live2d.leftXParameter,
+                        result.Live2DLeftXParameter);
+                    result.Live2DLeftYParameter = SafeParameterName(manifest.live2d.leftYParameter,
+                        result.Live2DLeftYParameter);
+                    result.Live2DRightXParameter = SafeParameterName(manifest.live2d.rightXParameter,
+                        result.Live2DRightXParameter);
+                    result.Live2DRightYParameter = SafeParameterName(manifest.live2d.rightYParameter,
+                        result.Live2DRightYParameter);
+                    result.Live2DLeftDownParameter = SafeParameterName(manifest.live2d.leftDownParameter,
+                        result.Live2DLeftDownParameter);
+                    result.Live2DRightDownParameter = SafeParameterName(manifest.live2d.rightDownParameter,
+                        result.Live2DRightDownParameter);
+                }
             }
             catch (Exception exception)
             {
@@ -760,6 +828,45 @@ namespace ChunithmMobile.Runtime
             if (normalized.Contains("..") || normalized.Contains(":") || normalized.StartsWith("//", StringComparison.Ordinal))
                 return fallback;
             return normalized;
+        }
+
+        private static string SafeParameterName(string value, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return fallback;
+            return value.All(character => char.IsLetterOrDigit(character) || character == '_' || character == '-')
+                ? value : fallback;
+        }
+
+        private static string SafeMotionName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return "";
+            return value.All(character => char.IsLetterOrDigit(character) || character == '_' || character == '-')
+                ? value : "";
+        }
+
+        private static void ApplyPawManifest(SkinPawManifest paw, bool left, GameplaySkinStyle result)
+        {
+            string path = SafeSkinRelativePath(paw.image, left ? result.TouchLeftPawPath : result.TouchRightPawPath);
+            float width = Mathf.Clamp(paw.width, .01f, 1f);
+            float height = Mathf.Clamp(paw.height, .01f, 1f);
+            float offsetX = Mathf.Clamp(paw.offsetX, -.5f, .5f);
+            float offsetY = Mathf.Clamp(paw.offsetY, -.5f, .5f);
+            float smoothing = Mathf.Clamp(paw.smoothing, .01f, 1f);
+            if (left) {
+                result.TouchLeftPawPath = path;
+                result.TouchLeftPawWidth = width;
+                result.TouchLeftPawHeight = height;
+                result.TouchLeftPawOffsetX = offsetX;
+                result.TouchLeftPawOffsetY = offsetY;
+                result.TouchLeftPawSmoothing = smoothing;
+            } else {
+                result.TouchRightPawPath = path;
+                result.TouchRightPawWidth = width;
+                result.TouchRightPawHeight = height;
+                result.TouchRightPawOffsetX = offsetX;
+                result.TouchRightPawOffsetY = offsetY;
+                result.TouchRightPawSmoothing = smoothing;
+            }
         }
 
         private static GameplaySkinInfo BuiltinInfo()
@@ -804,6 +911,8 @@ namespace ChunithmMobile.Runtime
             string name = Path.GetFileName(path ?? "");
             return extension == ".json" || extension == ".png" || extension == ".jpg" ||
                 extension == ".jpeg" || extension == ".webp" || extension == ".obj" ||
+                extension == ".moc3" || extension == ".cdi3" || extension == ".motion3" ||
+                extension == ".exp3" ||
                 extension == ".wav" || extension == ".mp3" || extension == ".ogg" ||
                 name.Equals("README.txt", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("LICENSE-MIT.txt", StringComparison.OrdinalIgnoreCase) ||
@@ -844,6 +953,8 @@ namespace ChunithmMobile.Runtime
             public SkinUiPart judgements;
             public SkinUiEffects effects;
             public SkinTouchZoneManifest touchZones;
+            public SkinTouchOverlayManifest touchOverlay;
+            public SkinLive2DManifest live2d;
         }
 
         [Serializable]
@@ -866,6 +977,52 @@ namespace ChunithmMobile.Runtime
             public string leftBottom;
             public string rightTop;
             public string rightBottom;
+        }
+
+        [Serializable]
+        private sealed class SkinTouchOverlayManifest
+        {
+            public bool enabled;
+            public SkinTabletManifest tablet;
+            public SkinPawManifest leftPaw;
+            public SkinPawManifest rightPaw;
+        }
+
+        [Serializable]
+        private sealed class SkinTabletManifest
+        {
+            public string image;
+            public float x = .24f;
+            public float y = .08f;
+            public float width = .52f;
+            public float height = .30f;
+        }
+
+        [Serializable]
+        private sealed class SkinPawManifest
+        {
+            public string image;
+            public float width = .14f;
+            public float height = .18f;
+            public float offsetX;
+            public float offsetY;
+            public float smoothing = .18f;
+        }
+
+        [Serializable]
+        private sealed class SkinLive2DManifest
+        {
+            public bool enabled;
+            public string model;
+            public string idleMotion;
+            public string leftPressMotion;
+            public string rightPressMotion;
+            public string leftXParameter = "ParamMouseX";
+            public string leftYParameter = "ParamMouseY";
+            public string rightXParameter = "ParamMouseX";
+            public string rightYParameter = "ParamMouseY";
+            public string leftDownParameter = "ParamMouseLeftDown";
+            public string rightDownParameter = "ParamMouseRightDown";
         }
 
         [Serializable]

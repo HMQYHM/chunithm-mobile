@@ -53,6 +53,7 @@ namespace ChunithmMobile.Input
 
         private struct PointerHistory {
             public float Lane;
+            public float SurfaceX;
             public float SurfaceY;
             public float StartLane;
             public double StartTimeMs;
@@ -98,6 +99,9 @@ namespace ChunithmMobile.Input
                 float lane = LaneAt(point);
                 double seconds = had ? System.Math.Max(.001, (now - old.TimeMs) / 1000.0) : .001;
                 float previous = had ? old.Lane : lane;
+                float previousSurfaceX = had ? old.SurfaceX : point;
+                float surfaceY = Mathf.Clamp01((normalized.y - normalizedPlayArea.yMin) / normalizedPlayArea.height);
+                float previousSurfaceY = had ? old.SurfaceY : surfaceY;
                 int laneIndex = Mathf.Clamp(Mathf.FloorToInt(lane), 0, LaneCount - 1);
                 int previousLaneIndex = Mathf.Clamp(Mathf.FloorToInt(previous), 0, LaneCount - 1);
                 bool ended = touch.phase == TouchPhase.Ended || touch.phase == TouchPhase.Canceled;
@@ -135,16 +139,21 @@ namespace ChunithmMobile.Input
                     PointerId = touch.fingerId, Phase = phase, TimeMs = now,
                     StartTimeMs = had ? old.StartTimeMs : now, LanePosition = lane,
                     PreviousLanePosition = previous, LaneIndex = laneIndex, PreviousLaneIndex = previousLaneIndex,
+                    SurfaceX = point, PreviousSurfaceX = previousSurfaceX,
+                    VelocitySurfaceXPerSecond = (float)((point - previousSurfaceX) / seconds),
+                    PreviousSurfaceY = previousSurfaceY,
+                    VelocitySurfaceYPerSecond = (float)((surfaceY - previousSurfaceY) / seconds),
                     VelocityLanesPerSecond = (float)((lane - previous) / seconds),
                     FirstLane = Mathf.Min(laneIndex, previousLaneIndex), LastLane = Mathf.Max(laneIndex, previousLaneIndex),
                     CoveredLaneMask = mask, PressedLaneMask = 0, TouchSize = touchSize,
-                    SurfaceY = Mathf.Clamp01((normalized.y - normalizedPlayArea.yMin) / normalizedPlayArea.height),
+                    SurfaceY = surfaceY,
                     FlickTravelLanes = lane - (had ? old.StartLane : lane),
                     HasFlickMove = hasFlickMove, FlickDirection = flickDirection
                 });
                 if (phase == GroundPhase.Up) history.Remove(touch.fingerId);
                 else history[touch.fingerId] = new PointerHistory {
-                    Lane = lane, SurfaceY = Mathf.Clamp01((normalized.y - normalizedPlayArea.yMin) / normalizedPlayArea.height),
+                    Lane = lane, SurfaceX = point,
+                    SurfaceY = Mathf.Clamp01((normalized.y - normalizedPlayArea.yMin) / normalizedPlayArea.height),
                     StartLane = had ? old.StartLane : lane,
                     StartTimeMs = had ? old.StartTimeMs : now, TimeMs = now,
                     CoveredMask = mask, FlickDistance = flickDistance,
@@ -182,6 +191,11 @@ namespace ChunithmMobile.Input
             current.Ground.Add(new GroundContact {
                 PointerId = pointerId, Phase = GroundPhase.Up, TimeMs = now, StartTimeMs = now,
                 LanePosition = lane, PreviousLanePosition = lane,
+                SurfaceX = Mathf.Clamp01((lane + .5f) / LaneCount),
+                PreviousSurfaceX = Mathf.Clamp01((lane + .5f) / LaneCount),
+                VelocitySurfaceXPerSecond = 0,
+                PreviousSurfaceY = surfaceY,
+                VelocitySurfaceYPerSecond = 0,
                 LaneIndex = laneIndex, PreviousLaneIndex = laneIndex,
                 VelocityLanesPerSecond = 0, FirstLane = laneIndex, LastLane = laneIndex,
                 CoveredLaneMask = BuildCoveredMask(lane), PressedLaneMask = 0, SurfaceY = surfaceY,
