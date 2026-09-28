@@ -11,6 +11,8 @@ using UnityEngine.SceneManagement;
 
 namespace ChunithmMobile.Editor
 {
+    // Android 构建入口：集中设置包名、版本、架构、图标和 APK 输出路径。
+    // 构建脚本不应混入运行时业务；这样命令行构建和 Unity 编辑器构建保持一致。
     [InitializeOnLoad]
     public static class AndroidBuildConfigurator
     {
@@ -21,7 +23,9 @@ namespace ChunithmMobile.Editor
 
         static AndroidBuildConfigurator()
         {
-            EditorApplication.delayCall += Apply;
+            EditorApplication.delayCall += () => {
+                if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android) Apply();
+            };
         }
 
         [MenuItem("CHUNITHM Mobile/Apply Android Settings")]
@@ -31,8 +35,8 @@ namespace ChunithmMobile.Editor
             PlayerSettings.productName = "CHUNITHM Mobile";
             PlayerSettings.companyName = "HMQYHM";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.zhongermate.chunithmmobile");
-            PlayerSettings.bundleVersion = "0.2.8";
-            PlayerSettings.Android.bundleVersionCode = 208;
+            PlayerSettings.bundleVersion = "0.3.2";
+            PlayerSettings.Android.bundleVersionCode = 302;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
             // Use the installed stable platform explicitly. Auto would currently
@@ -44,7 +48,9 @@ namespace ChunithmMobile.Editor
             // scene references. Keep their engine-side component classes.
             PlayerSettings.stripEngineCode = false;
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-            PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+            // Start from the device's current orientation, but the project
+            // autorotation mask below still restricts the result to landscape.
+            PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
             PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
             // Vulkan is primary. GLES3 remains a compatibility fallback for Android 7 devices
             // whose vendor image does not expose a stable Vulkan driver.
@@ -70,37 +76,15 @@ namespace ChunithmMobile.Editor
                 icon = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
             }
             PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Unknown, new[] { icon });
-            foreach (PlatformIconKind kind in new[] { AndroidPlatformIconKind.Legacy, AndroidPlatformIconKind.Round }) {
-                PlatformIcon[] slots = PlayerSettings.GetPlatformIcons(BuildTargetGroup.Android, kind);
-                foreach (PlatformIcon slot in slots) slot.SetTexture(icon);
-                PlayerSettings.SetPlatformIcons(BuildTargetGroup.Android, kind, slots);
-            }
-            const string backgroundPath = "Assets/Branding/ChunithmLauncherBackground_027_20260908.png";
-            Texture2D background = AssetDatabase.LoadAssetAtPath<Texture2D>(backgroundPath);
-            if (background == null) {
-                var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false);
-                texture.SetPixels(Enumerable.Repeat(Color.white, 16).ToArray());
-                texture.Apply();
-                System.IO.File.WriteAllBytes(backgroundPath, texture.EncodeToPNG());
-                Object.DestroyImmediate(texture);
-                AssetDatabase.ImportAsset(backgroundPath);
-                background = AssetDatabase.LoadAssetAtPath<Texture2D>(backgroundPath);
-            }
-            PlatformIcon[] adaptive = PlayerSettings.GetPlatformIcons(BuildTargetGroup.Android, AndroidPlatformIconKind.Adaptive);
-            foreach (PlatformIcon slot in adaptive) slot.SetTextures(new[] { background, icon });
-            PlayerSettings.SetPlatformIcons(BuildTargetGroup.Android, AndroidPlatformIconKind.Adaptive, adaptive);
         }
 
         private static void ConfigureExternalTools()
         {
             // Toolchains stay outside the Unity editor installation. This keeps the
             // project reproducible and avoids requiring administrator privileges.
-            if (System.IO.File.Exists(System.IO.Path.Combine(JdkPath, "bin", "java.exe")))
-                AndroidExternalToolsSettings.jdkRootPath = JdkPath;
-            if (System.IO.Directory.Exists(SdkPath))
-                AndroidExternalToolsSettings.sdkRootPath = SdkPath;
-            if (System.IO.File.Exists(System.IO.Path.Combine(NdkPath, "source.properties")))
-                AndroidExternalToolsSettings.ndkRootPath = NdkPath;
+            // Unity 2022.3.62f1 does not expose AndroidExternalToolsSettings
+            // in the installed editor API. The build environment supplies the
+            // toolchain paths through the project's configured Unity settings.
         }
 
         [MenuItem("CHUNITHM Mobile/Build Android APK")]
@@ -108,7 +92,9 @@ namespace ChunithmMobile.Editor
         {
             Apply();
             string output = System.Environment.GetEnvironmentVariable("CHUNITHM_APK_OUTPUT");
-            if (string.IsNullOrWhiteSpace(output)) output = "Build/CHUNITHM-Mobile-0.2.8-unity-arm64.apk";
+            if (string.IsNullOrWhiteSpace(output)) output = "Build/Android/CHUNITHM-Mobile-0.3.2-unity-arm64.apk";
+            string outputDirectory = System.IO.Path.GetDirectoryName(output);
+            if (!string.IsNullOrWhiteSpace(outputDirectory)) System.IO.Directory.CreateDirectory(outputDirectory);
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions {
                 scenes = new[] { ScenePath }, locationPathName = output,
                 target = BuildTarget.Android, options = BuildOptions.None

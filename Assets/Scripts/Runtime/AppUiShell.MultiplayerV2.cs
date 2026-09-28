@@ -9,9 +9,12 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using ChunithmMobile.Judgement;
+using ChunithmMobile.Platform;
 
 namespace ChunithmMobile.Runtime
 {
+    // 联机 UI 编排层：连接登录、大厅、房间、歌曲同步、准备、游玩和多人结算页面。
+    // 网络回调可能晚于当前页面，所有异步回调都必须检查房间/回合身份后再更新 UI。
     public sealed partial class AppUiShell
     {
         private MultiplayerSongTransfer multiplayerSongTransfer;
@@ -82,7 +85,6 @@ namespace ChunithmMobile.Runtime
 
         private Text multiplayerLoginStatus;
         private Text multiplayerLoginDeviceLabel;
-        private InputField multiplayerAuthTokenInput;
         private Button multiplayerLoginButton;
         private Text multiplayerRoomHeader;
         private Text multiplayerRoomSongLabel;
@@ -113,6 +115,17 @@ namespace ChunithmMobile.Runtime
         private bool multiplayerDownloading;
         private Coroutine multiplayerSongPreparationCoroutine;
         private string multiplayerSongPreparationKey;
+        private Coroutine multiplayerRoundPreparationCoroutine;
+        // The preparation and reveal coroutines have different jobs: the former
+        // binds local resources, while the latter only reveals the already-bound
+        // playfield at the server's common time. Keeping this handle prevents a
+        // stale reveal coroutine from surviving a cancelled round.
+        private Coroutine multiplayerRoundRevealCoroutine;
+        private int multiplayerRoundPreparationToken;
+        private double multiplayerPendingRoundStartDsp;
+        private bool multiplayerRoundStartPending;
+        private bool multiplayerRoundPlaybackPrepared;
+        private bool multiplayerRoundRevealStarted;
         private string multiplayerPendingTransferHash;
         private long multiplayerPendingTransferSize;
         private string multiplayerPendingTransferPath;
@@ -128,10 +141,10 @@ namespace ChunithmMobile.Runtime
         private Coroutine multiplayerReconnectCoroutine;
         private bool multiplayerManualDisconnect;
         private bool multiplayerRetryInProgress;
+        private string multiplayerLastConnectionError = "";
         private int multiplayerReconnectAttempt;
         private string multiplayerRoundId;
         private string multiplayerSessionToken;
-        private string multiplayerAuthToken = "";
         private float multiplayerLastTransferReportAt = -10f;
         private string multiplayerLastTransferReportKey;
         private MultiplayerPreparedPackage multiplayerPreparedPackage;
@@ -148,27 +161,20 @@ namespace ChunithmMobile.Runtime
             RectTransform card = Panel("Server login", login, surface, new Vector2(.18f, .18f), new Vector2(.82f, .84f));
             Label("连接服务器", card, 30, TextAnchor.MiddleLeft, new Vector2(.09f, .84f), new Vector2(.91f, .95f), cyan);
             Label("客户端版本必须与房间一致", card, 17, TextAnchor.MiddleLeft, new Vector2(.09f, .76f), new Vector2(.91f, .84f), muted);
-            Label("服务器地址", card, 18, TextAnchor.MiddleLeft, new Vector2(.09f, .68f), new Vector2(.40f, .74f), muted);
-            multiplayerServerInput = Input("IP:端口 或 ws:// 地址", card, new Vector2(.09f, .59f), new Vector2(.91f, .68f));
+            Label("服务器地址", card, 18, TextAnchor.MiddleLeft, new Vector2(.09f, .64f), new Vector2(.40f, .71f), muted);
+            multiplayerServerInput = Input("域名、IP:端口或完整地址", card, new Vector2(.09f, .53f), new Vector2(.91f, .63f));
             RestoreMultiplayerServerV2();
             multiplayerServerInput.onValueChanged.AddListener(_ => CacheMultiplayerDraftV2());
             multiplayerServerInput.onEndEdit.AddListener(_ => SaveMultiplayerDraftV2());
-            Label("玩家名称", card, 18, TextAnchor.MiddleLeft, new Vector2(.09f, .52f), new Vector2(.40f, .58f), muted);
-            multiplayerPlayerNameInput = Input("1 至 6 个中文或英文字符", card, new Vector2(.09f, .43f), new Vector2(.91f, .52f));
+            Label("玩家名称", card, 18, TextAnchor.MiddleLeft, new Vector2(.09f, .44f), new Vector2(.40f, .51f), muted);
+            multiplayerPlayerNameInput = Input("1 至 6 个中文或英文字符", card, new Vector2(.09f, .33f), new Vector2(.91f, .43f));
             multiplayerPlayerNameInput.characterLimit = 6;
             multiplayerPlayerNameInput.SetTextWithoutNotify(PlayerPrefs.GetString("chunithm_mobile_multiplayer_player", ""));
             multiplayerPlayerNameInput.onValueChanged.AddListener(value => LimitMultiplayerName(multiplayerPlayerNameInput, value));
             multiplayerPlayerNameInput.onValueChanged.AddListener(_ => CacheMultiplayerDraftV2());
             multiplayerPlayerNameInput.onEndEdit.AddListener(_ => SaveMultiplayerDraftV2());
-            Label("服务器令牌（可选）", card, 16, TextAnchor.MiddleLeft, new Vector2(.09f, .36f), new Vector2(.40f, .42f), muted);
-            multiplayerAuthTokenInput = Input("服务器启用令牌时填写", card, new Vector2(.09f, .27f), new Vector2(.91f, .36f));
-            multiplayerAuthTokenInput.contentType = InputField.ContentType.Password;
-            multiplayerAuthTokenInput.characterLimit = 256;
-            multiplayerAuthTokenInput.SetTextWithoutNotify(multiplayerAuthToken ?? "");
-            multiplayerAuthTokenInput.onValueChanged.AddListener(value => multiplayerAuthToken = value ?? "");
-            multiplayerAuthTokenInput.onEndEdit.AddListener(_ => SaveMultiplayerDraftV2());
             multiplayerLoginDeviceLabel = Label("设备 ID：读取中", card, 16, TextAnchor.MiddleLeft,
-                new Vector2(.09f, .22f), new Vector2(.91f, .27f), muted);
+                new Vector2(.09f, .24f), new Vector2(.91f, .30f), muted);
             multiplayerLoginDeviceLabel.text = "设备 ID：" + MultiplayerClient.GetStableDeviceId();
             multiplayerLoginButton = ButtonText("进入联机大厅", card, new Vector2(.09f, .12f), new Vector2(.91f, .21f), cyan,
                 ConnectMultiplayerV2);
@@ -348,15 +354,15 @@ namespace ChunithmMobile.Runtime
         {
             RectTransform card = BuildModDialog("Multiplayer MOD picker", out multiplayerModPickerLayer,
                 out multiplayerModPickerTitle, "选择 MOD", HideMultiplayerModPickerV2);
-            string[] keys = { "airLongNoMotion", "mirrorChart", "airAreaAuto", "directionalAirAuto", "mineImmunity" };
+            string[] keys = { "fullscreenTouchpad", "autoPlay", "airAreaAuto", "directionalAirAuto", "mineImmunity", "airLongNoMotion", "nonMissJusticeCritical", "mirrorChart", "flickAllTap", "uniformSpeed" };
             multiplayerModPickerButtons.Clear();
             multiplayerModPickerKeys.Clear();
             for (int i = 0; i < keys.Length; i++)
             {
                 string key = keys[i];
-                bool scoring = i < 2;
-                int index = scoring ? i : i - 2;
-                Button button = ModOption(card, index % 2, scoring ? .77f : .60f - index / 2 * .11f, scoring,
+                bool scoring = key == "airLongNoMotion" || key == "mirrorChart" || key == "uniformSpeed";
+                int index = i;
+                Button button = ModOption(card, index % 2, index / 2, scoring,
                     () => ToggleMultiplayerModPickerKeyV2(key));
                 multiplayerModPickerButtons.Add(button);
                 multiplayerModPickerKeys.Add(key);
@@ -365,11 +371,12 @@ namespace ChunithmMobile.Runtime
             for (int i = 0; i < rates.Length; i++)
             {
                 string key = "musicRate:" + rates[i].ToString("0.0", CultureInfo.InvariantCulture);
-                Button button = ModOption(card, i, .21f, false,
-                    () => ToggleMultiplayerModPickerKeyV2(key));
+                Button button = ModOption(card, i, 0, false,
+                    () => ToggleMultiplayerModPickerKeyV2(key), true);
                 multiplayerModPickerButtons.Add(button);
                 multiplayerModPickerKeys.Add(key);
             }
+            RelayoutModSections(card);
             ButtonText("恢复默认", card, new Vector2(.05f, .045f), new Vector2(.27f, .135f), surface,
                 () => { multiplayerModPickerDraft = new MultiplayerModsMessage(); RefreshMultiplayerModPickerV2(); });
             ButtonText("取消", card, new Vector2(.49f, .045f), new Vector2(.71f, .135f), surface, HideMultiplayerModPickerV2);
@@ -386,9 +393,12 @@ namespace ChunithmMobile.Runtime
                 airAreaAuto = value.airAreaAuto,
                 directionalAirAuto = value.directionalAirAuto,
                 airLongNoMotion = value.airLongNoMotion,
-                flickSimpleMode = false,
                 mineImmunity = value.mineImmunity,
                 mirrorChart = value.mirrorChart,
+                flickAllTap = value.flickAllTap,
+                fullscreenTouchpad = value.fullscreenTouchpad,
+                nonMissJusticeCritical = value.nonMissJusticeCritical,
+                uniformSpeed = value.uniformSpeed,
                 musicRate = value.musicRate
             };
         }
@@ -402,18 +412,24 @@ namespace ChunithmMobile.Runtime
 
         private static bool IsNonScoringMultiplayerModKeyV2(string key)
         {
-            return key == "airAreaAuto" || key == "directionalAirAuto" || key == "mineImmunity" || key.StartsWith("musicRate:", StringComparison.Ordinal);
+            return key == "autoPlay" || key == "airAreaAuto" || key == "directionalAirAuto" || key == "mineImmunity" || key == "flickAllTap" ||
+                key == "fullscreenTouchpad" || key == "nonMissJusticeCritical" || key.StartsWith("musicRate:", StringComparison.Ordinal);
         }
 
         private static bool GetMultiplayerModValueV2(MultiplayerModsMessage value, string key)
         {
             switch (key)
             {
+                case "autoPlay": return value.autoPlay;
                 case "airAreaAuto": return value.airAreaAuto;
                 case "directionalAirAuto": return value.directionalAirAuto;
                 case "airLongNoMotion": return value.airLongNoMotion;
                 case "mineImmunity": return value.mineImmunity;
                 case "mirrorChart": return value.mirrorChart;
+                case "flickAllTap": return value.flickAllTap;
+                case "fullscreenTouchpad": return value.fullscreenTouchpad;
+                case "nonMissJusticeCritical": return value.nonMissJusticeCritical;
+                case "uniformSpeed": return value.uniformSpeed;
                 default:
                     if (key.StartsWith("musicRate:", StringComparison.Ordinal) && float.TryParse(key.Substring(10), NumberStyles.Float,
                         CultureInfo.InvariantCulture, out float rate)) return Math.Abs(value.musicRate - rate) < .01f;
@@ -425,11 +441,13 @@ namespace ChunithmMobile.Runtime
         {
             bool disabled = scoringOnly && IsNonScoringMultiplayerModKeyV2(key);
             bool selected = !disabled && GetMultiplayerModValueV2(value, key);
-            string name = key == "airAreaAuto" ? "AIR 区域 AUTO" :
+            string name = key == "autoPlay" ? "全谱面 AUTO" : key == "flickAllTap" ? "Flick 可点击判定" : key == "airAreaAuto" ? "AIR 区域 AUTO" :
                 key == "directionalAirAuto" ? "上下 AIR AUTO" :
                 key == "airLongNoMotion" ? "air长条简单模式" :
                 key == "mineImmunity" ? "免疫地雷音符" :
-                key == "mirrorChart" ? "谱面镜像" : key.Substring(10) + "x";
+                key == "nonMissJusticeCritical" ? "简单判定" :
+                key == "mirrorChart" ? "谱面镜像" : key == "fullscreenTouchpad" ? "全屏触控板" :
+                key == "uniformSpeed" ? "匀速模式" : key.Substring(10) + "x";
             UpdateModOption(button, name, selected, disabled);
         }
 
@@ -469,11 +487,16 @@ namespace ChunithmMobile.Runtime
             if (multiplayerModPickerDraft == null || (MultiplayerModPickerScoringOnlyV2() && IsNonScoringMultiplayerModKeyV2(key))) return;
             switch (key)
             {
+                case "autoPlay": multiplayerModPickerDraft.autoPlay = !multiplayerModPickerDraft.autoPlay; break;
                 case "airAreaAuto": multiplayerModPickerDraft.airAreaAuto = !multiplayerModPickerDraft.airAreaAuto; break;
                 case "directionalAirAuto": multiplayerModPickerDraft.directionalAirAuto = !multiplayerModPickerDraft.directionalAirAuto; break;
                 case "airLongNoMotion": multiplayerModPickerDraft.airLongNoMotion = !multiplayerModPickerDraft.airLongNoMotion; break;
                 case "mineImmunity": multiplayerModPickerDraft.mineImmunity = !multiplayerModPickerDraft.mineImmunity; break;
                 case "mirrorChart": multiplayerModPickerDraft.mirrorChart = !multiplayerModPickerDraft.mirrorChart; break;
+                case "flickAllTap": multiplayerModPickerDraft.flickAllTap = !multiplayerModPickerDraft.flickAllTap; break;
+                case "fullscreenTouchpad": multiplayerModPickerDraft.fullscreenTouchpad = !multiplayerModPickerDraft.fullscreenTouchpad; break;
+                case "nonMissJusticeCritical": multiplayerModPickerDraft.nonMissJusticeCritical = !multiplayerModPickerDraft.nonMissJusticeCritical; break;
+                case "uniformSpeed": multiplayerModPickerDraft.uniformSpeed = !multiplayerModPickerDraft.uniformSpeed; break;
                 default:
                     if (key.StartsWith("musicRate:", StringComparison.Ordinal) && float.TryParse(key.Substring(10), NumberStyles.Float,
                         CultureInfo.InvariantCulture, out float rate))
@@ -711,8 +734,6 @@ namespace ChunithmMobile.Runtime
             }
             if (multiplayerLoginDeviceLabel != null)
                 multiplayerLoginDeviceLabel.text = "设备 ID：" + MultiplayerClient.GetStableDeviceId();
-            if (multiplayerAuthTokenInput != null)
-                multiplayerAuthTokenInput.SetTextWithoutNotify(multiplayerAuthToken ?? "");
         }
 
         private void OpenMultiplayerV2()
@@ -776,6 +797,7 @@ namespace ChunithmMobile.Runtime
             multiplayerManualDisconnect = false;
             multiplayerRetryInProgress = false;
             multiplayerReconnectAttempt = 0;
+            multiplayerLastConnectionError = "";
             if (multiplayerReconnectCoroutine != null)
             {
                 StopCoroutine(multiplayerReconnectCoroutine);
@@ -783,12 +805,11 @@ namespace ChunithmMobile.Runtime
             }
             multiplayerConnectedServer = multiplayerServerInput.text.Trim();
             multiplayerConnectedPlayerName = multiplayerPlayerNameInput.text.Trim();
-            multiplayerAuthToken = multiplayerAuthTokenInput == null ? "" : multiplayerAuthTokenInput.text.Trim();
             SaveMultiplayerDraftV2();
             MultiplayerLog.Info("login-input", "server=" + multiplayerConnectedServer + " player=" + multiplayerConnectedPlayerName);
             SetMultiplayerLoginStatusV2("正在连接服务器…", false);
             multiplayerClient.Connect(multiplayerConnectedServer, multiplayerConnectedPlayerName,
-                MultiplayerClient.GetStableDeviceId(), Application.version, multiplayerAuthToken);
+                MultiplayerClient.GetStableDeviceId(), Application.version);
         }
 
         private void OnMultiplayerMessageV2(string json)
@@ -929,16 +950,52 @@ namespace ChunithmMobile.Runtime
                     SetMultiplayerRoomStatusV2("歌曲包已过期，请房主重新选择歌曲。", true);
                     break;
                 case "roundPreparing":
+                    bool sameRound = string.Equals(multiplayerRoundId, message.roundId, StringComparison.Ordinal);
+                    if (sameRound && (multiplayerRoundPreparationCoroutine != null || multiplayerInRound))
+                        break;
+                    if (!sameRound || !multiplayerInRound)
+                    {
+                        gameplaySession?.StopPlayback();
+                        ClearGameplayVisuals();
+                        SetGameplayScene(false);
+                        multiplayerInRound = false;
+                    }
+                    if (multiplayerRoundPreparationCoroutine != null)
+                    {
+                        StopCoroutine(multiplayerRoundPreparationCoroutine);
+                        multiplayerRoundPreparationCoroutine = null;
+                    }
+                    multiplayerRoundPreparationToken++;
                     multiplayerRoundId = message.roundId;
-                    StartCoroutine(PrepareMultiplayerRoundV2(message));
+                    multiplayerRoundPlaybackPrepared = false;
+                    if (!sameRound) {
+                        multiplayerRoundStartPending = false;
+                        multiplayerRoundRevealStarted = false;
+                        multiplayerRoundStarted = false;
+                    }
+                    MultiplayerLog.Info("gameplay-start", "stage=receive-start-message room=" +
+                        (activeMultiplayerRoom?.roomId ?? "-") + " round=" + (message.roundId ?? "-"));
+                    multiplayerRoundPreparationCoroutine = StartCoroutine(
+                        PrepareMultiplayerRoundV2(message, multiplayerRoundPreparationToken));
                     break;
                 case "roundStarting":
                     multiplayerRoundId = message.roundId;
                     multiplayerRoundStarted = true;
-                    RuntimeLoadingOverlay roundLoading = FindObjectOfType<RuntimeLoadingOverlay>();
-                    if (roundLoading != null) StartCoroutine(RevealMultiplayerPreparationV2(
-                        roundLoading, message.startAt, message.roundId));
-                    gameplaySession?.StartPreparedAtUnixMilliseconds(message.startAt);
+                    long receivedLocalUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    double remainingMs = multiplayerClient.ServerDeadlineDelayMilliseconds(
+                        message.startAt, message.serverTime, receivedLocalUnix);
+                    multiplayerPendingRoundStartDsp = PlatformServices.Current.AudioTime.Seconds + remainingMs / 1000.0;
+                    multiplayerRoundStartPending = true;
+                    MultiplayerLog.Info("gameplay-start", "stage=round-starting room=" +
+                        (activeMultiplayerRoom?.roomId ?? "-") + " round=" + (message.roundId ?? "-") +
+                        " serverStartAt=" + message.startAt + " localStartDsp=" + multiplayerPendingRoundStartDsp.ToString("F3", CultureInfo.InvariantCulture) +
+                        " clockOffset=" + multiplayerClient.ServerClockOffsetMilliseconds.ToString("F2", CultureInfo.InvariantCulture) +
+                        "ms calibrated=" + multiplayerClient.HasServerClockSample);
+                    // The start message may arrive before or after local decoding.
+                    // Both paths now use the same idempotent gate, so neither order
+                    // can start audio without a prepared renderer/judge/input chain.
+                    TryStartMultiplayerRoundPlaybackV2(message.roundId);
+                    TryBeginMultiplayerRoundRevealV2(message.roundId);
                     break;
                 case "roundStarted":
                     SetMultiplayerRoomStatusV2("已开始游玩。", false);
@@ -963,6 +1020,7 @@ namespace ChunithmMobile.Runtime
                     SwitchTo(AppPage.MultiplayerGroupResults);
                     break;
                 case "returnedToLobby":
+                    CancelMultiplayerRoundPreparationV2();
                     activeMultiplayerRoom = message.room ?? activeMultiplayerRoom;
                     multiplayerInRound = false;
                     multiplayerRoundStarted = false;
@@ -1263,19 +1321,35 @@ namespace ChunithmMobile.Runtime
 
         private void BeginCreateMultiplayerRoomV2()
         {
-            if (multiplayerClient == null || !multiplayerAuthenticatedV2) return;
+            if (multiplayerClient == null || !multiplayerClient.IsConnected)
+            {
+                SetMultiplayerBrowserStatusV2("尚未连接服务器，请重新进入联机大厅。", true);
+                return;
+            }
+            if (!multiplayerAuthenticatedV2)
+            {
+                SetMultiplayerBrowserStatusV2("登录状态已失效，请返回后重新进入联机大厅。", true);
+                return;
+            }
             if (multiplayerQuota != null && multiplayerQuota.createRoomRemaining == 0)
             {
                 SetMultiplayerBrowserStatusV2("今日创建房间次数已用完。", true);
                 return;
             }
-            multiplayerClient.ReserveRoomId();
-            SetMultiplayerBrowserStatusV2("正在预留房间号…", false);
+            // The server can allocate the room number atomically during
+            // createRoom. Avoid making the UI depend on a separate reservation
+            // event, which could be lost during a reconnect and leave the user
+            // stuck on the browser with no dialog.
+            multiplayerReservedRoomId = null;
+            ShowCreateMultiplayerOverlayV2(null);
+            SetMultiplayerBrowserStatusV2("请填写房间设置，房间号将由服务器分配。", false);
         }
 
         private void ShowCreateMultiplayerOverlayV2(string roomId)
         {
-            multiplayerCreateRoomIdLabel.text = "房间号：" + roomId;
+            multiplayerCreateRoomIdLabel.text = string.IsNullOrWhiteSpace(roomId)
+                ? "房间号：由服务器自动分配"
+                : "房间号：" + roomId;
             multiplayerCreateRoomNameInput.SetTextWithoutNotify(PlayerPrefs.GetString("chunithm_mobile_multiplayer_room", "联机房"));
             multiplayerCreatePasswordInput.SetTextWithoutNotify("");
             multiplayerCreateMods = BuildMultiplayerModsV2(multiplayerCreateMode == "normal");
@@ -1575,46 +1649,170 @@ namespace ChunithmMobile.Runtime
             catch { return null; }
         }
 
-        private IEnumerator PrepareMultiplayerRoundV2(MultiplayerEnvelope message)
+        // 联机回合准备状态机：先确认回合令牌和本地文件，再解析/绑定游玩组件，
+        // 最后等待统一起点。任何阶段失败都必须让当前 token 失效，防止旧回合回调重新打开加载页。
+        private IEnumerator PrepareMultiplayerRoundV2(MultiplayerEnvelope message, int preparationToken)
         {
             if (activeMultiplayerRoom == null || activeMultiplayerRoom.song == null) yield break;
             MultiplayerSongDto song = activeMultiplayerRoom.song;
+            MultiplayerLog.Info("gameplay-start", "stage=local-song-path room=" + activeMultiplayerRoom.roomId +
+                " round=" + (message.roundId ?? "-") + " song=" + (song.songId ?? "-"));
             Task<SongChartEntry> chartTask = FindLocalMultiplayerChartV2(song);
             while (!chartTask.IsCompleted) yield return null;
+            if (preparationToken != multiplayerRoundPreparationToken || multiplayerRoundId != message.roundId)
+                yield break;
             if (chartTask.Status != TaskStatus.RanToCompletion || chartTask.Result == null)
             {
+                MultiplayerLog.Error("gameplay-start", "stage=local-chart-missing round=" + (message.roundId ?? "-"));
                 multiplayerClient.RoundLoadFailed(message.roundId);
                 yield break;
             }
             selectedSong = catalog.FirstOrDefault(value => value.Id == song.songId);
             selectedChart = chartTask.Result;
+            MultiplayerLog.Info("gameplay-start", "stage=local-chart-path round=" + (message.roundId ?? "-") +
+                " path=" + selectedChart.Path);
             multiplayerRoundId = message.roundId;
             multiplayerInRound = true;
-            multiplayerRoundStarted = false;
+            ApplyRuntimeSettings();
             PrepareSelectedGameplayScene();
-            SwitchTo(AppPage.Gameplay, () => gameplaySession.PlaySong(playedSong, playedChart, activeMultiplayerRoom.mods?.musicRate ?? 1f,
-                activeMultiplayerRoom.mods?.autoPlay ?? false, activeMultiplayerRoom.mods?.airAreaAuto ?? false,
-                activeMultiplayerRoom.mods?.directionalAirAuto ?? false, activeMultiplayerRoom.mods?.mineImmunity ?? false,
+            MultiplayerLog.Info("gameplay-start", "stage=gameplay-page-switch-begin room=" + activeMultiplayerRoom.roomId +
+                " round=" + (message.roundId ?? "-"));
+            SwitchTo(AppPage.Gameplay, () => {
+                if (preparationToken != multiplayerRoundPreparationToken || multiplayerRoundId != message.roundId ||
+                    !multiplayerInRound) return;
+                MultiplayerLog.Info("gameplay-start", "stage=gameplay-page-switch-complete room=" + activeMultiplayerRoom.roomId +
+                    " round=" + (message.roundId ?? "-"));
+                MultiplayerLog.Info("gameplay-start", "stage=playback-session-created round=" + (message.roundId ?? "-"));
+                gameplaySession.PlaySong(playedSong, playedChart, activeMultiplayerRoom.mods?.musicRate ?? 1f,
+                activeMultiplayerRoom.mods?.autoPlay ?? false,
+                (activeMultiplayerRoom.mods?.airAreaAuto ?? false) || (activeMultiplayerRoom.mods?.fullscreenTouchpad ?? false),
+                (activeMultiplayerRoom.mods?.directionalAirAuto ?? false) || (activeMultiplayerRoom.mods?.fullscreenTouchpad ?? false),
+                activeMultiplayerRoom.mods?.mineImmunity ?? false,
                 activeMultiplayerRoom.mods?.airLongNoMotion ?? false,
                 playedMusicOffsetMs, playedJudgeOffsetMs,
-                () => multiplayerClient.SetRoundLoaded(message.roundId),
-                error => multiplayerClient.RoundLoadFailed(message.roundId), true, .2f, true,
-                activeMultiplayerRoom.mods?.mirrorChart ?? false));
+                onReady: () => {
+                    if (preparationToken != multiplayerRoundPreparationToken || multiplayerRoundId != message.roundId ||
+                        !multiplayerInRound) return;
+                    MultiplayerLog.Info("gameplay-start", "stage=renderer-judge-input-bound round=" +
+                        (message.roundId ?? "-"));
+                    MultiplayerLog.Info("gameplay-start", "stage=first-gameplay-frame-rendered room=" + activeMultiplayerRoom.roomId +
+                        " round=" + (message.roundId ?? "-"));
+                    multiplayerRoundPlaybackPrepared = true;
+                    multiplayerClient.SetRoundLoaded(message.roundId);
+                    TryStartMultiplayerRoundPlaybackV2(message.roundId);
+                    TryBeginMultiplayerRoundRevealV2(message.roundId);
+                },
+                onFailed: error => {
+                    if (preparationToken != multiplayerRoundPreparationToken || multiplayerRoundId != message.roundId)
+                        return;
+                    MultiplayerLog.Error("gameplay-start", "stage=failed round=" + (message.roundId ?? "-") +
+                        " reason=" + error);
+                    multiplayerClient.RoundLoadFailed(message.roundId);
+                    multiplayerInRound = false;
+                    multiplayerRoundStarted = false;
+                    CancelMultiplayerRoundPreparationV2();
+                    gameplaySession?.StopPlayback();
+                    FindObjectOfType<RuntimeLoadingOverlay>()?.Hide();
+                    ClearGameplayVisuals();
+                    SetGameplayScene(false);
+                    SetMultiplayerRoomStatusV2("本局加载失败，请重新开始。", true);
+                },
+                keepLoadingVisible: true,
+                startDelaySeconds: .2f,
+                deferStart: true,
+                mirrorChart: activeMultiplayerRoom.mods?.mirrorChart ?? false,
+                nonMissJusticeCritical: activeMultiplayerRoom.mods?.nonMissJusticeCritical ?? false,
+                flickAllTap: activeMultiplayerRoom.mods?.flickAllTap ?? false,
+                uniformSpeed: activeMultiplayerRoom.mods?.uniformSpeed ?? false);
+            });
+            multiplayerRoundPreparationCoroutine = null;
         }
 
-        private IEnumerator RevealMultiplayerPreparationV2(RuntimeLoadingOverlay overlay, long startAt, string roundId)
+        // There are two independent network events: local preparation completion
+        // and the server's shared start time. This gate is intentionally the only
+        // place that schedules the gameplay AudioSource and DSP chart clock.
+        private void TryStartMultiplayerRoundPlaybackV2(string roundId)
+        {
+            if (!multiplayerInRound || !multiplayerRoundStarted || !multiplayerRoundStartPending ||
+                !multiplayerRoundPlaybackPrepared || gameplaySession == null ||
+                !string.Equals(multiplayerRoundId, roundId, StringComparison.Ordinal)) return;
+            if (!gameplaySession.StartPreparedAtDspTime(multiplayerPendingRoundStartDsp)) {
+                MultiplayerLog.Error("gameplay-start", "stage=prepared-session-missing round=" + (roundId ?? "-"));
+                AbortMultiplayerRoundV2("本地游玩资源准备失败。", true);
+                return;
+            }
+            multiplayerRoundStartPending = false;
+            MultiplayerLog.Info("gameplay-start", "stage=audio-and-timeline-scheduled round=" +
+                (roundId ?? "-") + " startDsp=" + multiplayerPendingRoundStartDsp.ToString("F3", CultureInfo.InvariantCulture));
+        }
+
+        // Start the reveal coroutine at most once per round. The coroutine is
+        // allowed to wait for IsPrepared because server countdown and local
+        // decoding can complete in either order.
+        private void TryBeginMultiplayerRoundRevealV2(string roundId)
+        {
+            if (!multiplayerInRound || !multiplayerRoundStarted || multiplayerRoundRevealStarted ||
+                !string.Equals(multiplayerRoundId, roundId, StringComparison.Ordinal)) return;
+            RuntimeLoadingOverlay overlay = FindObjectOfType<RuntimeLoadingOverlay>();
+            if (overlay == null) {
+                MultiplayerLog.Warn("gameplay-start", "stage=loading-overlay-missing round=" + (roundId ?? "-"));
+                return;
+            }
+            multiplayerRoundRevealStarted = true;
+            multiplayerRoundRevealCoroutine = StartCoroutine(
+                RevealMultiplayerPreparationV2(overlay, multiplayerPendingRoundStartDsp, roundId));
+        }
+
+        // 在服务器指定的 Unix 时间到达前保持预备态；这里只更新提示，不提前推进谱面或播放音乐。
+        // 起点到达后由播放会话同时启动音频、谱面时钟和判定输入，避免联机成员各自漂移。
+        private IEnumerator RevealMultiplayerPreparationV2(RuntimeLoadingOverlay overlay, double startAtDsp, string roundId)
         {
             // The server already reserves a common start time. Reveal the
             // playfield two seconds before it, without shifting any player's
             // audio clock by a locally measured wait.
             const float revealSeconds = .18f;
-            double revealAt = startAt - (LocalChartPlaybackSession.PreparationSeconds + revealSeconds) * 1000;
-            while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < revealAt) {
+            double revealAtDsp = startAtDsp - LocalChartPlaybackSession.PreparationSeconds - revealSeconds;
+            while (PlatformServices.Current.AudioTime.Seconds < revealAtDsp) {
                 if (!multiplayerInRound || multiplayerRoundId != roundId) yield break;
                 yield return null;
             }
-            if (multiplayerInRound && multiplayerRoundId == roundId)
+            // Never reveal a stale or unprepared playfield. If local decoding is
+            // slower than the server's reveal point, keep the loading surface up
+            // until the ready callback has bound the renderer and judge.
+            float waitStarted = Time.unscaledTime;
+            while (multiplayerInRound && multiplayerRoundId == roundId &&
+                   (gameplaySession == null || !gameplaySession.IsPrepared)) {
+                if (Time.unscaledTime - waitStarted > 35f) {
+                    MultiplayerLog.Error("gameplay-start", "stage=prepared-session-timeout round=" + (roundId ?? "-"));
+                    AbortMultiplayerRoundV2("歌曲准备超时，请重新尝试。", true);
+                    yield break;
+                }
+                yield return null;
+            }
+            if (multiplayerInRound && multiplayerRoundId == roundId) {
                 yield return overlay.HideAnimated(revealSeconds);
+                MultiplayerLog.Info("gameplay-start", "stage=loading-overlay-closed round=" + (roundId ?? "-"));
+            }
+            multiplayerRoundRevealCoroutine = null;
+        }
+
+        private void CancelMultiplayerRoundPreparationV2()
+        {
+            multiplayerRoundPreparationToken++;
+            multiplayerRoundStartPending = false;
+            multiplayerRoundPlaybackPrepared = false;
+            multiplayerRoundRevealStarted = false;
+            multiplayerPendingRoundStartDsp = 0;
+            if (multiplayerRoundPreparationCoroutine != null)
+            {
+                StopCoroutine(multiplayerRoundPreparationCoroutine);
+                multiplayerRoundPreparationCoroutine = null;
+            }
+            if (multiplayerRoundRevealCoroutine != null)
+            {
+                StopCoroutine(multiplayerRoundRevealCoroutine);
+                multiplayerRoundRevealCoroutine = null;
+            }
         }
 
         private void FinishMultiplayerGameplayV2()
@@ -1637,6 +1835,7 @@ namespace ChunithmMobile.Runtime
             };
             multiplayerClient.SubmitResult(multiplayerRoundId, model.Score, model.JusticeCritical, model.Justice, model.Attack, model.Miss,
                 score?.MaxCombo ?? 0);
+            CancelMultiplayerRoundPreparationV2();
             gameplaySession.StopPlayback();
             ClearGameplayVisuals();
             SetGameplayScene(false);
@@ -1720,6 +1919,7 @@ namespace ChunithmMobile.Runtime
         {
             if (!multiplayerInRound) return;
             multiplayerClient.ExitRound();
+            CancelMultiplayerRoundPreparationV2();
             multiplayerInRound = false;
             multiplayerRoundStarted = false;
             gameplaySession?.StopPlayback();
@@ -1732,6 +1932,7 @@ namespace ChunithmMobile.Runtime
 
         private void AbortMultiplayerRoundV2(string message, bool notifyError)
         {
+            CancelMultiplayerRoundPreparationV2();
             multiplayerInRound = false;
             multiplayerRoundStarted = false;
             gameplaySession?.StopPlayback();
@@ -1758,9 +1959,12 @@ namespace ChunithmMobile.Runtime
                 airAreaAuto = currentMods.airAreaAuto,
                 directionalAirAuto = currentMods.directionalAirAuto,
                 airLongNoMotion = currentMods.airLongNoMotion,
-                flickSimpleMode = false,
                 mineImmunity = currentMods.mineImmunity,
                 mirrorChart = currentMods.mirrorChart,
+                flickAllTap = currentMods.flickAllTap,
+                fullscreenTouchpad = currentMods.fullscreenTouchpad,
+                nonMissJusticeCritical = currentMods.nonMissJusticeCritical,
+                uniformSpeed = currentMods.uniformSpeed,
                 musicRate = currentMods.musicRate
             };
             if (mode == "normal")
@@ -1769,6 +1973,7 @@ namespace ChunithmMobile.Runtime
                 nextMods.airAreaAuto = false;
                 nextMods.directionalAirAuto = false;
                 nextMods.mineImmunity = false;
+                nextMods.fullscreenTouchpad = false;
                 nextMods.musicRate = 1f;
             }
             SendMultiplayerRoomSettingsV2(mode, activeMultiplayerRoom.selectionMode, nextMods);
@@ -1814,9 +2019,13 @@ namespace ChunithmMobile.Runtime
                 autoPlay = false, airAreaAuto = mods.AirAreaAuto, directionalAirAuto = mods.DirectionalAirAuto,
                 airLongNoMotion = mods.AirLongNoMotion, mineImmunity = mods.MineImmunity,
                 mirrorChart = mods.MirrorChart,
+                flickAllTap = mods.FlickAllTap,
+                fullscreenTouchpad = mods.FullscreenTouchpad,
+                nonMissJusticeCritical = mods.NonMissJusticeCritical,
+                uniformSpeed = mods.UniformSpeed,
                 musicRate = mods.MusicRate
             };
-            if (scoringOnly) { value.autoPlay = false; value.airAreaAuto = false; value.directionalAirAuto = false; value.mineImmunity = false; value.musicRate = 1f; }
+            if (scoringOnly) { value.autoPlay = false; value.airAreaAuto = false; value.directionalAirAuto = false; value.mineImmunity = false; value.flickAllTap = false; value.fullscreenTouchpad = false; value.nonMissJusticeCritical = false; value.musicRate = 1f; }
             return value;
         }
 
@@ -1824,12 +2033,16 @@ namespace ChunithmMobile.Runtime
         {
             if (value == null) return "NORMAL";
             List<string> labels = new List<string>();
+            if (value.fullscreenTouchpad) labels.Add("全屏触控板");
             if (value.autoPlay) labels.Add("AUTO");
             if (value.airAreaAuto) labels.Add("AIR AUTO");
             if (value.directionalAirAuto) labels.Add("AIR UP/DOWN");
-            if (value.airLongNoMotion) labels.Add("AIR 长条简单");
             if (value.mineImmunity) labels.Add("MINE OFF");
+            if (value.airLongNoMotion) labels.Add("AIR 长条简单");
+            if (value.nonMissJusticeCritical) labels.Add("简单判定");
             if (value.mirrorChart) labels.Add("MIRROR");
+            if (value.flickAllTap) labels.Add("FLICK 可点击判定");
+            if (value.uniformSpeed) labels.Add("匀速模式");
             if (Math.Abs(value.musicRate - 1f) > .01f) labels.Add(value.musicRate.ToString("0.0") + "x");
             return labels.Count == 0 ? "NORMAL" : string.Join(" + ", labels);
         }
@@ -1892,6 +2105,7 @@ namespace ChunithmMobile.Runtime
 
         private void LeaveMultiplayerModeV2()
         {
+            CancelMultiplayerRoundPreparationV2();
             SaveMultiplayerDraftV2();
             multiplayerManualDisconnect = true;
             multiplayerRetryInProgress = false;
@@ -1905,7 +2119,6 @@ namespace ChunithmMobile.Runtime
             multiplayerAuthenticatedV2 = false;
             multiplayerAuthenticated = false;
             multiplayerSessionToken = "";
-            multiplayerAuthToken = "";
             multiplayerInRound = false;
             multiplayerRoundStarted = false;
             preview?.StopPreview();
@@ -1952,6 +2165,7 @@ namespace ChunithmMobile.Runtime
 
         private void HandleMultiplayerTimeoutV2()
         {
+            CancelMultiplayerRoundPreparationV2();
             multiplayerManualDisconnect = true;
             multiplayerRetryInProgress = false;
             if (multiplayerReconnectCoroutine != null)
@@ -1975,6 +2189,9 @@ namespace ChunithmMobile.Runtime
         {
             multiplayerAuthenticatedV2 = false;
             if (multiplayerManualDisconnect) return;
+            multiplayerLastConnectionError = string.IsNullOrWhiteSpace(error)
+                ? "服务器没有返回具体错误" : error.Trim();
+            SetMultiplayerRetryStatusV2("连接失败：" + multiplayerLastConnectionError);
             BeginMultiplayerReconnectV2();
         }
 
@@ -2016,7 +2233,7 @@ namespace ChunithmMobile.Runtime
                 yield return new WaitForSecondsRealtime(attempt == 1 ? .5f : 5f);
                 if (multiplayerManualDisconnect) yield break;
                 multiplayerClient.Connect(multiplayerConnectedServer, multiplayerConnectedPlayerName,
-                    MultiplayerClient.GetStableDeviceId(), Application.version, multiplayerAuthToken);
+                    MultiplayerClient.GetStableDeviceId(), Application.version);
                 float deadline = Time.unscaledTime + 5f;
                 while (!multiplayerManualDisconnect && !multiplayerAuthenticatedV2 && Time.unscaledTime < deadline)
                     yield return null;
@@ -2037,12 +2254,12 @@ namespace ChunithmMobile.Runtime
 
         private void ExitMultiplayerAfterReconnectFailureV2()
         {
+            CancelMultiplayerRoundPreparationV2();
             multiplayerManualDisconnect = true;
             multiplayerClient?.Disconnect();
             multiplayerAuthenticatedV2 = false;
             multiplayerAuthenticated = false;
             multiplayerSessionToken = "";
-            multiplayerAuthToken = "";
             activeMultiplayerRoom = null;
             multiplayerInRound = false;
             multiplayerRoundStarted = false;
@@ -2053,7 +2270,12 @@ namespace ChunithmMobile.Runtime
             gameplaySession?.StopPlayback();
             ClearGameplayVisuals();
             SetGameplayScene(false);
-            SwitchTo(AppPage.Home, () => ShowModal("网络错误", "网络错误，已重试 3 次，已退出联机模式。", null, false));
+            string detail = string.IsNullOrWhiteSpace(multiplayerLastConnectionError)
+                ? "服务器没有返回具体错误。"
+                : multiplayerLastConnectionError;
+            SwitchTo(AppPage.Home, () => ShowModal("网络错误",
+                "网络错误，已重试 3 次，已退出联机模式。\n\n最后一次错误：" + detail,
+                null, false));
         }
 
         private void UpdateMultiplayerV2()
@@ -2177,7 +2399,6 @@ namespace ChunithmMobile.Runtime
         {
             if (multiplayerServerInput != null) PlayerPrefs.SetString("chunithm_mobile_multiplayer_server", multiplayerServerInput.text ?? "");
             if (multiplayerPlayerNameInput != null) PlayerPrefs.SetString("chunithm_mobile_multiplayer_player", multiplayerPlayerNameInput.text ?? "");
-            // The server auth token is intentionally not persisted on the device.
         }
 
         private void SaveMultiplayerDraftV2()

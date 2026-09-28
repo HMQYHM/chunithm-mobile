@@ -247,8 +247,17 @@ namespace ChunithmMobile.Runtime
         private string settingsCategory = "延迟";
         private static readonly string[] SettingsCategories = { "延迟", "画面", "皮肤", "音频", "更多" };
         private readonly Dictionary<string, Button> settingsCategoryButtons = new Dictionary<string, Button>();
-        private static readonly string[] UpdateLogVersions = { "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
+        private static readonly string[] UpdateLogVersions = { "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
         private static readonly string[][] UpdateLogLineKeys = {
+            new[] {
+                "0.3.2 更新日志",
+                "0.3.2 1. 增加多种分数与 combo 显示模式",
+                "0.3.2 2. 修复联机模式 bug",
+                "0.3.2 3. 增加匀速播放 MOD",
+                "0.3.2 4. 优化自制谱导入并新增自制谱转换导入",
+                "0.3.2 5. 增加谱面导出与皮肤导出",
+                "0.3.2 6. 为皮肤系统接入 Live2D 做准备"
+            },
             new[] {
                 "0.3.1 更新日志",
                 "0.3.1 1. 修复长条显示 bug",
@@ -3725,6 +3734,7 @@ namespace ChunithmMobile.Runtime
                     () => { mods.MusicRate = Math.Abs(mods.MusicRate - rate) < .01f ? 1f : rate; RefreshMods(); }, true);
                 rateButtons.Add(button);
             }
+            RelayoutModSections(card);
             ButtonText("恢复默认", card, new Vector2(.05f, .035f), new Vector2(.27f, .125f), surface,
                 ResetSinglePlayerMods);
             ButtonText("完成", card, new Vector2(.73f, .035f), new Vector2(.95f, .125f), cyan, HideMods);

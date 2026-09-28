@@ -1,6 +1,6 @@
 # CHUNITHM Mobile — Unity migration
 
-This is the new, independent Unity implementation. The existing Android/Kotlin app is deliberately untouched.
+This is the new, independent Unity implementation. The current release is **0.3.2**. The existing Android/Kotlin app is deliberately untouched.
 
 ## Android target
 
@@ -24,7 +24,7 @@ Platform SDK access is isolated behind `PlatformServices` and
 
 - UTF-8 C2S parser with BPM, SFL, SLP, SLA and STP support
 - double-precision chart and scroll timing, including negative/reverse speed
-- SLP profile 0 controls the global course; profiles 1–16 independently move notes, ribbon sections and ALD decorations inside SLA time/lane assignment rectangles
+- SLP profile 0 controls the global course; profiles 1–16 independently move notes and ribbon sections inside SLA time/lane assignment rectangles
 - TAP / ExTAP / FLICK timing profile and independent long-note checkpoints
 - AIR rules separated from ground lane position
 - cabinet-style input layer: continuous 16-lane ground surface plus 6 vertical AIR sensors
@@ -47,7 +47,7 @@ Install Unity 2022.3.62f3c1 with **Android Build Support**, **Android SDK & NDK 
 
 `CHUNITHM Mobile > Build Android APK`
 
-Output: `Build/CHUNITHM-Mobile-0.2.4-unity-arm64.apk`
+Output: `Build/Android/CHUNITHM-Mobile-0.3.2-unity-arm64.apk`
 
 No songs or charts are embedded in the APK. For an early playback test, use ADB to copy a song folder containing a `.c2s` file to `/sdcard/Android/data/com.zhongermate.chunithmmobile/files/Songs/`; the development bridge loads the first chart and logs all global/local scroll counts. Android's app-specific external directory needs no broad storage permission.
 
