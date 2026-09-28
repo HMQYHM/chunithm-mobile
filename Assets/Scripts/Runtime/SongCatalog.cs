@@ -11,6 +11,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 歌曲目录与索引：维护歌曲/难度元数据、排序、等级分组、分类分组和持久化索引。
+    // UI 读取索引即可显示列表；只有检测到目录指纹变化或用户手动刷新时才重建索引。
     [Serializable]
     public sealed class SongChartEntry
     {
@@ -88,6 +90,28 @@ namespace ChunithmMobile.Runtime
             // Save the post-scan signature so a file change during scanning can
             // never make a stale index look current on the next launch.
             WriteIndex(BuildSignature(roots), songs);
+            Debug.Log($"Song catalog index rebuilt with {songs.Count} songs.");
+            return songs;
+        }
+
+        public static string ComputeSignature(IReadOnlyList<string> roots)
+        {
+            return BuildSignature(roots ?? Array.Empty<string>());
+        }
+
+        public static IReadOnlyList<SongEntry> Load(IReadOnlyList<string> roots, string signature)
+        {
+            roots = roots ?? Array.Empty<string>();
+            if (!string.IsNullOrWhiteSpace(signature) && TryReadIndex(signature, out IReadOnlyList<SongEntry> cached))
+            {
+                LastLoadUsedCache = true;
+                Debug.Log($"Song catalog unchanged; reused {cached.Count} indexed songs.");
+                return cached;
+            }
+
+            LastLoadUsedCache = false;
+            IReadOnlyList<SongEntry> songs = ScanRoots(roots);
+            WriteIndex(string.IsNullOrWhiteSpace(signature) ? BuildSignature(roots) : signature, songs);
             Debug.Log($"Song catalog index rebuilt with {songs.Count} songs.");
             return songs;
         }
@@ -444,8 +468,14 @@ namespace ChunithmMobile.Runtime
 
         private static string ReadDuration(string root)
         {
-            string mp3 = SongAudioFiles.Resolve(root).GameplayMp3;
-            if (string.IsNullOrWhiteSpace(mp3) || !Mp3DurationReader.TryReadSeconds(mp3, out double seconds)) return "";
+            string audio = SongAudioFiles.Resolve(root).Gameplay;
+            if (string.IsNullOrWhiteSpace(audio)) return "";
+            double seconds;
+            if (Path.GetExtension(audio).Equals(".wav", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!WavDurationReader.TryReadSeconds(audio, out seconds)) return "";
+            }
+            else if (!Mp3DurationReader.TryReadSeconds(audio, out seconds)) return "";
             int rounded = Math.Max(0, (int)Math.Round(seconds));
             return (rounded / 60).ToString("00", CultureInfo.InvariantCulture) + ":" +
                    (rounded % 60).ToString("00", CultureInfo.InvariantCulture);

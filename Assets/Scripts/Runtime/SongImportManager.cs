@@ -10,6 +10,8 @@ using ChunithmMobile.Chart;
 
 namespace ChunithmMobile.Runtime
 {
+    // 歌曲导入管线：处理文件选择、流式读取、压缩包解压、路径安全、内存预算、校验和索引刷新。
+    // 导入过程通过进度对象报告阶段和预计剩余时间，不能在主线程一次性读取整个大文件。
     public sealed class SongImportDetail
     {
         public string SongId;
@@ -424,6 +426,7 @@ namespace ChunithmMobile.Runtime
         {
             var charts = new List<string>();
             bool hasMusic = false;
+            bool hasAcbAwb = false;
             long sourceBytes = 0;
             foreach (string file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
             {
@@ -431,12 +434,23 @@ namespace ChunithmMobile.Runtime
                 if (info.Length > 0 && sourceBytes <= long.MaxValue - info.Length) sourceBytes += info.Length;
                 string extension = Path.GetExtension(file);
                 if (extension.Equals(".c2s", StringComparison.OrdinalIgnoreCase)) charts.Add(file);
-                else if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)) hasMusic = true;
+                else if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                         extension.Equals(".wav", StringComparison.OrdinalIgnoreCase)) hasMusic = true;
+                else if (extension.Equals(".acb", StringComparison.OrdinalIgnoreCase) ||
+                         extension.Equals(".awb", StringComparison.OrdinalIgnoreCase)) hasAcbAwb = true;
             }
             charts.Sort(StringComparer.OrdinalIgnoreCase);
             if (charts.Count == 0) throw new InvalidDataException("未找到 C2S 谱面");
+            if (!hasMusic && hasAcbAwb)
+            {
+                Report(progress, .50f, "音频转换", new DirectoryInfo(folder).Name,
+                    "正在使用 vgmstream 转换 ACB/AWB 音频", songIndex, songTotal);
+                if (!AcbAwbAudioConverter.TryConvert(folder, out string conversionMessage))
+                    throw new InvalidDataException(conversionMessage);
+                hasMusic = SongAudioFiles.Resolve(folder).HasPlayableGameplay;
+            }
             if (!hasMusic)
-                throw new InvalidDataException("未找到 MP3 音乐；当前 Unity 版不导入仅含 ACB/AWB 的歌曲");
+                throw new InvalidDataException("未找到可播放音乐。请提供 gameplay.mp3、gameplay.wav，或同时导入可解码的 ACB/AWB 音频库。");
             for (int chartIndex = 0; chartIndex < charts.Count; chartIndex++)
             {
                 string chart = charts[chartIndex];
@@ -655,18 +669,20 @@ namespace ChunithmMobile.Runtime
         private static void EnsureFreeSpace(string path, long requiredBytes)
         {
             if (requiredBytes <= 0) return;
-            try
+            long availableBytes = PlatformStoragePaths.GetAvailableDiskSpace(path);
+            if (availableBytes < 0) return;
+            long requiredWithMargin = requiredBytes + Math.Max(64L * 1024 * 1024, requiredBytes / 10);
+            if (availableBytes < requiredWithMargin)
             {
-                string full = Path.GetFullPath(path);
-                string root = Path.GetPathRoot(full);
-                if (string.IsNullOrWhiteSpace(root)) return;
-                var drive = new DriveInfo(root);
-                long requiredWithMargin = requiredBytes + Math.Max(64L * 1024 * 1024, requiredBytes / 10);
-                if (drive.AvailableFreeSpace < requiredWithMargin)
-                    throw new IOException($"存储空间不足，需要约 {requiredWithMargin / (1024 * 1024)} MB，可用 {drive.AvailableFreeSpace / (1024 * 1024)} MB");
+                const double gigabyte = 1024d * 1024d * 1024d;
+                double requiredGb = Math.Ceiling(requiredWithMargin / gigabyte * 100d) / 100d;
+                double availableGb = Math.Floor(availableBytes / gigabyte * 100d) / 100d;
+                double missingGb = Math.Ceiling((requiredWithMargin - availableBytes) / gigabyte * 100d) / 100d;
+                throw new IOException($"存储空间不足，需要约 {requiredWithMargin / (1024 * 1024)} MB，" +
+                    $"当前可用 {availableBytes / (1024 * 1024)} MB。预计需要 {requiredGb:0.00} GB，" +
+                    $"当前可用 {availableGb:0.00} GB，至少还需要释放 {missingGb:0.00} GB。" +
+                    "已在解压前取消导入。");
             }
-            catch (IOException) { throw; }
-            catch { }
         }
 
         private static bool IsSymbolicLink(ZipArchiveEntry entry)

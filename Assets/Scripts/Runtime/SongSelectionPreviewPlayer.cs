@@ -6,10 +6,10 @@ using UnityEngine.Networking;
 
 namespace ChunithmMobile.Runtime
 {
+    // 歌曲列表试听播放器：管理选择歌曲后的预览音频、切歌渐变和资源释放，不参与正式游玩时钟。
     /// <summary>
     /// Plays looping audio after a song is selected and before gameplay starts.
-    /// ACB/AWB is converted to preview.mp3 during import. Songs without ACB
-    /// reuse gameplay.mp3, keeping the runtime player portable.
+    /// ACB/AWB imports use preview.wav/gameplay.wav when no MP3 is available.
     /// </summary>
     public sealed class SongSelectionPreviewPlayer : MonoBehaviour
     {
@@ -62,14 +62,14 @@ namespace ChunithmMobile.Runtime
             StopPreview();
             SelectedSongRoot = songRoot;
             SongAudioSet files = SongAudioFiles.Resolve(songRoot);
-            if (string.IsNullOrWhiteSpace(files.GameplayMp3))
+            if (!files.HasPlayableGameplay)
             {
-                Debug.LogWarning($"Gameplay MP3 is missing: {songRoot}");
+                Debug.LogWarning($"Gameplay MP3/WAV is missing: {songRoot}");
                 onStarted?.Invoke();
                 return;
             }
             int version = ++requestVersion;
-            loadingRoutine = StartCoroutine(LoadAndPlay(files.GameplayMp3, version, false, onStarted));
+            loadingRoutine = StartCoroutine(LoadAndPlay(files.Gameplay, version, false, onStarted));
         }
 
         public void StopPreview()
@@ -98,7 +98,8 @@ namespace ChunithmMobile.Runtime
         private IEnumerator LoadAndPlay(string path, int version, bool loop, Action onStarted)
         {
             if (!File.Exists(path)) yield break;
-            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(new Uri(path).AbsoluteUri, AudioType.MPEG))
+            AudioType audioType = SongAudioSet.GetUnityAudioType(path);
+            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(new Uri(path).AbsoluteUri, audioType))
             {
                 if (request.downloadHandler is DownloadHandlerAudioClip audioHandler)
                 {
@@ -110,7 +111,7 @@ namespace ChunithmMobile.Runtime
                 if (version != requestVersion) yield break;
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    Debug.LogError($"Selection preview MP3 load failed: {path} | {request.error}");
+                    Debug.LogError($"Selection preview audio load failed: {path} | {request.error}");
                     onStarted?.Invoke();
                     yield break;
                 }
@@ -125,7 +126,7 @@ namespace ChunithmMobile.Runtime
             }
 
             if (loadedClip == null || version != requestVersion) yield break;
-            Debug.Log($"{(loop ? "Selection preview" : "Gameplay MP3")} started: {path}");
+            Debug.Log($"{(loop ? "Selection preview" : "Gameplay audio")} started: {path}");
             onStarted?.Invoke();
         }
 

@@ -13,6 +13,8 @@ using UnityEngine.Networking;
 
 namespace ChunithmMobile.Runtime
 {
+    // 单局播放会话：串联谱面解析、音频准备、正解音合成、时钟、渲染器、判定器和暂停恢复。
+    // 每次加载都有 generation；旧异步任务返回时不得修改当前会话，这是防止联机卡首帧和串歌的关键。
     /// <summary>
     /// Development bridge for imported, non-embedded charts. ADB can place a
     /// song folder under persistentDataPath/Songs and the first C2S is rendered
@@ -36,9 +38,13 @@ namespace ChunithmMobile.Runtime
         public const float PreparationSeconds = 2f;
         private double preparationEndDsp;
         private float pausedPreparationRemaining;
+        // Every load gets a generation. Async file/audio continuations from an
+        // older load must never mutate the current gameplay session.
+        private int playbackGeneration;
 
         public DspChartClock Clock => clock;
         public bool IsPlaying => loadedChart != null && clock.Playing;
+        public bool IsPrepared => loadedChart != null && songSource != null && songSource.clip != null;
         public double PlaybackTimeMs => loadedChart == null ? 0 : Math.Max(0, clock.TimeMs);
         public double PlaybackDurationMs => loadedChart?.DurationMs ?? 0;
         public int JudgeTotal => loadedChart?.OriginalJudgeTotal ?? 0;
@@ -46,6 +52,8 @@ namespace ChunithmMobile.Runtime
         public event Action PlaybackCompleted;
         public event Action PlaybackPaused;
 
+        // Unity 生命周期函数：这里只获取组件和加载遮罩，不提前加载歌曲。
+        // Awake 可能早于 AppUiShell 恢复设置，因此资源准备必须从 PlaySong 开始。
         private void Awake()
         {
             chartRenderer = GetComponent<ChartPlaybackRenderer>();
@@ -53,6 +61,10 @@ namespace ChunithmMobile.Runtime
             chartRenderer.enabled = false;
         }
 
+        /// <summary>
+        /// 异步准备一局歌曲。generation 拒绝旧的文件读取/音频解码回调；onReady 仅表示
+        /// 组件已绑定，不代表播放已经开始。实际的播放起点由本类统一安排。
+        /// </summary>
         public async void PlaySong(SongEntry song, SongChartEntry selectedChart, float playbackRate = 1f,
             bool autoPlay = false, bool airAreaAuto = false, bool directionalAirAuto = false,
             bool mineImmunity = false, bool airLongNoMotion = false,
@@ -60,12 +72,15 @@ namespace ChunithmMobile.Runtime
             int judgementOffsetMs = 0,
             Action onReady = null, Action<string> onFailed = null, bool keepLoadingVisible = false,
             float startDelaySeconds = .2f, bool deferStart = false, bool mirrorChart = false,
-            bool nonMissJusticeCritical = false)
+            bool nonMissJusticeCritical = false, bool flickAllTap = false,
+            bool uniformSpeed = false)
         {
             if (song == null || selectedChart == null || !File.Exists(selectedChart.Path)) {
                 onFailed?.Invoke("谱面文件不存在或歌曲数据无效");
                 return;
             }
+            // 先递增代次再释放旧会话。每个 await 返回后都会检查代次，防止旧任务写回新页面。
+            int generation = ++playbackGeneration;
             ReleasePlayback();
             calibrationPlayback = string.Equals(selectedChart.Difficulty, "CALIBRATION", StringComparison.OrdinalIgnoreCase);
             lastAudioLoadError = null;
@@ -79,39 +94,71 @@ namespace ChunithmMobile.Runtime
             loading?.Show("正在读取谱面…", .04f);
             chartRenderer.enabled = false;
 
+            string loadStage = "parse";
             try {
+                // 后续渲染、判定和正解音合成都使用这一份解析结果，保证时间和判定点一致。
                 ParsedChart chart = C2sParser.Parse(selectedChart.Path);
+                loadStage = "bind-renderer";
                 if (mirrorChart) ChartMirror.Apply(chart);
                 loadedChart = chart;
                 completionRaised = false;
                 clock.SetRate(playbackRate);
-                chartRenderer.Bind(chart, clock);
+                chartRenderer.Bind(chart, clock, uniformSpeed);
                 List<ScheduledJudgePoint> judgePoints = JudgePointScheduler.Build(chart);
                 Debug.Log($"C2S parsed: notes={chart.Notes.Count}, judgePoints={judgePoints.Count}, " +
+                    $"declaredJudgePoints={chart.DeclaredJudgeTotal}, " +
                     $"duration={chart.DurationMs:F1}ms, scrollEvents={chart.ScrollEvents.Count}, " +
                     $"mirror={mirrorChart}, memory={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
+                if (chart.DeclaredJudgeTotal != judgePoints.Count)
+                    Debug.LogWarning($"C2S T_JUDGE_ALL mismatch: declared={chart.DeclaredJudgeTotal}, " +
+                        $"scheduled={judgePoints.Count}, chart={selectedChart.Path}. " +
+                        "Gameplay will use the scheduled total instead of fabricating points.");
                 loading?.SetProgress("谱面已完成，正在准备音乐…", .15f);
-                if (!await TryLoadAndStartAudio(selectedChart.Path, chart, musicOffsetMs, startDelaySeconds, false)) {
+                loadStage = "load-audio";
+                Task<bool> audioPreparation = TryLoadAndStartAudio(selectedChart.Path, chart, musicOffsetMs,
+                    startDelaySeconds, false, generation);
+                Task completedPreparation = await Task.WhenAny(audioPreparation, Task.Delay(30000));
+                if (completedPreparation != audioPreparation) {
+                    if (!IsCurrentGeneration(generation)) return;
+                    playbackGeneration++;
+                    Debug.LogError("Gameplay preparation timed out while loading audio.");
+                    MultiplayerLog.Error("gameplay-load-timeout",
+                        $"stage={loadStage} chart={selectedChart.Path} song={song.Name}");
+                    ReleasePlayback();
+                    loading?.SetProgress("歌曲准备超时", 1f);
+                    onFailed?.Invoke("歌曲资源准备超时，请重新尝试。");
+                    return;
+                }
+                if (!await audioPreparation) {
+                    if (!IsCurrentGeneration(generation)) return;
                     chartRenderer.enabled = false;
                     string message = string.IsNullOrWhiteSpace(lastAudioLoadError)
                         ? "歌曲音乐加载失败。" : lastAudioLoadError;
                     Debug.LogError($"Gameplay preparation stopped: {message}");
+                    MultiplayerLog.Error("gameplay-audio-failed",
+                        $"stage={loadStage} chart={selectedChart.Path} song={song.Name} reason={message}");
                     ReleasePlayback();
                     loading?.SetProgress("歌曲准备失败", 1f);
                     onFailed?.Invoke(message);
                     return;
                 }
+                if (!IsCurrentGeneration(generation)) return;
+                // 音频准备成功后才绑定判定器，避免加载页阶段出现后台时间轴和无输入判定。
+                loadStage = "bind-judgement";
                 GetComponent<GameplayJudgeController>()?.Bind(chart, clock, FindObjectOfType<ArcadeInputRig>(),
                     autoPlay, airAreaAuto, directionalAirAuto, mineImmunity, airLongNoMotion,
-                    judgementOffsetMs, nonMissJusticeCritical, judgePoints);
+                    judgementOffsetMs, nonMissJusticeCritical, judgePoints, flickAllTap);
                 Camera gameplayCamera = transform.parent != null
                     ? transform.parent.Find("Gameplay Camera")?.GetComponent<Camera>() : null;
                 if (gameplayCamera == null || !gameplayCamera.isActiveAndEnabled)
                     throw new InvalidOperationException("Gameplay camera is not ready for first-frame preparation.");
                 loading?.SetProgress("正在准备首帧画面…", .99f);
+                loadStage = "prepare-first-frame";
+                // 首帧预热只创建/更新视觉对象，不推进时钟；页面准备完成后才允许正式启动。
                 chartRenderer.PrepareFirstFrame(-Math.Max(0, -preparedMusicOffsetMs) * clock.Rate, gameplayCamera);
                 if (!keepLoadingVisible) loading?.Hide();
                 onReady?.Invoke();
+                // 联机可以 deferStart，等待服务器统一起点；单机直接进入本地预备阶段。
                 if (!deferStart) StartPreparedWithPreparation();
                 Debug.Log($"Started selected song: {song.Name} / {selectedChart.Difficulty} {selectedChart.Level} | " +
                           $"{selectedChart.Path} | notes={chart.Notes.Count} | " +
@@ -119,8 +166,13 @@ namespace ChunithmMobile.Runtime
                           $"assignments={chart.ScrollAssignments.Count}");
             }
             catch (Exception exception) {
+                if (!IsCurrentGeneration(generation)) return;
                 Debug.LogError("C2S playback load failed: " + selectedChart.Path);
                 Debug.LogException(exception);
+                MultiplayerLog.Error("gameplay-load-failed",
+                    $"stage={loadStage} chart={selectedChart.Path} song={song.Name} " +
+                    $"difficulty={selectedChart.Difficulty} type={exception.GetType().FullName} " +
+                    $"message={exception.Message} stack={exception}");
                 chartRenderer.enabled = false;
                 ReleasePlayback();
                 loading?.SetProgress("歌曲准备失败", 1f);
@@ -128,53 +180,79 @@ namespace ChunithmMobile.Runtime
             }
         }
 
+        private bool IsCurrentGeneration(int generation) => generation == playbackGeneration;
+
         private async Task<bool> TryLoadAndStartAudio(string chartPath, ParsedChart chart,
-            int musicOffsetMs, float startDelaySeconds, bool startPlayback = true)
+            int musicOffsetMs, float startDelaySeconds, bool startPlayback = true, int generation = -1)
         {
             string songRoot = FindSongRoot(chartPath);
             if (string.IsNullOrWhiteSpace(songRoot)) {
                 lastAudioLoadError = "找不到歌曲目录。";
                 Debug.LogError("Audio preparation failed: song root is empty.");
+                MultiplayerLog.Error("gameplay-audio-failed", $"stage=find-song-root chart={chartPath}");
                 return false;
             }
             SongAudioSet audioFiles = SongAudioFiles.Resolve(songRoot);
-            string source = audioFiles.GameplayMp3;
+            string source = audioFiles.Gameplay;
             if (source == null) {
-                lastAudioLoadError = "歌曲目录中没有 gameplay.mp3。";
-                Debug.LogError("Audio preparation failed: song has no gameplay.mp3: " + songRoot);
+                lastAudioLoadError = "歌曲目录中没有可播放的 gameplay.mp3 或 gameplay.wav。";
+                Debug.LogError("Audio preparation failed: song has no playable gameplay audio: " + songRoot);
+                MultiplayerLog.Error("gameplay-audio-failed",
+                    $"stage=resolve-audio chart={chartPath} root={songRoot} reason=no-playable-gameplay-audio");
                 return false;
             }
 
+            AudioClip decodedClip = null;
+            AudioClip preparedMixedClip = null;
             try {
                 int normalizedMusicOffset = Mathf.Clamp(musicOffsetMs, -500, 500);
-                Debug.Log($"MP3 load begin: path={source}, musicOffset={normalizedMusicOffset}ms, " +
+                AudioType audioType = SongAudioSet.GetUnityAudioType(source);
+                string formatName = audioType == AudioType.WAV ? "WAV" : "MP3";
+                Debug.Log($"{formatName} load begin: path={source}, musicOffset={normalizedMusicOffset}ms, " +
                     $"systemMemory={SystemInfo.systemMemorySize}MB, managed={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
-                loading?.SetProgress("正在加载 MP3 音乐…", .17f);
+                loading?.SetProgress("正在加载 " + formatName + " 音乐…", .17f);
                 string uri = new Uri(source).AbsoluteUri;
-                using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(uri, AudioType.MPEG)) {
+                using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(uri, audioType)) {
                     var handler = (DownloadHandlerAudioClip)request.downloadHandler;
                     handler.streamAudio = false;
                     UnityWebRequestAsyncOperation operation = request.SendWebRequest();
                     while (!operation.isDone) {
-                        loading?.SetProgress("正在加载 MP3 音乐…", .15f + Mathf.Max(0, request.downloadProgress) * .80f);
+                        loading?.SetProgress("正在加载 " + formatName + " 音乐…", .15f + Mathf.Max(0, request.downloadProgress) * .80f);
                         await Task.Yield();
                     }
                     if (request.result != UnityWebRequest.Result.Success)
-                        throw new InvalidDataException("MP3 加载失败：" + request.error);
-                    songClip = DownloadHandlerAudioClip.GetContent(request);
+                        throw new InvalidDataException(formatName + " 加载失败：" + request.error);
+                    decodedClip = DownloadHandlerAudioClip.GetContent(request);
+                    if (generation >= 0 && !IsCurrentGeneration(generation)) {
+                        if (decodedClip != null) Destroy(decodedClip);
+                        return false;
+                    }
                 }
-                if (songClip == null || songClip.samples <= 0) throw new InvalidDataException("MP3 音频为空");
-                Debug.Log($"MP3 load complete: path={source}, samples={songClip.samples}, " +
-                    $"frequency={songClip.frequency}Hz, channels={songClip.channels}, " +
-                    $"length={songClip.length:F2}s, managed={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
+                if (decodedClip == null || decodedClip.samples <= 0) throw new InvalidDataException(formatName + " 音频为空");
+                Debug.Log($"{formatName} load complete: path={source}, samples={decodedClip.samples}, " +
+                    $"frequency={decodedClip.frequency}Hz, channels={decodedClip.channels}, " +
+                    $"length={decodedClip.length:F2}s, managed={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
                 loading?.SetProgress("正在按谱面合并正解音…", .96f);
                 AudioClip answerClip = null;
                 AppUiShell shell = FindObjectOfType<AppUiShell>();
                 if (shell != null && shell.AnswerSoundEnabled && shell.AnswerSoundVolume > 0f)
                     answerClip = await LoadGameplaySkinAudioAsync("se_touch_answer.wav", AudioType.WAV);
-                mixedSongClip = BuildMixedSongClip(songClip, chart, answerClip);
+                if (generation >= 0 && !IsCurrentGeneration(generation)) {
+                    if (answerClip != null && answerClip != Resources.Load<AudioClip>("Audio/se_touch_answer"))
+                        Destroy(answerClip);
+                    if (decodedClip != null) Destroy(decodedClip);
+                    return false;
+                }
+                preparedMixedClip = BuildMixedSongClip(decodedClip, chart, answerClip);
                 if (answerClip != null && answerClip != Resources.Load<AudioClip>("Audio/se_touch_answer"))
                     Destroy(answerClip);
+                if (generation >= 0 && !IsCurrentGeneration(generation)) {
+                    if (preparedMixedClip != null) Destroy(preparedMixedClip);
+                    if (decodedClip != null) Destroy(decodedClip);
+                    return false;
+                }
+                songClip = decodedClip;
+                mixedSongClip = preparedMixedClip;
                 if (mixedSongClip != null) {
                     // The mixed clip owns the PCM needed for playback. Release
                     // the decoded source to avoid keeping two full songs alive.
@@ -204,9 +282,16 @@ namespace ChunithmMobile.Runtime
                 return true;
             }
             catch (Exception exception) {
+                if (generation >= 0 && !IsCurrentGeneration(generation)) {
+                    if (preparedMixedClip != null) Destroy(preparedMixedClip);
+                    if (decodedClip != null) Destroy(decodedClip);
+                    return false;
+                }
                 lastAudioLoadError = exception.Message;
                 Debug.LogError("MP3 load failed; gameplay will not start: " + source);
                 Debug.LogException(exception);
+                if (preparedMixedClip != null && preparedMixedClip != mixedSongClip) Destroy(preparedMixedClip);
+                if (decodedClip != null && decodedClip != songClip) Destroy(decodedClip);
                 if (mixedSongClip != null) Destroy(mixedSongClip);
                 mixedSongClip = null;
                 if (songClip != null) Destroy(songClip);
@@ -215,12 +300,28 @@ namespace ChunithmMobile.Runtime
             }
         }
 
-        public void StartPreparedAtUnixMilliseconds(long startAtUnixMilliseconds)
+        public bool StartPreparedAtUnixMilliseconds(long startAtUnixMilliseconds)
         {
-            if (loadedChart == null || songSource == null || songSource.clip == null) return;
+            if (!IsPrepared) return false;
+            if (clock.Playing) return true;
             double nowUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             float delay = Mathf.Max(.02f, (float)((startAtUnixMilliseconds - nowUnix) / 1000.0));
             SchedulePreparedPlayback(preparedMusicOffsetMs, delay);
+            return true;
+        }
+
+        /// <summary>
+        /// Starts an already prepared round at an absolute value from the same
+        /// monotonic DSP clock used by AudioSource.PlayScheduled and judgement.
+        /// This is the multiplayer path and is independent of wall-clock jumps.
+        /// </summary>
+        public bool StartPreparedAtDspTime(double startAtDspSeconds)
+        {
+            if (!IsPrepared) return false;
+            if (clock.Playing) return true;
+            SchedulePreparedPlaybackAtDsp(preparedMusicOffsetMs,
+                Math.Max(PlatformServices.Current.AudioTime.Seconds + .02, startAtDspSeconds));
+            return true;
         }
 
         private int preparedMusicOffsetMs;
@@ -233,8 +334,13 @@ namespace ChunithmMobile.Runtime
 
         private void SchedulePreparedPlayback(int musicOffsetMs, float startDelaySeconds)
         {
-            preparedMusicOffsetMs = Mathf.Clamp(musicOffsetMs, -500, 500);
             double baseDsp = PlatformServices.Current.AudioTime.Seconds + Mathf.Max(.02f, startDelaySeconds);
+            SchedulePreparedPlaybackAtDsp(musicOffsetMs, baseDsp);
+        }
+
+        private void SchedulePreparedPlaybackAtDsp(int musicOffsetMs, double baseDsp)
+        {
+            preparedMusicOffsetMs = Mathf.Clamp(musicOffsetMs, -500, 500);
             preparationEndDsp = baseDsp;
             double chartStartDsp = baseDsp;
             double audioStartDsp = baseDsp;
@@ -242,9 +348,14 @@ namespace ChunithmMobile.Runtime
             else chartStartDsp += -preparedMusicOffsetMs / 1000.0;
             clock.PlayScheduled(chartStartDsp, 0, baseDsp);
             chartRenderer.enabled = true;
-            songSource.PlayScheduled(audioStartDsp);
+            // Chart/input use the interpolated audio-domain clock, while
+            // Unity's scheduler requires the backend's raw DSP epoch.
+            double rawAudioStartDsp = PlatformServices.Current.AudioTime.ToRawSeconds(audioStartDsp);
+            songSource.PlayScheduled(rawAudioStartDsp);
             if (pauseRequested || applicationPaused || !applicationFocused) PausePlayback();
-            Debug.Log($"Audio scheduled: preparation={startDelaySeconds:F3}s, chartDsp={chartStartDsp:F3}, audioDsp={audioStartDsp:F3}, musicOffset={preparedMusicOffsetMs}ms");
+            Debug.Log($"Audio scheduled: remaining={Math.Max(0, baseDsp - PlatformServices.Current.AudioTime.Seconds):F3}s, " +
+                      $"chartDsp={chartStartDsp:F3}, audioClockDsp={audioStartDsp:F3}, " +
+                      $"rawAudioDsp={rawAudioStartDsp:F3}, musicOffset={preparedMusicOffsetMs}ms");
         }
 
         private AudioClip BuildMixedSongClip(AudioClip source, ParsedChart chart, AudioClip answer)
@@ -278,6 +389,7 @@ namespace ChunithmMobile.Runtime
                 List<ScheduledJudgePoint> points = JudgePointScheduler.Build(chart);
                 float musicVolume = Mathf.Clamp01(shell.GameplayMusicVolume);
                 float answerVolume = Mathf.Clamp01(shell.AnswerSoundVolume);
+                int answerOffsetMs = shell.AnswerSoundOffsetMs;
                 int frequency = Math.Max(1, source.frequency);
                 var answerStarts = new List<int>();
                 foreach (ScheduledJudgePoint point in points)
@@ -287,7 +399,7 @@ namespace ChunithmMobile.Runtime
                     // KEEP checkpoints and hidden continuations do not add cues.
                     if (!ShouldMergeAnswerSound(note, point)) continue;
                     AddAnswerStart(answerStarts, source,
-                        point.TimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames), frequency);
+                        point.TimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames) + answerOffsetMs, frequency);
                 }
 
                 // The tail is a sound event, not a scoring event. The original
@@ -298,7 +410,7 @@ namespace ChunithmMobile.Runtime
                 {
                     if (!ShouldMergeTailAnswerSound(note)) continue;
                     AddAnswerStart(answerStarts, source,
-                        note.EndTimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames), frequency);
+                        note.EndTimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames) + answerOffsetMs, frequency);
                 }
 
                 int droppedAnswerSounds = LimitConcurrentAnswerSounds(answerStarts, 4);
@@ -472,6 +584,7 @@ namespace ChunithmMobile.Runtime
 
         public void StopPlayback()
         {
+            playbackGeneration++;
             completionRaised = true;
             ReleasePlayback();
         }
