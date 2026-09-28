@@ -417,6 +417,7 @@ namespace ChunithmMobile.Runtime
         private GameplayJudgementEffects gameplayEffects;
         private GameplaySkinTouchOverlay gameplaySkinTouchOverlay;
         private GameplaySkinLive2DBridge gameplaySkinLive2D;
+        private GameplaySkinCubismRenderer gameplaySkinCubism;
         private TouchContactOverlay gameplayTouchContacts;
         private TrackMaskOverlay gameplayTrackMask;
         private readonly List<Image> gameplayLaneHighlights = new List<Image>();
@@ -3453,6 +3454,8 @@ namespace ChunithmMobile.Runtime
             RectTransform live2DLayer = RectObject("Gameplay skin Live2D bridge", page, Vector2.zero, Vector2.zero);
             gameplaySkinLive2D = live2DLayer.gameObject.AddComponent<GameplaySkinLive2DBridge>();
             gameplaySkinLive2D.Initialize();
+            gameplaySkinCubism = live2DLayer.gameObject.AddComponent<GameplaySkinCubismRenderer>();
+            gameplaySkinCubism.Initialize(page);
             gameplayPauseButton = ButtonText("Ⅱ", page, new Vector2(.018f, .88f), new Vector2(.075f, .975f),
                 HighContrastUi ? UiThemeContrast.Yellow : new Color(.025f, .07f, .11f, .92f), RequestPauseGameplay);
             gameplayPauseButton.name = "Pause button";
@@ -5972,6 +5975,7 @@ namespace ChunithmMobile.Runtime
             gameplayEffects?.ConfigureSkin(gameplaySkin);
             gameplaySkinTouchOverlay?.RefreshSkin();
             gameplaySkinLive2D?.RefreshSkin();
+            gameplaySkinCubism?.RefreshSkin();
             if (gameplayScore != null) gameplayScore.color = gameplaySkin.ScoreColor;
             if (gameplayCombo != null) gameplayCombo.color = gameplaySkin.ComboColor;
             RefreshJudgementSkin();

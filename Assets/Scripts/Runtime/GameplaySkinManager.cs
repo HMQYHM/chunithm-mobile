@@ -110,6 +110,10 @@ namespace ChunithmMobile.Runtime
         public string Live2DRightYParameter = "ParamMouseY";
         public string Live2DLeftDownParameter = "ParamMouseLeftDown";
         public string Live2DRightDownParameter = "ParamMouseRightDown";
+        public float Live2DX = .06f;
+        public float Live2DY = .16f;
+        public float Live2DWidth = .34f;
+        public float Live2DHeight = .64f;
 
         public static GameplaySkinStyle Original()
         {
@@ -400,6 +404,40 @@ namespace ChunithmMobile.Runtime
                 Debug.LogWarning("Gameplay skin preview failed: " + normalized + " | " + exception.Message);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 读取皮肤包声明的 Live2D 资源。只允许模型、动作、表达式、配置和
+        /// PNG 贴图，且路径仍然经过皮肤根目录校验，避免模型加载越过皮肤目录。
+        /// </summary>
+        public static object LoadLive2DAsset(GameplaySkinInfo info, Type assetType, string relativePath)
+        {
+            if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(info.RootPath) ||
+                assetType == null || string.IsNullOrWhiteSpace(relativePath)) return null;
+            string normalized = relativePath.Replace('\\', '/').TrimStart('/');
+            string extension = Path.GetExtension(normalized).ToLowerInvariant();
+            bool jsonModel = normalized.EndsWith(".model3.json", StringComparison.OrdinalIgnoreCase);
+            bool jsonCdi = normalized.EndsWith(".cdi3.json", StringComparison.OrdinalIgnoreCase);
+            bool jsonMotion = normalized.EndsWith(".motion3.json", StringComparison.OrdinalIgnoreCase);
+            bool jsonExpression = normalized.EndsWith(".exp3.json", StringComparison.OrdinalIgnoreCase);
+            bool allowed = extension == ".moc3" || extension == ".png" || jsonModel || jsonCdi ||
+                           jsonMotion || jsonExpression;
+            if (!allowed) return null;
+            try
+            {
+                string path = SafePath(info.RootPath, normalized);
+                if (!File.Exists(path)) return null;
+                FileInfo file = new FileInfo(path);
+                if (file.Length <= 0 || file.Length > MaxEntryBytes) return null;
+                if (assetType == typeof(byte[])) return File.ReadAllBytes(path);
+                if (assetType == typeof(string)) return File.ReadAllText(path, Encoding.UTF8);
+                if (assetType == typeof(Texture2D)) return LoadSkinImage(info, normalized);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Live2D skin resource failed: " + normalized + " | " + exception.Message);
+            }
+            return null;
         }
 
         public static bool DeleteSkin(GameplaySkinInfo info)
@@ -806,6 +844,10 @@ namespace ChunithmMobile.Runtime
                         result.Live2DLeftDownParameter);
                     result.Live2DRightDownParameter = SafeParameterName(manifest.live2d.rightDownParameter,
                         result.Live2DRightDownParameter);
+                    result.Live2DX = Mathf.Clamp01(manifest.live2d.x);
+                    result.Live2DY = Mathf.Clamp01(manifest.live2d.y);
+                    result.Live2DWidth = Mathf.Clamp(manifest.live2d.width, .01f, 1f - result.Live2DX);
+                    result.Live2DHeight = Mathf.Clamp(manifest.live2d.height, .01f, 1f - result.Live2DY);
                 }
             }
             catch (Exception exception)
@@ -1023,6 +1065,10 @@ namespace ChunithmMobile.Runtime
             public string rightYParameter = "ParamMouseY";
             public string leftDownParameter = "ParamMouseLeftDown";
             public string rightDownParameter = "ParamMouseRightDown";
+            public float x = .06f;
+            public float y = .16f;
+            public float width = .34f;
+            public float height = .64f;
         }
 
         [Serializable]
