@@ -619,6 +619,30 @@ namespace ChunithmMobile.Runtime
             }
         }
 
+        // 将外部游玩皮肤原样打包，保证 skin.json 位于 ZIP 根目录，导出包
+        // 可以直接再次通过“导入游玩皮肤”安装。
+        public static void ExportPackage(GameplaySkinInfo info, string archivePath)
+        {
+            if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(info.RootPath) || !Directory.Exists(info.RootPath))
+                throw new InvalidOperationException("内置原版皮肤不能导出");
+            string root = Path.GetFullPath(SkinRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string source = Path.GetFullPath(info.RootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!source.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("拒绝导出皮肤目录以外的文件");
+            string output = Path.GetFullPath(archivePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(output));
+            if (File.Exists(output)) File.Delete(output);
+            using (FileStream stream = File.Create(output))
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, false))
+            {
+                foreach (string file in Directory.EnumerateFiles(info.RootPath, "*", SearchOption.AllDirectories))
+                {
+                    string relative = Path.GetRelativePath(info.RootPath, file).Replace('\\', '/');
+                    archive.CreateEntryFromFile(file, relative, System.IO.Compression.CompressionLevel.Fastest);
+                }
+            }
+        }
+
         private static IEnumerable<string> RequiredResources()
         {
             foreach (string kind in NoteKinds)

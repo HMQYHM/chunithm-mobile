@@ -82,15 +82,15 @@ namespace ChunithmMobile.Runtime
 
         public static Task<SongImportResult> ImportAsync(string source, string persistentDataPath,
             string temporaryCachePath, string destinationRoot, Action<SongImportProgress> progress = null,
-            long availableMemoryBytes = -1)
+            long availableMemoryBytes = -1, bool customConversion = false)
         {
             return Task.Run(() => Import(source, persistentDataPath, temporaryCachePath, destinationRoot,
-                progress, availableMemoryBytes));
+                progress, availableMemoryBytes, customConversion));
         }
 
         private static SongImportResult Import(string source, string persistentDataPath,
             string temporaryCachePath, string destinationRoot, Action<SongImportProgress> progress,
-            long availableMemoryBytes)
+            long availableMemoryBytes, bool customConversion)
         {
             if (string.IsNullOrWhiteSpace(source)) throw new ArgumentException("没有选择导入文件", nameof(source));
             if (string.IsNullOrWhiteSpace(destinationRoot)) throw new ArgumentException("歌曲目录不可用", nameof(destinationRoot));
@@ -118,7 +118,7 @@ namespace ChunithmMobile.Runtime
                 else throw new FileNotFoundException("选择的导入文件不存在", source);
 
                 Report(progress, .43f, "扫描", "歌曲数据", "正在识别歌曲目录");
-                List<string> songFolders = FindSongFolders(staging);
+                List<string> songFolders = FindSongFolders(staging, customConversion);
                 if (songFolders.Count == 0)
                     throw new InvalidDataException("压缩包中未找到 Music.xml 或 C2S 谱面");
                 Write(result, "SCAN", $"found={songFolders.Count}");
@@ -371,8 +371,19 @@ namespace ChunithmMobile.Runtime
             }
         }
 
-        private static List<string> FindSongFolders(string root)
+        private static List<string> FindSongFolders(string root, bool customConversion = false)
         {
+            if (customConversion)
+            {
+                // 自制谱转换约定：ZIP 的第一级文件夹就是一首歌曲，内部
+                // 子文件夹不再继续拆分；没有第一级文件夹时整包视为一首。
+                string[] topLevel = Directory.GetDirectories(root)
+                    .Where(path => !Path.GetFileName(path).Equals("__MACOSX", StringComparison.OrdinalIgnoreCase) &&
+                                   Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Any())
+                    .ToArray();
+                if (topLevel.Length == 0) return new List<string> { root };
+                return topLevel.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToList();
+            }
             var folders = new List<string>();
             foreach (string xml in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
                          .Where(path => Path.GetFileName(path).Equals("Music.xml", StringComparison.OrdinalIgnoreCase)))

@@ -165,6 +165,7 @@ namespace ChunithmMobile.Runtime
         private Button managementSongTab;
         private Button managementSkinTab;
         private Button managementImportButton;
+        private Button managementExportButton;
         private Button managementRefreshButton;
         private Button managementDeleteButton;
         private Button managementSelectAllButton;
@@ -189,6 +190,7 @@ namespace ChunithmMobile.Runtime
         private Button importClose;
         private bool importRunning;
         private bool gameplaySkinImportPending;
+        private bool songCustomConversionPending;
         private bool importHadCopyPhase;
         private bool importProgressIndeterminate;
         private bool backgroundImageImport;
@@ -819,17 +821,19 @@ namespace ChunithmMobile.Runtime
             managementPage = page;
             ButtonText("‹", page, new Vector2(.015f, .91f), new Vector2(.06f, .985f), surfaceRaised, ReturnFromDataManagement);
             Label("数据管理", page, 32, TextAnchor.MiddleLeft, new Vector2(.07f, .91f), new Vector2(.25f, .985f), Color.white);
-            managementSongTab = ButtonText("歌曲数据", page, new Vector2(.26f, .91f), new Vector2(.37f, .985f), surfaceRaised,
+            managementSongTab = ButtonText("歌曲数据", page, new Vector2(.21f, .91f), new Vector2(.31f, .985f), surfaceRaised,
                 () => SetManagementMode(false));
-            managementSkinTab = ButtonText("游玩皮肤", page, new Vector2(.38f, .91f), new Vector2(.49f, .985f), surfaceRaised,
+            managementSkinTab = ButtonText("游玩皮肤", page, new Vector2(.32f, .91f), new Vector2(.42f, .985f), surfaceRaised,
                 () => SetManagementMode(true));
-            managementImportButton = ButtonText("导入", page, new Vector2(.57f, .91f), new Vector2(.67f, .985f), new Color(.04f, .43f, .56f),
+            managementImportButton = ButtonText("导入", page, new Vector2(.44f, .91f), new Vector2(.53f, .985f), new Color(.04f, .43f, .56f),
                 OnManagementImport);
-            managementRefreshButton = ButtonText("刷新", page, new Vector2(.68f, .91f), new Vector2(.77f, .985f), new Color(.04f, .34f, .46f),
+            managementExportButton = ButtonText("导出", page, new Vector2(.54f, .91f), new Vector2(.63f, .985f), new Color(.12f, .30f, .42f),
+                OnManagementExport);
+            managementRefreshButton = ButtonText("刷新", page, new Vector2(.64f, .91f), new Vector2(.73f, .985f), new Color(.04f, .34f, .46f),
                 OnManagementRefresh);
-            managementDeleteButton = ButtonText("删除", page, new Vector2(.79f, .91f), new Vector2(.88f, .985f), new Color(.35f, .07f, .10f),
+            managementDeleteButton = ButtonText("删除", page, new Vector2(.74f, .91f), new Vector2(.83f, .985f), new Color(.35f, .07f, .10f),
                 OnManagementDelete);
-            Label("选择项目后操作", page, 14, TextAnchor.MiddleRight, new Vector2(.89f, .91f), new Vector2(.98f, .985f), muted);
+            Label("选择项目后操作", page, 14, TextAnchor.MiddleRight, new Vector2(.84f, .91f), new Vector2(.98f, .985f), muted);
 
             managementSearch = Input("搜索歌曲、作者、分类或皮肤 ID", page, new Vector2(.02f, .815f), new Vector2(.49f, .89f));
             managementSearch.onValueChanged.AddListener(value => {
@@ -1531,9 +1535,10 @@ namespace ChunithmMobile.Runtime
             if (managementEnterSongButton != null) managementEnterSongButton.gameObject.SetActive(!skinMode);
             if (managementHint != null) {
                 managementHint.gameObject.SetActive(true);
-                managementHint.text = skinMode ? "点击皮肤包查看详情、预览资源和缺失回退项" : "选择歌曲后可批量编辑或删除";
+                managementHint.text = skinMode ? "选择皮肤包后可预览、导出或删除" : "选择歌曲后可批量编辑、导出或删除";
             }
             SetButtonLabel(managementImportButton, skinMode ? "导入皮肤" : "导入");
+            SetButtonLabel(managementExportButton, "导出");
             SetButtonLabel(managementRefreshButton, skinMode ? "刷新皮肤" : "刷新");
             SetButtonLabel(managementDeleteButton, skinMode ? "删除皮肤" : "删除");
             if (skinMode) RebuildSkinManagementList(true);
@@ -1543,7 +1548,27 @@ namespace ChunithmMobile.Runtime
         private void OnManagementImport()
         {
             if (managementSkinMode) BeginGameplaySkinImport();
-            else BeginSongImport();
+            else ShowSongImportChoice();
+        }
+
+        private void ShowSongImportChoice()
+        {
+            ShowModal("导入歌曲", "请选择导入方式：\n\n直接导入：适用于当前游戏歌曲 ZIP。\n自制谱转换：按 ZIP 第一级文件夹分组，每个文件夹转换为一首歌曲；没有文件夹时整包作为一首歌曲。",
+                null, false);
+            ConfigureModalOption(modalOptionA, "直接导入", () => {
+                HideModal();
+                BeginSongImport(false);
+            });
+            ConfigureModalOption(modalOptionB, "自制谱转换", () => {
+                HideModal();
+                BeginSongImport(true);
+            });
+        }
+
+        private void OnManagementExport()
+        {
+            if (managementSkinMode) ExportManagedSkin();
+            else ExportManagedSongs();
         }
 
         private void OnManagementRefresh()
@@ -1558,6 +1583,85 @@ namespace ChunithmMobile.Runtime
         {
             if (managementSkinMode) ConfirmManagedSkinDelete();
             else ConfirmManagedDelete();
+        }
+
+        private async void ExportManagedSongs()
+        {
+            SongEntry[] selected = catalog.Where(song => managedSongRoots.Contains(song.Root)).ToArray();
+            if (selected.Length == 0)
+            {
+                ShowModal("没有选择歌曲", "请先选择要导出的歌曲。", null, false);
+                return;
+            }
+            string directory = Path.Combine(Application.temporaryCachePath, "Exports");
+            Directory.CreateDirectory(directory);
+            string prefix = selected.Length == 1
+                ? (string.IsNullOrWhiteSpace(selected[0].Id) ? "song" : selected[0].Id)
+                : "songs-" + selected.Length;
+            string path = Path.Combine(directory, prefix + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".zip");
+            try
+            {
+                ShowImportOverlay("导出歌曲");
+                importStatus.text = "正在打包歌曲";
+                importCurrent.text = selected.Length + " 首歌曲";
+                importDetails.text = "正在保留歌曲编号、元数据、音乐、封面和全部谱面…";
+                await Task.Run(() => SongExportManager.Export(selected, path));
+                importRunning = false;
+                importClose.interactable = true;
+                importStatus.text = "歌曲导出完成";
+                importCurrent.text = Path.GetFileName(path);
+                importDetails.text = "ZIP 已生成，可以通过系统分享或文件管理器保存。";
+                SetImportProgress(1f);
+                HideImportOverlay();
+                if (!PlatformStoragePaths.TryShareFile(path))
+                    ShowModal("歌曲导出完成", path, null, false);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError("Song export failed: " + exception);
+                FailImportOverlay(exception);
+            }
+        }
+
+        private async void ExportManagedSkin()
+        {
+            GameplaySkinInfo skin = GameplaySkinManager.Installed.FirstOrDefault(item =>
+                string.Equals(item.Id, managedSkinId, StringComparison.OrdinalIgnoreCase));
+            if (skin == null)
+            {
+                ShowModal("没有选择皮肤", "请先点击皮肤包查看详情，再执行导出。", null, false);
+                return;
+            }
+            if (skin.BuiltIn)
+            {
+                ShowModal("无法导出内置皮肤", "当前原版皮肤由软件内置，没有可导出的外部文件。", null, false);
+                return;
+            }
+            string directory = Path.Combine(Application.temporaryCachePath, "Exports");
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, skin.Id + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".cmgameplay");
+            try
+            {
+                ShowImportOverlay("导出游玩皮肤");
+                importStatus.text = "正在打包皮肤";
+                importCurrent.text = skin.Name;
+                importDetails.text = "正在保留 skin.json 和全部皮肤资源…";
+                await Task.Run(() => GameplaySkinManager.ExportPackage(skin, path));
+                importRunning = false;
+                importClose.interactable = true;
+                importStatus.text = "皮肤导出完成";
+                importCurrent.text = Path.GetFileName(path);
+                importDetails.text = "皮肤包已生成，可以直接分享或重新导入。";
+                SetImportProgress(1f);
+                HideImportOverlay();
+                if (!PlatformStoragePaths.TryShareFile(path))
+                    ShowModal("皮肤导出完成", path, null, false);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError("Gameplay skin export failed: " + exception);
+                FailImportOverlay(exception);
+            }
         }
 
         private IReadOnlyList<GameplaySkinInfo> ManagedSkins()
@@ -5113,9 +5217,10 @@ namespace ChunithmMobile.Runtime
                 RebuildSongGrid(false, true);
         }
 
-        private void BeginSongImport()
+        private void BeginSongImport(bool customConversion = false)
         {
             if (importRunning) return;
+            songCustomConversionPending = customConversion;
 #if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
             try {
                 PlatformStoragePaths.OpenSongImportPicker();
@@ -5128,7 +5233,10 @@ namespace ChunithmMobile.Runtime
             string importFolder = System.IO.Path.Combine(PlatformServices.Current.PersistentDataPath, "Import");
             System.IO.Directory.CreateDirectory(importFolder);
             string source = System.IO.Directory.GetFiles(importFolder, "*.zip").FirstOrDefault();
-            if (source == null) ShowModal("导入歌曲", "请把 ZIP 放入：\n" + importFolder, null, false);
+            if (source == null) {
+                songCustomConversionPending = false;
+                ShowModal("导入歌曲", "请把 ZIP 放入：\n" + importFolder, null, false);
+            }
             else OnImportFilePicked(source);
 #endif
         }
@@ -5361,7 +5469,9 @@ namespace ChunithmMobile.Runtime
         // document into this app's cache directory.
         public void OnImportStarted(string displayName)
         {
-            ShowImportOverlay(gameplaySkinImportPending ? "导入游玩皮肤" : "导入歌曲");
+            ShowImportOverlay(gameplaySkinImportPending
+                ? "导入游玩皮肤"
+                : songCustomConversionPending ? "自制谱转换导入" : "直接导入歌曲");
             importHadCopyPhase = true;
             importCopyStartedRealtime = Time.realtimeSinceStartup;
             importStatus.text = "正在复制到应用缓存";
@@ -5400,8 +5510,11 @@ namespace ChunithmMobile.Runtime
             // next song ZIP selected by the user would accidentally be routed
             // through the gameplay-skin installer.
             bool wasGameplaySkin = gameplaySkinImportPending;
+            bool wasCustomConversion = songCustomConversionPending;
             gameplaySkinImportPending = false;
-            if (importLayer == null || !importLayer.gameObject.activeSelf) ShowImportOverlay();
+            songCustomConversionPending = false;
+            if (importLayer == null || !importLayer.gameObject.activeSelf)
+                ShowImportOverlay(wasCustomConversion ? "自制谱转换导入" : "直接导入歌曲");
             FailImportOverlay(new IOException((wasGameplaySkin ? "复制所选皮肤包失败：" : "复制所选文件失败：") + message));
         }
 
@@ -5426,9 +5539,14 @@ namespace ChunithmMobile.Runtime
                 await ImportGameplaySkinPackage(path);
                 return;
             }
-            if (string.IsNullOrWhiteSpace(path)) { ShowModal("导入已取消", "没有选择文件。", null, false); return; }
+            if (string.IsNullOrWhiteSpace(path)) {
+                songCustomConversionPending = false;
+                ShowModal("导入已取消", "没有选择文件。", null, false);
+                return;
+            }
             string temporaryCachePath = "";
-            if (importLayer == null || !importLayer.gameObject.activeSelf) ShowImportOverlay();
+            if (importLayer == null || !importLayer.gameObject.activeSelf)
+                ShowImportOverlay(songCustomConversionPending ? "自制谱转换导入" : "直接导入歌曲");
             importStatus.text = "正在分析 ZIP";
             importCurrent.text = Path.GetFileName(path);
             try {
@@ -5440,7 +5558,7 @@ namespace ChunithmMobile.Runtime
                     (availableMemoryBytes > 0 ? FormatBytes(availableMemoryBytes) : "unknown"));
                 SongImportResult imported = await SongImportManager.ImportAsync(path, persistentDataPath,
                     temporaryCachePath, destinationRoot, progress => pendingImportProgress.Enqueue(progress),
-                    availableMemoryBytes);
+                    availableMemoryBytes, songCustomConversionPending);
                 RefreshCatalogAfterImport(imported);
                 CompleteImportOverlay(imported);
             }
@@ -5449,6 +5567,7 @@ namespace ChunithmMobile.Runtime
                 FailImportOverlay(exception);
             }
             finally {
+                songCustomConversionPending = false;
                 TryDeletePickedImport(path, temporaryCachePath);
             }
         }
