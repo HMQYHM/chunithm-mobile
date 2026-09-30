@@ -6,7 +6,7 @@ namespace ChunithmMobile.Runtime
     /// <summary>
     /// Live2D 皮肤的安全桥接层。
     /// 皮肤包只声明模型文件和参数名，游戏负责把只读触控快照转换成参数值。
-    /// 具体 Cubism 渲染器可以在后续接入时订阅 ParametersUpdated，不执行皮肤代码。
+    /// 内置 Cubism 渲染器直接读取触控快照；ParametersUpdated 保留为只读扩展接口。
     /// </summary>
     public sealed class GameplaySkinLive2DBridge : MonoBehaviour
     {
@@ -38,10 +38,12 @@ namespace ChunithmMobile.Runtime
                 RightY = style.Live2DRightYParameter;
                 LeftDown = style.Live2DLeftDownParameter;
                 RightDown = style.Live2DRightDownParameter;
-                LeftXValue = MapAxis(telemetry.Left.CenterX);
-                LeftYValue = MapAxis(telemetry.Left.CenterY);
-                RightXValue = MapAxis(telemetry.Right.CenterX);
-                RightYValue = MapAxis(telemetry.Right.CenterY);
+                bool leftActive = telemetry.InputActive && telemetry.Left.Active;
+                bool rightActive = telemetry.InputActive && telemetry.Right.Active;
+                LeftXValue = leftActive ? MapAxis(telemetry.Left.CenterX * 2f) : 0f;
+                LeftYValue = leftActive ? MapAxis(telemetry.Left.CenterY) : 0f;
+                RightXValue = rightActive ? MapAxis((telemetry.Right.CenterX - .5f) * 2f) : 0f;
+                RightYValue = rightActive ? MapAxis(telemetry.Right.CenterY) : 0f;
                 LeftDownValue = telemetry.InputActive && telemetry.Left.Active ? 1f : 0f;
                 RightDownValue = telemetry.InputActive && telemetry.Right.Active ? 1f : 0f;
                 IdleMotion = style.Live2DIdleMotion;

@@ -100,6 +100,11 @@ namespace ChunithmMobile.Runtime
         // Live2D model metadata is intentionally declarative. The game will
         // only map the whitelisted touch values to these named parameters.
         public bool Live2DEnabled;
+        public string[] Live2DHiddenParts = Array.Empty<string>();
+        // Optional background uses model-space coordinates so it stays aligned
+        // with the paws when the screen aspect ratio changes.
+        public string Live2DBackgroundPath = "";
+        public Rect Live2DBackgroundRect = new Rect(-1f, -1f, 2f, 2f);
         public string Live2DModelPath = "model/cat.model3.json";
         public string Live2DIdleMotion = "";
         public string Live2DLeftPressMotion = "";
@@ -108,6 +113,8 @@ namespace ChunithmMobile.Runtime
         public string Live2DLeftYParameter = "ParamMouseY";
         public string Live2DRightXParameter = "ParamMouseX";
         public string Live2DRightYParameter = "ParamMouseY";
+        public string Live2DLeftVisibleParameter = "";
+        public string Live2DRightVisibleParameter = "";
         public string Live2DLeftDownParameter = "ParamMouseLeftDown";
         public string Live2DRightDownParameter = "ParamMouseRightDown";
         public float Live2DX = .06f;
@@ -414,6 +421,7 @@ namespace ChunithmMobile.Runtime
         {
             if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(info.RootPath) ||
                 assetType == null || string.IsNullOrWhiteSpace(relativePath)) return null;
+            if (Path.IsPathRooted(relativePath) || relativePath.Contains(":")) return null;
             string normalized = relativePath.Replace('\\', '/').TrimStart('/');
             string extension = Path.GetExtension(normalized).ToLowerInvariant();
             bool jsonModel = normalized.EndsWith(".model3.json", StringComparison.OrdinalIgnoreCase);
@@ -431,7 +439,31 @@ namespace ChunithmMobile.Runtime
                 if (file.Length <= 0 || file.Length > MaxEntryBytes) return null;
                 if (assetType == typeof(byte[])) return File.ReadAllBytes(path);
                 if (assetType == typeof(string)) return File.ReadAllText(path, Encoding.UTF8);
-                if (assetType == typeof(Texture2D)) return LoadSkinImage(info, normalized);
+                if (assetType == typeof(Texture2D))
+                {
+                    // A live model owns these textures. Preview cache eviction must
+                    // not destroy a texture still used by an active model.
+                    byte[] bytes = File.ReadAllBytes(path);
+                    // Inspect PNG dimensions before decoding, to reject compressed
+                    // images that would otherwise allocate huge pixel buffers.
+                    if (bytes.Length < 24 || bytes[0] != 137 || bytes[1] != 80 || bytes[2] != 78 || bytes[3] != 71)
+                        return null;
+                    uint width = ((uint)bytes[16] << 24) | ((uint)bytes[17] << 16) | ((uint)bytes[18] << 8) | bytes[19];
+                    uint height = ((uint)bytes[20] << 24) | ((uint)bytes[21] << 16) | ((uint)bytes[22] << 8) | bytes[23];
+                    if (width == 0 || height == 0 || width > 4096 || height > 4096 || (ulong)width * height > 16777216)
+                        return null;
+                    Texture2D texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    if (!texture.LoadImage(bytes, true) || texture.width > 4096 ||
+                        texture.height > 4096 || (long)texture.width * texture.height > 16777216)
+                    {
+                        if (Application.isPlaying) UnityEngine.Object.Destroy(texture);
+                        else UnityEngine.Object.DestroyImmediate(texture);
+                        return null;
+                    }
+                    texture.name = normalized;
+                    texture.wrapMode = TextureWrapMode.Clamp;
+                    return texture;
+                }
             }
             catch (Exception exception)
             {
@@ -827,6 +859,19 @@ namespace ChunithmMobile.Runtime
                 }
                 if (manifest.live2d != null) {
                     result.Live2DEnabled = manifest.live2d.enabled;
+                    if (manifest.live2d.background != null)
+                    {
+                        var background = manifest.live2d.background;
+                        result.Live2DBackgroundPath = SafeSkinRelativePath(background.image, "");
+                        result.Live2DBackgroundRect = new Rect(Mathf.Clamp(background.x, -5f, 5f),
+                            Mathf.Clamp(background.y, -5f, 5f), Mathf.Clamp(background.width, .01f, 10f),
+                            Mathf.Clamp(background.height, .01f, 10f));
+                    }
+                    // Only a bounded list of model IDs can hide authored accessories.
+                    // It never identifies a game object or changes judgement state.
+                    if (manifest.live2d.hiddenParts != null && manifest.live2d.hiddenParts.Length <= 32)
+                        result.Live2DHiddenParts = manifest.live2d.hiddenParts
+                            .Select(id => SafeParameterName(id, "")).Where(id => !string.IsNullOrEmpty(id)).ToArray();
                     result.Live2DModelPath = SafeSkinRelativePath(manifest.live2d.model,
                         result.Live2DModelPath);
                     result.Live2DIdleMotion = SafeMotionName(manifest.live2d.idleMotion);
@@ -840,6 +885,10 @@ namespace ChunithmMobile.Runtime
                         result.Live2DRightXParameter);
                     result.Live2DRightYParameter = SafeParameterName(manifest.live2d.rightYParameter,
                         result.Live2DRightYParameter);
+                    result.Live2DLeftVisibleParameter = SafeParameterName(manifest.live2d.leftVisibleParameter,
+                        result.Live2DLeftVisibleParameter);
+                    result.Live2DRightVisibleParameter = SafeParameterName(manifest.live2d.rightVisibleParameter,
+                        result.Live2DRightVisibleParameter);
                     result.Live2DLeftDownParameter = SafeParameterName(manifest.live2d.leftDownParameter,
                         result.Live2DLeftDownParameter);
                     result.Live2DRightDownParameter = SafeParameterName(manifest.live2d.rightDownParameter,
@@ -1055,6 +1104,8 @@ namespace ChunithmMobile.Runtime
         private sealed class SkinLive2DManifest
         {
             public bool enabled;
+            public string[] hiddenParts;
+            public SkinModelBackgroundManifest background;
             public string model;
             public string idleMotion;
             public string leftPressMotion;
@@ -1069,6 +1120,16 @@ namespace ChunithmMobile.Runtime
             public float y = .16f;
             public float width = .34f;
             public float height = .64f;
+        }
+
+        [Serializable]
+        private sealed class SkinModelBackgroundManifest
+        {
+            public string image;
+            public float x = -1f;
+            public float y = -1f;
+            public float width = 2f;
+            public float height = 2f;
         }
 
         [Serializable]
