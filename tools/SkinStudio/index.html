@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#071018">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; worker-src 'self'; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
   <link rel="manifest" href="manifest.webmanifest">
   <title>CHUNITHM Mobile Skin Studio</title>
   <link rel="stylesheet" href="style.css">
@@ -16,6 +17,7 @@
       <h1>Skin Studio</h1>
     </div>
     <div class="top-actions">
+      <label class="button secondary">打开皮肤文件夹<input id="skinFolder" type="file" webkitdirectory multiple hidden></label>
       <label class="button secondary">导入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
       <button id="exportJson" class="button secondary">导出 JSON</button>
       <button id="exportZip" class="button primary">导出皮肤 ZIP</button>
@@ -24,7 +26,7 @@
 
   <main class="workspace">
     <section class="preview-column panel">
-      <div class="panel-title"><span>游玩界面预览</span><span id="statusBadge" class="badge">游玩中</span></div>
+      <div class="panel-title"><span>游玩界面布局</span><span id="statusBadge" class="badge">游玩中</span></div>
       <div id="stage" class="stage" aria-label="横屏游玩界面预览">
         <div class="stage-grid"></div>
         <div class="lane lane-left"></div><div class="lane lane-right"></div><div class="goal-line"></div>
@@ -43,6 +45,10 @@
     </section>
 
     <section class="layers-column panel">
+      <div class="skin-identity">
+      <label class="field"><span>皮肤名称</span><input id="skinName" type="text" maxlength="80"></label>
+      <label class="field"><span>皮肤 ID</span><input id="skinId" type="text" maxlength="64"></label>
+      </div>
       <div class="panel-title"><span>元素图层</span><button id="addElement" class="icon-button" title="添加元素">+</button></div>
       <div id="layerList" class="layer-list"></div>
       <div class="layer-actions"><button id="removeElement" class="button danger">移除当前元素</button></div>
@@ -114,10 +120,9 @@
       </section>
     </section>
   </main>
-  <footer class="footer"><span id="fileSummary">0 个资源</span><span>本地资源 · 不执行包内代码</span></footer>
+  <footer class="footer"><span id="fileSummary">0 个资源</span><span id="operationStatus" role="status" aria-live="polite"></span><span>本地资源 · 不执行包内代码</span></footer>
   <script src="live2d-config.js"></script>
   <script src="live2d-panel.js"></script>
   <script src="app.js"></script>
-  <script>if (window.isSecureContext && 'serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});</script>
 </body>
 </html>

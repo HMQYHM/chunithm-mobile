@@ -1,4 +1,8 @@
 [hidden]{display:none!important}
+.skin-identity{padding:13px;display:grid;gap:10px;border-bottom:1px solid var(--line)}
+.footer{gap:12px;flex-wrap:wrap}
+#operationStatus{color:#76df92;overflow-wrap:anywhere}
+#operationStatus.invalid{color:#ff9ca5}
 .live2d-section{border-top:1px solid var(--line);padding:14px;display:grid;gap:12px}
 .live2d-section h2{font-size:17px;margin:0;color:var(--text)}
 .resource-actions{display:flex;gap:8px;flex-wrap:wrap}

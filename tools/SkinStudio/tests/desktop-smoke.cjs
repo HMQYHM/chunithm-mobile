@@ -10,6 +10,7 @@ const {_electron}=require("playwright");
     await page.locator("#liveEnabled").check();await page.locator("#bongoPreset").click();
     assert.equal(await page.locator('[data-binding="leftXParameter"]').inputValue(),"CatParamStickRX");
     assert.equal(await page.evaluate(()=>typeof window.require),"undefined");
+    assert.equal(await page.evaluate(()=>typeof window.studioDesktop.saveFile),"function");
     const options=await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];return {visible:w.isVisible(),...w.webContents.getLastWebPreferences()};});
     assert.equal(options.visible,false);assert.equal(options.nodeIntegration,false);
     assert.equal(options.contextIsolation,true);assert.equal(options.sandbox,true);

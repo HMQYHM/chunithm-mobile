@@ -31,3 +31,22 @@ test("real BongoCat model dependencies resolve with preserved folder paths",()=>
   const files={has:p=>fs.existsSync(path.join(root,p))};
   assert.equal(config.inspect(model,doc,files).missing.length,0);
 });
+test("retains background coordinates before an image has been selected",()=>{
+  const model=config.normalize({background:{image:"",x:-.53,y:-.375,width:1.2,height:.72}});
+  assert.equal(model.background.x,-.53);
+  model.background.image="ui/tablet.png";
+  assert.equal(config.normalize(model).background.width,1.2);
+});
+test("rejects wrong model and expression formats, deduplicates dependencies",()=>{
+  const doc={FileReferences:{Moc:"cat.moc3",Textures:["a.png","a.png"]}};
+  const result=config.inspect("model/cat.model3.json",doc,new Map());
+  assert.equal(result.targets.length,2);
+  assert.throws(()=>config.inspect("model/cat.json",doc,new Map()));
+  doc.FileReferences.Expressions=[{File:"a.png"}];
+  assert.throws(()=>config.inspect("model/cat.model3.json",doc,new Map()));
+});
+test("checks ordinary layout, effects and touch image dependencies",()=>{
+  assert.deepEqual(config.imageReferences({elements:[{image:"ui/a.png"}],customDisplays:[{image:"ui/a.png"}],
+    touchOverlay:{tablet:{image:"ui/b.png"}},touchZones:{idle:"ui/c.png"}}),["ui/a.png","ui/b.png","ui/c.png"]);
+  assert.throws(()=>config.imageReferences({elements:[{image:"../a.png"}]}));
+});

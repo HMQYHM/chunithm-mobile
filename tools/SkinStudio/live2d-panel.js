@@ -6,6 +6,7 @@ window.createLive2DPanel = function(files, changed) {
   const $ = id => document.getElementById(id);
   let live = config.defaults();
   let objectUrl = null;
+  let statusRevision = 0, importing = false;
   const parameterLabels = ["左手 X","左手 Y","左手显示","左手按下","右手 X","右手 Y","右手显示","右手按下"];
   const motionLabels = ["空闲动作组","左手按下动作组","右手按下动作组"];
   function field(parent, title, key, value, update, numeric=false, min=0, max=1) {
@@ -16,7 +17,10 @@ window.createLive2DPanel = function(files, changed) {
       input.maxLength=64;input.setAttribute("list",key.endsWith("Motion")?"liveMotionOptions":"liveParameterOptions");
     }
     input.value=value; input.dataset.binding=key;
-    input.addEventListener("change",()=>{update(numeric?Number(input.value):input.value);live=config.normalize(live);refresh();changed();});
+    // Do not rebuild the focused inspector on blur: that can swallow the
+    // click on the next field. Capture input immediately, including exports.
+    const edit=()=>{update(numeric?Number(input.value):input.value);changed();};
+    input.addEventListener("input",edit);input.addEventListener("change",edit);
     label.append(caption,input);parent.append(label);
   }
   async function checkModel() {
@@ -27,8 +31,8 @@ window.createLive2DPanel = function(files, changed) {
   }
   async function status() {
     // Discard an outdated async result if the user selects another model.
-    const model=live.model;
-    try {const result=await checkModel();if(model!==live.model)return;
+    const model=live.model,revision=++statusRevision;
+    try {const result=await checkModel();if(revision!==statusRevision)return;
       $("modelStatus").textContent=result?(result.missing.length?"缺少资源："+result.missing.join("、"):"资源齐全 · 动作组："+(result.groups.join("、")||"无")):"未导入模型";
       $("modelStatus").classList.toggle("invalid",!!result?.missing.length);
       $("liveMotionOptions").replaceChildren(...(result?.groups||[]).map(g=>new Option(g,g)));
@@ -36,11 +40,11 @@ window.createLive2DPanel = function(files, changed) {
       const doc=model?JSON.parse(await files.get(model).text()):null;
       const displayInfo=doc?.FileReferences?.DisplayInfo;
       if(displayInfo){const cdi=files.get(config.resolve(model,displayInfo));
-        if(cdi){const info=JSON.parse(await cdi.text());if(model!==live.model)return;
+        if(cdi){const info=JSON.parse(await cdi.text());if(revision!==statusRevision)return;
           $("liveParameterOptions").replaceChildren(...(info.Parameters||[]).slice(0,2048).filter(p=>typeof p.Id==="string").map(p=>new Option(p.Name||p.Id,p.Id)));
         }
       }
-    } catch(error){if(model===live.model){$("modelStatus").textContent=error.message;$("modelStatus").classList.add("invalid");}}
+    } catch(error){if(revision===statusRevision){$("modelStatus").textContent=error.message;$("modelStatus").classList.add("invalid");}}
   }
   function refresh() {
     $("liveEnabled").checked=live.enabled;$("liveModel").value=live.model;
@@ -75,14 +79,23 @@ window.createLive2DPanel = function(files, changed) {
   async function validateFile(file) {
     if(!file.size||file.size>64*1024*1024)throw Error("文件为空或超过 64 MB："+file.name);
     if(/\.json$/i.test(file.name)&&file.size>2*1024*1024)throw Error("JSON 配置超过 2 MB："+file.name);
+    if(/\.json$/i.test(file.name))JSON.parse(await file.text());
+    if(/\.moc3$/i.test(file.name)){
+      const head=new Uint8Array(await file.slice(0,4).arrayBuffer());
+      if(head.length!==4||[77,79,67,51].some((byte,i)=>head[i]!==byte))throw Error("不是有效 MOC3 模型："+file.name);
+    }
     if(/\.png$/i.test(file.name)){
       const head=new Uint8Array(await file.slice(0,24).arrayBuffer());
       if(head.length<24||[137,80,78,71,13,10,26,10].some((byte,i)=>head[i]!==byte))throw Error("不是有效 PNG："+file.name);
       const view=new DataView(head.buffer),w=view.getUint32(16),h=view.getUint32(20);
       if(!w||!h||w>4096||h>4096)throw Error("PNG 尺寸超过 4096："+file.name);
+      // Headers alone accept truncated/corrupt PNGs. Use the browser decoder
+      // before packaging, and release the decoded bitmap immediately.
+      const bitmap=await createImageBitmap(file);bitmap.close();
     }
   }
   $("modelFolder").addEventListener("change",async event=>{
+    importing=true;$("modelStatus").textContent="正在读取模型资源…";
     try {
       const list=Array.from(event.target.files);
       if(list.length>2000)throw Error("文件数量超过 2000");
@@ -90,44 +103,54 @@ window.createLive2DPanel = function(files, changed) {
       for(const file of list){
         // Strip only the user-selected outer directory. Internal paths remain
         // intact so model3 references still resolve on case-sensitive devices.
-        const relative=(file.webkitRelativePath||file.name).split("/").slice(1).join("/");
+        const relative=file.webkitRelativePath?file.webkitRelativePath.split("/").slice(1).join("/"):file.name;
         if(!config.allowedAsset(relative)){skipped++;continue;}
-        await validateFile(file);additions.set("model/"+relative,file);
+        await validateFile(file);additions.set(relative.startsWith("model/")?relative:"model/"+relative,file);
       }
       const models=[...additions.keys()].filter(p=>/\.model3\.json$/i.test(p));
       if(!models.length)throw Error("文件夹中没有 .model3.json");
       const merged=new Map([...files,...additions]);
       if([...merged.values()].reduce((sum,file)=>sum+file.size,0)>256*1024*1024)throw Error("资源总量超过 256 MB");
       // Validate the selected model's dependency paths before accepting files.
-      config.inspect(models[0],JSON.parse(await additions.get(models[0]).text()),merged);
-      additions.forEach((file,path)=>files.set(path,file));live.model=models[0];live.enabled=true;
+      const selected=models.includes(live.model)?live.model:models[0];
+      config.inspect(selected,JSON.parse(await additions.get(selected).text()),merged);
+      additions.forEach((file,path)=>files.set(path,file));live.model=selected;live.enabled=true;
       refresh();changed();
       if(skipped)$("modelStatus").textContent+=" · 已忽略 "+skipped+" 个非模型文件";
     }catch(error){$("modelStatus").textContent=error.message;$("modelStatus").classList.add("invalid");}
-    event.target.value="";
+    importing=false;event.target.value="";
   });
   $("liveEnabled").addEventListener("change",()=>{live.enabled=$("liveEnabled").checked;changed();});
   $("modelSelect").addEventListener("change",()=>{live.model=$("modelSelect").value;refresh();changed();});
-  $("liveModel").addEventListener("change",()=>{live.model=config.path($("liveModel").value);refresh();changed();});
-  document.querySelectorAll("[data-live]").forEach(input=>input.addEventListener("change",()=>{live[input.dataset.live]=Number(input.value);live=config.normalize(live);refresh();changed();}));
+  $("liveModel").addEventListener("input",()=>{live.model=$("liveModel").value;status();changed();});
+  document.querySelectorAll("[data-live]").forEach(input=>input.addEventListener("input",()=>{live[input.dataset.live]=Number(input.value);changed();}));
   $("bongoPreset").onclick=()=>{live=config.bongo(live);refresh();changed();};
-  $("hiddenParts").addEventListener("change",()=>{live.hiddenParts=$("hiddenParts").value.split(/[\r\n,]+/).map(s=>s.trim());live=config.normalize(live);refresh();changed();});
-  $("liveBackground").addEventListener("change",()=>{ensureBackground().image=$("liveBackground").value;live=config.normalize(live);refresh();changed();});
-  $("liveBackgroundFile").addEventListener("change",async event=>{try{
+  $("hiddenParts").addEventListener("input",()=>{live.hiddenParts=$("hiddenParts").value.split(/[\r\n,]+/).map(s=>s.trim());changed();});
+  $("liveBackground").addEventListener("input",()=>{ensureBackground().image=$("liveBackground").value;changed();});
+  $("liveBackgroundFile").addEventListener("change",async event=>{importing=true;try{
     const file=event.target.files[0];if(!file)return;await validateFile(file);
     const path=config.path("ui/studio/"+file.name);if(!path)throw Error("无效文件名");
     files.set(path,file);ensureBackground().image=path;refresh();changed();
-  }catch(error){$("modelStatus").textContent=error.message;}event.target.value="";});
+  }catch(error){$("modelStatus").textContent=error.message;}finally{importing=false;event.target.value="";}});
   refresh();
-  return {get:()=>config.normalize(live),set:value=>{live=config.normalize(value);refresh();},render:renderBounds,
+  return {get:()=>{const value=config.normalize(live);if(!value.background?.image)delete value.background;return value;},
+    set:value=>{live=config.normalize(value);refresh();},render:renderBounds,validateFile,
     async validate(){
+      if(importing)throw Error("模型还在导入，请完成后再导出");
       if(files.size>2000||[...files.values()].reduce((sum,file)=>sum+file.size,0)>256*1024*1024)throw Error("资源数量或总大小超过限制");
       for(const [path,file] of files){if(!config.allowedAsset(path))throw Error("不支持的资源："+path);await validateFile(file);}
       if(!live.enabled)return;const report=await checkModel();
       if(!report)throw Error("请选择 Live2D 模型");if(report.missing.length)throw Error("缺少模型资源："+report.missing.join("、"));
-      let pixels=0;for(const path of report.targets.filter(p=>/\.png$/i.test(p))){
+      const doc=JSON.parse(await files.get(live.model).text()),display=doc.FileReferences.DisplayInfo;
+      if(display){const cdi=JSON.parse(await files.get(config.resolve(live.model,display)).text());
+        if(Array.isArray(cdi.Parameters)&&cdi.Parameters.length){const ids=new Set(cdi.Parameters.map(p=>p.Id));
+          for(const key of config.parameters)if(live[key]&&!ids.has(live[key]))throw Error("模型参数不存在："+live[key]);
+        }
+      }
+      for(const key of config.motions)if(live[key]&&!report.groups.includes(live[key]))throw Error("动作组不存在："+live[key]);
+      let pixels=0;for(const path of new Set([...report.targets.filter(p=>/\.png$/i.test(p)),...(live.background?.image?[live.background.image]:[])])){
+        if(!files.has(path))throw Error("缺少背景图片："+path);
         const view=new DataView(await files.get(path).slice(0,24).arrayBuffer());pixels+=view.getUint32(16)*view.getUint32(20);
       }if(pixels>16777216)throw Error("模型贴图总像素超过 16,777,216");
-      if(live.background?.image&&!files.has(live.background.image))throw Error("缺少背景图片："+live.background.image);
     }};
 };

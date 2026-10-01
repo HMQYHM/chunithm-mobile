@@ -15,10 +15,21 @@ namespace ChunithmMobile.Editor
         {
             string package = Path.Combine("Build", "BongoCatLive2DTouchSkin-v4.zip");
             string source = Path.Combine("Examples", "Skins", "BongoCatLive2DTouch");
-            Require(Directory.Exists(source), "Missing BongoCat example sources.");
-            // Package the checked-in source; stale ZIPs must not mask a regression.
-            if (File.Exists(package)) File.Delete(package);
-            ZipFile.CreateFromDirectory(source, package);
+            string studioExport = Environment.GetEnvironmentVariable("CHUNITHM_STUDIO_SKIN_ZIP");
+            if (!string.IsNullOrEmpty(studioExport))
+            {
+                // Consume the browser's exact output, not a rebuilt look-alike.
+                // All modifications below happen only in the disposable fixture.
+                package = Path.GetFullPath(studioExport);
+                Require(File.Exists(package), "Missing Skin Studio export: " + package);
+                Debug.Log("Live2D testing actual Skin Studio ZIP: " + package);
+            }
+            else
+            {
+                Require(Directory.Exists(source), "Missing BongoCat example sources.");
+                if (File.Exists(package)) File.Delete(package);
+                ZipFile.CreateFromDirectory(source, package);
+            }
             GameplaySkinManager.Initialize(GameplaySkinManager.BuiltinId);
             string previous = GameplaySkinManager.Active.Id;
             string fixture = Path.Combine("Build", "live2d-test-fixture.zip");
@@ -40,6 +51,14 @@ namespace ChunithmMobile.Editor
             {
                 imported = GameplaySkinManager.InstallPackage(fixture);
                 Require(GameplaySkinManager.SetActive(imported.Id), "Skin activation failed.");
+                if (!string.IsNullOrEmpty(studioExport))
+                {
+                    Require(GameplaySkinManager.Style.Live2DLeftXRange == new Vector2(.7f, .2f),
+                        "Studio reversed calibration was lost during ZIP import.");
+                    Require(GameplaySkinManager.Style.Live2DBackgroundPath == "ui/studio/tablet.png" &&
+                        Mathf.Approximately(GameplaySkinManager.Style.Live2DBackgroundRect.x, -.53f),
+                        "Studio background path/calibration was lost during ZIP import.");
+                }
                 canvas = new GameObject("Live2D regression canvas", typeof(RectTransform), typeof(Canvas));
                 canvas.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.GetComponent<RectTransform>().sizeDelta = new Vector2(1920, 1080);
@@ -64,6 +83,11 @@ namespace ChunithmMobile.Editor
                     Capture(renderer, surface, new GameplaySkinEvents.TouchTelemetrySnapshot(probe, default, 0, true),
                         "left-sweep-" + Mathf.RoundToInt(x * 100));
                     var axis = surface.Model.Parameters.FindById("CatParamStickRX");
+                    Vector2 range = GameplaySkinManager.Style.Live2DLeftXRange;
+                    float expected = Mathf.Lerp(axis.MinimumValue, axis.MaximumValue,
+                        Mathf.Lerp(range.x, range.y, x * 2f));
+                    Require(Mathf.Abs(axis.Value - expected) < .001f,
+                        "Exported touch mapping did not reach the native model parameter.");
                     var paw = Array.Find(surface.Model.Drawables, drawable => drawable.Id == "ArtMesh30")
                         .GetComponent<Live2D.Cubism.Rendering.CubismRenderer>();
                     Debug.Log("Paw calibration x=" + x + " parameter=" + axis.Value + " bounds=" + paw.Mesh.bounds);
