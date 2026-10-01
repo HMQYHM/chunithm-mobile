@@ -43,10 +43,22 @@
           <option value="playing">游玩中</option><option value="pause">暂停</option>
           <option value="miss">MISS</option><option value="combo100">Combo 100</option>
           <option value="air">AIR</option><option value="metricZero">目标值归零</option>
+          <option value="metricNegative">目标值低于零</option><option value="custom">自定义事件</option>
           <option value="score900000">分数 900000</option><option value="rankSSS">SSS+</option><option value="touchLeft">左上触控</option><option value="stop">游玩结束</option>
         </select>
         <label class="check"><input id="showGrid" type="checkbox" checked> 网格</label>
+        <button id="replayPreview" class="icon-button" type="button" title="试播匹配规则" aria-label="试播匹配规则"><span class="play-icon" aria-hidden="true"></span></button>
+        <button id="stopPreview" class="icon-button" type="button" title="停止试播" aria-label="停止试播" disabled><span class="stop-icon" aria-hidden="true"></span></button>
       </div>
+      <div id="previewEventFields" class="preview-event-fields" hidden>
+        <label class="field"><span>事件来源</span><select id="previewTrigger"></select></label>
+        <label class="field" id="previewValueField"><span>事件值</span><select id="previewValue"></select></label>
+        <label class="field" id="previewPreviousField"><span>变化前</span><input id="previewPrevious" type="number" min="-1010000" max="1010000" step="1" value="99"></label>
+        <label class="field" id="previewCurrentField"><span>变化后</span><input id="previewCurrent" type="number" min="-1010000" max="1010000" step="1" value="100"></label>
+        <label class="field" id="previewModeField"><span>显示模式</span><select id="previewMode"></select></label>
+        <label class="field" id="previewEdgeField"><span>状态变化</span><select id="previewEdge"><option value="enter">进入 / 按下</option><option value="exit">离开 / 松开</option></select></label>
+      </div>
+      <div id="previewResult" class="preview-result" role="status" aria-live="polite"></div>
     </section>
 
     <section class="layers-column panel">

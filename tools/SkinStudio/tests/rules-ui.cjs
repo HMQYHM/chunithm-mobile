@@ -50,6 +50,7 @@ function entries(buffer){
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,"mobile overflow");await page.setViewportSize({width:1440,height:1000});
     // Motion export fails closed if no enabled model supplies that group.
     await page.locator('[data-rule="action"]').selectOption("live2dMotion");await page.locator('[data-rule="motion"]').fill("celebrate");
+    assert.equal(await page.locator('[data-rule="duration"]').isVisible(),false,"Image animation controls appeared for a model motion");
     await page.locator("#exportZip").click();await page.waitForFunction(()=>document.getElementById("operationStatus").textContent.includes("启用并导入模型"));
     assert.equal(await page.evaluate(()=>document.querySelector("main").inert),false);
     // Imported labels are text, never HTML elements supplied by a package.

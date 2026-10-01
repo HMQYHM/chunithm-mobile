@@ -11,6 +11,7 @@
     manifest:{id:"studio_"+crypto.randomUUID().replace(/-/g,""),name:"Skin Studio export",gameplaySkin:true,formatVersion:1},busy:false};
   const history = {undo:[],redo:[],editing:false,finishTimer:null};
   let stageUrls=[];
+  let previewAnimations=[];
   let livePanel;
   const $ = id => document.getElementById(id);
   const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -18,7 +19,7 @@
   // blocking native alert keeping the inspector/export controls locked.
   function notify(message,error=false){$("operationStatus").textContent=message;$("operationStatus").classList.toggle("invalid",error);}
   function clone(value){return JSON.parse(JSON.stringify(value));}
-  function snapshot(){return {elements:clone(state.elements),selected:state.selected,selectedRule:state.selectedRule,metric:state.metric,customDisplays:clone(state.customDisplays),scene:clone(state.scene),document:clone(state.document),manifest:clone(state.manifest),files:[...state.files.entries()],live2d:clone(livePanel?.get?.()||{})};}
+  function snapshot(){return {elements:clone(state.elements),selected:state.selected,selectedRule:state.selectedRule,metric:state.metric,customDisplays:clone(state.customDisplays),scene:clone(state.scene),document:clone(state.document),manifest:clone(state.manifest),files:[...state.files.entries()],live2d:clone(livePanel?.snapshot?.()||{})};}
   function updateHistoryUi(){
     $("undoButton").disabled=!history.undo.length;$("redoButton").disabled=!history.redo.length;
     $("historyStatus").textContent=history.undo.length?`可撤回 ${history.undo.length}/20 次`:"未修改";
@@ -50,11 +51,31 @@
   const ensure = id => { let e=find(id); if(!e){e=cloneDefault(id);state.elements.push(e)} return e; };
   function selectElement(id,record=true){if(!find(id)||state.selected===id)return;if(record){beginEdit();}state.selected=id;render();if(record)finishEdit();}
   function renderLayers(){ const list=$("layerList"); list.innerHTML=""; state.elements.forEach(e=>{ const row=document.createElement("div");row.className="layer-row"+(state.selected===e.id?" active":"");const select=document.createElement("button");select.className="layer-select";select.textContent=labels[e.id]||e.id;select.onclick=()=>selectElement(e.id);const eye=document.createElement("button");eye.className="eye";eye.title=e.visible?"隐藏元素":"显示元素";eye.setAttribute("aria-pressed",String(e.visible));eye.textContent=e.visible?"●":"○";eye.onclick=event=>{event.stopPropagation();beginEdit();e.visible=!e.visible;render();finishEdit()};row.append(select,eye);list.appendChild(row)}); $("fileSummary").textContent=`${state.files.size} 个资源 · ${state.elements.length} 个元素`; }
-  function ruleMatchesPreview(rule){
-    const events={combo100:{trigger:"combo",previous:99,current:100},metricZero:{trigger:"displayed_metric",previous:1,current:0,mode:state.metric},miss:{trigger:"judgement",value:"miss"},air:{trigger:"air",value:"active"},playing:{trigger:"gameplay",value:"start"},score900000:{trigger:"score",previous:899999,current:900000},rankSSS:{trigger:"rank",value:"sss+"},touchLeft:{trigger:"touch",value:"lefttop"},stop:{trigger:"gameplay",value:"stop"}};
-    return window.SkinStudioRules.matches(rule,events[state.preview]||{});
+  function previewEvent(){
+    const events={combo100:{trigger:"combo",previous:99,current:100},metricZero:{trigger:"displayed_metric",previous:1,current:0,mode:state.metric},metricNegative:{trigger:"displayed_metric",previous:0,current:-1,mode:state.metric},miss:{trigger:"judgement",value:"miss"},air:{trigger:"air",value:"active"},playing:{trigger:"gameplay",value:"start"},score900000:{trigger:"score",previous:899999,current:900000},rankSSS:{trigger:"rank",value:"sss+"},touchLeft:{trigger:"touch",value:"lefttop"},stop:{trigger:"gameplay",value:"stop"}};
+    if(state.preview!=="custom")return events[state.preview]||{};
+    if(["combo","score","displayed_metric"].includes($("previewTrigger").value)&&!["previewPrevious","previewCurrent"].every(id=>$(id).value!==""&&$(id).validity.valid))return {invalid:true};
+    return {trigger:$("previewTrigger").value,previous:Number($("previewPrevious").value),current:Number($("previewCurrent").value),value:$("previewValue").value,mode:$("previewMode").value,exit:$("previewEdge").value==="exit"};
+  }
+  const ruleMatchesPreview=rule=>window.SkinStudioRules.matches(rule,previewEvent());
+  function cancelPreview(){
+    // Detached previews must not retain a previous project's image resources.
+    for(const animation of previewAnimations)animation.cancel();previewAnimations=[];$("stopPreview").disabled=true;
+  }
+  function replayPreview(){
+    renderStage();
+    try{window.SkinStudioRules.validate(state.customDisplays);}catch(error){notify("无法试播："+error.message,true);return;}
+    const animations=[];
+    for(const node of $("stage").querySelectorAll(".rule-preview")){
+      const rule=state.customDisplays.find(item=>item.id===node.dataset.ruleId),timing=window.SkinStudioRules.animation(rule);
+      node.style.opacity="0";
+      const animation=node.animate(timing.frames,{duration:timing.duration,easing:"linear",fill:"none"});animations.push(animation);
+      animation.finished.then(()=>{if(previewAnimations===animations&&animations.every(item=>item.playState==="finished"))$("stopPreview").disabled=true;}).catch(()=>{});
+    }
+    previewAnimations=animations;$("stopPreview").disabled=!animations.length;
   }
   function renderRulePreview(stage){
+    cancelPreview();
     $("statusBadge").textContent=$("previewState").selectedOptions[0]?.textContent||"游玩中";
     const sceneConfig=scene();
     stage.style.backgroundColor=sceneConfig.background.color||"#0b1c28";
@@ -65,9 +86,13 @@
     stage.querySelectorAll(".lane").forEach(lane=>{lane.style.backgroundColor=sceneConfig.track.color||"";lane.style.borderColor=sceneConfig.track.edgeColor||"";lane.style.backgroundImage="";if(sceneConfig.track.image&&state.files.has(sceneConfig.track.image)){const url=URL.createObjectURL(state.files.get(sceneConfig.track.image));stageUrls.push(url);lane.style.backgroundImage=`url("${url}")`;lane.style.backgroundSize="100% 100%";}});
     stage.querySelector(".goal-line").style.backgroundColor=sceneConfig.track.judgementLineColor||"";
     stage.querySelectorAll(".rule-preview").forEach(n=>n.remove());
-    state.customDisplays.filter(ruleMatchesPreview).slice(0,8).forEach((rule,index)=>{
+    const event=previewEvent(),matched=state.customDisplays.filter(ruleMatchesPreview),motions=matched.filter(rule=>rule.action==="live2dMotion");
+    if(Number.isFinite(event.current))$("metricDemo").textContent=`${event.trigger==="displayed_metric"?metricNames[event.mode]||event.mode:event.trigger==="score"?"分数":"COMBO"} ${event.current}`;
+    $("airDemo").style.display=event.trigger==="air"&&!event.exit?"block":"none";
+    $("previewResult").textContent=event.invalid?"测试值需要为范围内的整数":`匹配 ${matched.length} 条规则`+(motions.length?` · Live2D 动作组：${motions.map(rule=>rule.motion||"未设置").join("、")}（游戏内播放）`:"");
+    matched.slice(0,24).forEach(rule=>{
       if(rule.action==="live2dMotion"||!rule.image||!state.files.has(rule.image))return;
-      const n=document.createElement("div");n.className="rule-preview";n.style.left=`${Number(rule.x||0)*100}%`;n.style.bottom=`${Number(rule.y||0)*100}%`;n.style.width=`${Number(rule.width||.2)*100}%`;n.style.height=`${Number(rule.height||.2)*100}%`;n.style.opacity=String(rule.opacity??1);n.style.transform=`rotate(${Number(rule.rotation)||0}deg) scale(${Number(rule.scaleTo)||1})`;const img=document.createElement("img");img.src=URL.createObjectURL(state.files.get(rule.image));stageUrls.push(img.src);n.appendChild(img);stage.appendChild(n);});
+      const n=document.createElement("div");n.className="rule-preview";n.dataset.ruleId=rule.id;n.style.left=`${Number(rule.x||0)*100}%`;n.style.bottom=`${Number(rule.y||0)*100}%`;n.style.width=`${Number(rule.width||.2)*100}%`;n.style.height=`${Number(rule.height||.2)*100}%`;n.style.opacity=String(rule.opacity??1);n.style.transform=`rotate(${-Number(rule.rotation||0)}deg) scale(${Number(rule.scaleTo)||1})`;const img=document.createElement("img");img.src=URL.createObjectURL(state.files.get(rule.image));stageUrls.push(img.src);n.appendChild(img);stage.appendChild(n);});
   }
   function renderStage(){ const stage=$("stage");stageUrls.forEach(URL.revokeObjectURL);stageUrls=[]; stage.querySelectorAll(".skin-element").forEach(n=>n.remove()); state.elements.forEach((e,index)=>{ const n=document.createElement("div"); n.className="skin-element"+(state.selected===e.id?" selected":""); n.dataset.id=e.id; n.style.zIndex=state.selected===e.id?100:index+1; n.textContent=e.label||labels[e.id]||e.id; n.style.left=`${e.x*100}%`;n.style.bottom=`${e.y*100}%`;n.style.width=`${e.width*100}%`;n.style.height=`${e.height*100}%`;n.style.opacity=e.visible?e.opacity:0;if(e.color)n.style.color=e.color;if(e.textColor)n.style.color=e.textColor;if(e.textSize)n.style.fontSize=e.textSize+"px";if(e.image&&state.files.has(e.image)){const img=document.createElement("img");img.src=URL.createObjectURL(state.files.get(e.image));stageUrls.push(img.src);n.textContent="";n.appendChild(img)}n.style.pointerEvents=e.visible?"auto":"none";stage.appendChild(n)}); $("airDemo").style.display=state.preview==="air"?"block":"none"; $("metricDemo").textContent=state.preview==="metricZero"?"SSS+ 剩余 0":state.preview==="miss"?"MISS":state.preview==="combo100"?"COMBO 100":"COMBO 0"; $("statusBadge").textContent={playing:"游玩中",pause:"暂停",miss:"MISS",combo100:"Combo 100",air:"AIR",metricZero:"目标值归零"}[state.preview]; document.querySelector(".stage-grid").style.display=$("showGrid").checked?"block":"none"; renderRulePreview(stage); }
   function hitTest(x,y){return state.elements.filter(e=>e.visible&&x>=e.x&&x<=e.x+e.width&&y>=e.y&&y<=e.y+e.height);}
@@ -93,7 +118,21 @@
   triggerValues.rank=window.SkinStudioRules.values.rank.map(value=>[value,value.toUpperCase()]);
   triggerValues.air.push(...Array.from({length:6},(_,index)=>["sensor"+(index+1),"第 "+(index+1)+" 层 AIR"]));
   const triggerConditions={combo:[["greater_or_equal","达到"],["equal","等于"],["less","小于"],["less_or_equal","小于等于"]],score:[["greater_or_equal","达到"],["equal","等于"],["less","小于"],["less_or_equal","小于等于"]],displayed_metric:[["greater_or_equal","达到"],["equal","等于"],["less","小于"],["less_or_equal","小于等于"]],rank:[["active","进入评级"]],judgement:[["active","出现判定"]],air:[["active","进入状态"],["exit","离开状态"]],touch:[["active","按下"],["exit","松开"]],gameplay:[["active","状态变化"]]};
+  const metricNames={any:"任意模式",...Object.fromEntries([...$("metricMode").options].map(option=>[option.value,option.textContent]))};
   function selectOptions(options,value){return options.map(([key,label])=>`<option value="${escapeHtml(key)}"${key===value?" selected":""}>${escapeHtml(label)}</option>`).join("");}
+  $("previewTrigger").innerHTML=selectOptions(Object.entries(triggerNames),"combo");
+  $("previewMode").innerHTML=selectOptions(window.SkinStudioRules.modes.filter(mode=>mode!=="any").map(mode=>[mode,metricNames[mode]||mode]),"sss+");
+  function renderPreviewFields(){
+    $("previewEventFields").hidden=state.preview!=="custom";
+    const trigger=$("previewTrigger").value,numeric=["combo","score","displayed_metric"].includes(trigger);
+    $("previewPreviousField").hidden=$("previewCurrentField").hidden=!numeric;
+    $("previewValueField").hidden=numeric;$("previewModeField").hidden=trigger!=="displayed_metric";
+    $("previewEdgeField").hidden=!["air","touch"].includes(trigger);
+    $("previewValue").innerHTML=selectOptions(numeric?[]:triggerValues[trigger]||[],"");
+  }
+  $("previewTrigger").onchange=()=>{renderPreviewFields();renderStage();};
+  for(const id of ["previewValue","previewMode","previewEdge","previewPrevious","previewCurrent"])$(id).addEventListener("input",renderStage);
+  $("replayPreview").onclick=replayPreview;$("stopPreview").onclick=()=>renderStage();renderPreviewFields();
   function newRule(){return {id:"rule_"+crypto.randomUUID().replaceAll("-",""),enabled:true,trigger:"combo",condition:"greater_or_equal",value:"",threshold:100,image:"",x:.40,y:.40,width:.20,height:.20,duration:1.2,fadeIn:.12,fadeOut:.35,scaleFrom:.8,scaleTo:1,rotation:0,rotationTo:0,animateRotation:false,opacity:1,mode:"any"};}
   function ruleResourceOptions(selected,empty="选择图片资源"){
     const files=[...state.files.keys()].filter(path=>/\.png$/i.test(path)).sort();return `<option value="">${escapeHtml(empty)}</option>`+files.map(path=>`<option value="${escapeHtml(path)}"${path===selected?" selected":""}>${escapeHtml(path)}</option>`).join("");
@@ -106,12 +145,13 @@
       <label class="field"><span>触发来源</span><select data-rule="trigger">${selectOptions(Object.entries(triggerNames).map(([key,label])=>[key,label]),rule.trigger)}</select></label>
       <label class="field"><span>条件</span><select data-rule="condition">${selectOptions(conditions,rule.condition)}</select></label>
       ${numeric?`<label class="field"><span>数值</span><input data-rule="threshold" type="number" value="${Number(rule.threshold)||0}" step="1"> </label>`:`<label class="field"><span>目标</span><select data-rule="value">${selectOptions(values,rule.value)}</select></label>`}
-      ${rule.trigger==="displayed_metric"?`<label class="field"><span>显示模式</span><select data-rule="mode">${selectOptions(window.SkinStudioRules.modes.map(key=>[key,metricText[key]?key:"任意模式"]),rule.mode||"any")}</select></label>`:""}
+      ${rule.trigger==="displayed_metric"?`<label class="field"><span>显示模式</span><select data-rule="mode">${selectOptions(window.SkinStudioRules.modes.map(key=>[key,metricNames[key]||key]),rule.mode||"any")}</select></label>`:""}
       <div class="rule-block-title">然后……</div><label class="field"><span>动作</span><select data-rule="action">${selectOptions([["image","显示图片特效"],["live2dMotion","播放 Live2D 动作"]],rule.action||"image")}</select></label>
       ${rule.action==="live2dMotion"?`<label class="field"><span>模型动作组</span><input data-rule="motion" type="text" maxlength="64" list="liveMotionOptions" value="${escapeHtml(rule.motion)}"></label>`:`<label class="field"><span>图片资源</span><select data-rule="image">${ruleResourceOptions(rule.image)}</select></label><label class="button secondary upload">导入特效 PNG<input id="ruleImageFile" type="file" accept="image/png" hidden></label>`}
+      <div class="rule-image-settings" ${rule.action==="live2dMotion"?"hidden":""}>
       <div class="field-grid"><label class="field"><span>X</span><input data-rule="x" type="number" min="0" max="1" step=".001" value="${Number(rule.x)||0}"></label><label class="field"><span>Y</span><input data-rule="y" type="number" min="0" max="1" step=".001" value="${Number(rule.y)||0}"></label><label class="field"><span>宽度</span><input data-rule="width" type="number" min=".01" max="1" step=".001" value="${Number(rule.width)||.2}"></label><label class="field"><span>高度</span><input data-rule="height" type="number" min=".01" max="1" step=".001" value="${Number(rule.height)||.2}"></label></div>
       <div class="field-grid"><label class="field"><span>持续秒数</span><input data-rule="duration" type="number" min=".05" max="30" step=".05" value="${Number(rule.duration)||1.2}"></label><label class="field"><span>透明度</span><input data-rule="opacity" type="number" min="0" max="1" step=".01" value="${Number(rule.opacity??1)}"></label><label class="field"><span>淡入秒数</span><input data-rule="fadeIn" type="number" min="0" max="30" step=".05" value="${Number(rule.fadeIn)||0}"></label><label class="field"><span>淡出秒数</span><input data-rule="fadeOut" type="number" min="0" max="30" step=".05" value="${Number(rule.fadeOut)||0}"></label><label class="field"><span>起始缩放</span><input data-rule="scaleFrom" type="number" min=".01" max="4" step=".05" value="${Number(rule.scaleFrom)||.8}"></label><label class="field"><span>结束缩放</span><input data-rule="scaleTo" type="number" min=".01" max="4" step=".05" value="${Number(rule.scaleTo)||1}"></label></div>
-      <label class="check"><input data-rule="animateRotation" type="checkbox" ${rule.animateRotation?"checked":""}>播放旋转动画</label><div class="field-grid"><label class="field"><span>起始角度</span><input data-rule="rotation" type="number" min="-360" max="360" step="1" value="${Number(rule.rotation)||0}"></label><label class="field"><span>结束角度</span><input data-rule="rotationTo" type="number" min="-360" max="360" step="1" value="${Number(rule.rotationTo)||0}"></label></div>`;
+      <label class="check"><input data-rule="animateRotation" type="checkbox" ${rule.animateRotation?"checked":""}>播放旋转动画</label><div class="field-grid"><label class="field"><span>起始角度</span><input data-rule="rotation" type="number" min="-360" max="360" step="1" value="${Number(rule.rotation)||0}"></label><label class="field"><span>结束角度</span><input data-rule="rotationTo" type="number" min="-360" max="360" step="1" value="${Number(rule.rotationTo)||0}"></label></div></div>`;
   }
   function renderRules(){
     const list=$("ruleList");if(!list)return;list.innerHTML="";
@@ -166,7 +206,7 @@
     $(color).addEventListener("input",()=>{beginEdit();numberStyle(part).color=$(color).value});
   }
   $("digitEditors").addEventListener("change",async event=>{const input=event.target;if(input.tagName!=="INPUT"||input.type!=="file"||!input.files[0])return;try{const file=input.files[0];await livePanel.validateFile(file);beginEdit();const part=input.dataset.part,digit=input.dataset.digit,style=numberStyle(part),old=Array.isArray(style.digits)?style.digits.find(value=>String(value.digit)===digit):null;const path=`ui/numbers/${part}/${digit}.png`;if(old?.image&&old.image!==path&&!Object.values(state.document).some(value=>JSON.stringify(value).includes(old.image)))state.files.delete(old.image);state.files.set(path,file);style.digits=(Array.isArray(style.digits)?style.digits.filter(value=>String(value.digit)!==digit):[]).concat({digit,image:path});renderDigitEditors();finishEdit();notify(`${part} 数字 ${digit} 已设置`);}catch(error){notify("数字图片读取失败："+error.message,true);}finally{input.value="";}});
-  $("previewState").addEventListener("change",e=>{state.preview=e.target.value;renderStage()});$("showGrid").addEventListener("change",renderStage);
+  $("previewState").addEventListener("change",e=>{state.preview=e.target.value;renderPreviewFields();renderStage()});$("showGrid").addEventListener("change",renderStage);
   $("addElement").onclick=()=>{const id=ids.find(x=>!find(x));if(id){beginEdit();ensure(id);state.selected=id;render();finishEdit()}};
   $("removeElement").onclick=()=>{if(state.selected){beginEdit();state.elements=state.elements.filter(e=>e.id!==state.selected);state.selected=state.elements[0]?.id||null;render();finishEdit()}};
   $("imageFile").addEventListener("change",async e=>{const file=e.target.files[0],selected=state.selected;if(!file||!selected||state.busy)return;setBusy(true);
@@ -174,7 +214,7 @@
     catch(error){notify("图片读取失败："+error.message,true);}finally{setBusy(false);e.target.value="";}});
   // Preserve existing touchOverlay, digit styles and other game-owned fields
   // when opening a skin configuration; editing layout must not erase Live2D.
-  function output(){window.SkinStudioRules.validate(state.customDisplays,true);const data={...state.document,belowNoteMetric:{mode:state.metric},elements:state.elements,customDisplays:state.customDisplays,scene:state.scene,live2d:livePanel.get()};checkScene(data.scene);return JSON.stringify(data,null,2)}
+  function output(){window.SkinStudioRules.validate(state.customDisplays,true);const data={...state.document,belowNoteMetric:{mode:state.metric},elements:state.elements,customDisplays:state.customDisplays,scene:state.scene,live2d:livePanel.get()};checkDocument(data);return JSON.stringify(data,null,2)}
   async function download(name,data,type="application/octet-stream"){
     const blob=new Blob([data],{type});
     if(window.studioDesktop)return window.studioDesktop.saveFile(name,new Uint8Array(await blob.arrayBuffer()));
@@ -185,9 +225,27 @@
   function checkDocument(data){
     if(!data||typeof data!=="object"||Array.isArray(data))throw Error("配置必须是 JSON 对象");
     if(data.elements!=null&&!Array.isArray(data.elements))throw Error("elements 必须是数组");
+    validateElements(data.elements||[]);
+    if(data.belowNoteMetric!=null&&(!data.belowNoteMetric||typeof data.belowNoteMetric!=="object"||Array.isArray(data.belowNoteMetric)||!window.SkinStudioRules.modes.slice(1).includes(data.belowNoteMetric.mode)))throw Error("音符下方显示模式无效");
+    if(data.live2d!=null&&(typeof data.live2d!=="object"||Array.isArray(data.live2d)))throw Error("Live2D 配置必须是对象");
     if(data.customDisplays!=null&&(!Array.isArray(data.customDisplays)||data.customDisplays.length>48))throw Error("customDisplays 最多 48 项");
     if(data.customDisplays){if(data.customDisplays.some(rule=>!rule||typeof rule!=="object"||Array.isArray(rule)))throw Error("规则必须是对象");window.SkinStudioRules.validate(data.customDisplays.map(rule=>Object.assign(newRule(),rule)));}
     checkScene(data.scene);window.SkinStudioLive2D.imageReferences(data);return data;
+  }
+  function validateElements(elements){
+    // Reject an invalid candidate before replacing the open project. Browser
+    // number inputs and imported JSON are not a trusted geometry boundary.
+    if(elements.length>ids.length)throw Error("界面元素过多");const seen=new Set();
+    const bounds={x:[0,1],y:[0,1],width:[.001,1],height:[.001,1],opacity:[0,1],textSize:[0,256]};
+    for(const element of elements){
+      if(!element||typeof element!=="object"||Array.isArray(element)||!ids.includes(element.id)||seen.has(element.id))throw Error("元素 ID 无效或重复");seen.add(element.id);
+      for(const [key,[min,max]] of Object.entries(bounds))if(Object.hasOwn(element,key)&&(!Number.isFinite(element[key])||element[key]<min||element[key]>max))throw Error("元素数值越界："+key);
+      const value={...cloneDefault(element.id),...element};
+      if(value.x+value.width>1.001||value.y+value.height>1.001)throw Error("元素超出画布："+element.id);
+      if(Object.hasOwn(element,"visible")&&typeof element.visible!=="boolean")throw Error("元素可见性需要布尔值");
+      for(const key of ["color","textColor"])if(element[key]!=null&&element[key]!==""&&(typeof element[key]!=="string"||!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(element[key])))throw Error("元素颜色无效");
+      if(element.label!=null&&(typeof element.label!=="string"||element.label.length>80))throw Error("元素标签过长或无效");
+    }
   }
   function checkScene(value){
     if(value==null)return;if(typeof value!=="object"||Array.isArray(value))throw Error("场景必须是对象");
@@ -268,7 +326,7 @@
     const cd=join(central),body=join(local),end=join([u32(0x06054b50),u16(0),u16(0),u16(items.length),u16(items.length),u32(cd.length),u32(body.length),u16(0)]);
     return download("skin-studio-export.zip",join([body,cd,end]),"application/zip");
   }
-  livePanel=window.createLive2DPanel(state.files,render);
+  livePanel=window.createLive2DPanel(state.files,render,beginEdit,finishEdit);
   $("exportZip").onclick=async()=>{if(state.busy)return;setBusy(true);try{validateManifest(state.manifest);await livePanel.validate();
     const missing=window.SkinStudioLive2D.imageReferences(JSON.parse(output())).filter(p=>!state.files.has(p));if(missing.length)throw Error("缺少图片："+missing.join("、"));
     const paths=new Set();for(const p of state.files.keys()){const key=p.toLowerCase();if(paths.has(key))throw Error("大小写冲突："+p);paths.add(key);}

@@ -1,5 +1,5 @@
 // Cache only the local studio shell. User skin files are never cached.
-const CACHE = "skin-studio-shell-v4";
+const CACHE = "skin-studio-shell-v5";
 const ASSETS = ["index.html", "style.css", "app.js", "rule-config.js", "live2d.css", "live2d-config.js", "live2d-panel.js", "manifest.webmanifest"];
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("skin-studio-shell-") && key !== CACHE).map(key => caches.delete(key))))));
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
