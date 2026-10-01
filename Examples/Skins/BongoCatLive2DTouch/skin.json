@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "bongocat_live2d_tablet_v3",
-  "name": "BongoCat Live2D 平板触控 v3",
+  "id": "bongocat_live2d_tablet_v4",
+  "name": "BongoCat Live2D 平板触控 v4",
   "author": "BongoCat MIT 素材 · HMQYHM 示例适配",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "gameplaySkin": true
 }

@@ -68,7 +68,7 @@ LICENSE-MIT.txt
 
 示例源码位于 `Examples/Skins/BongoCatLive2DTouch`，资源来自 https://github.com/vladelaina/BongoCat ，包含模型素材 MIT 许可证和用户提供的平板图片，不包含 BongoCat 程序源码。
 
-在数据管理中导入 ZIP，然后在游玩皮肤列表选中 `BongoCat Live2D 平板触控 v3`，进入歌曲测试。v3 使用新 ID，与旧测试包可以同时存在。普通音符继续使用内置基础皮肤。
+在数据管理中导入 ZIP，然后在游玩皮肤列表选中 `BongoCat Live2D 平板触控 v4`，进入歌曲测试。v4 使用新 ID，并将左侧爪子的横向模型范围收进平板；普通音符继续使用内置基础皮肤。
 
 `Live2DSkinSelfTest.Run` 覆盖真实 ZIP 导入、原生模型、透明像素、左手/右手/双手/暂停姿态变化、另一套带裁切遮罩的模型、目录限制和资源释放。截图写到 `Build/live2d-*.png`。Editor 测试不能代替 Android/iPhone 真机测试。
 

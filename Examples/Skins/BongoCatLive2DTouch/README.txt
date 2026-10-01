@@ -1,4 +1,4 @@
-BongoCat Live2D 平板触控 v3
+BongoCat Live2D 平板触控 v4
 
 需要包含 Live2D 内置管线渲染修复的新版 APK，旧版 APK 仍可能只显示平板。
 
@@ -14,7 +14,7 @@ BongoCat Live2D 平板触控 v3
 平板由 live2d.background 声明，使用猫模型的坐标，与猫一起缩放，不随屏幕比例分离。
 猫的 L/R 是面向玩家的左右，所以参数映射已交换，使屏幕左侧驱动左侧猫爪。
 隐藏了摇杆标记和额外表情部件，没有为触控配置闪电动作。
-与旧版皮肤使用不同 ID，可以同时安装，测试时请选 v3。
+v4 将玩家左侧的爪子横向范围收进平板，避免最外侧触点把爪子带到屏幕外。与旧版皮肤使用不同 ID，可以同时安装，测试时请选 v4。
 
 素材来源：https://github.com/vladelaina/BongoCat
 模型、贴图素材：MIT。完整文本见 LICENSE-MIT.txt。

@@ -13,7 +13,7 @@ namespace ChunithmMobile.Editor
     {
         public static void Run()
         {
-            string package = Path.Combine("Build", "BongoCatLive2DTouchSkin-v3.zip");
+            string package = Path.Combine("Build", "BongoCatLive2DTouchSkin-v4.zip");
             string source = Path.Combine("Examples", "Skins", "BongoCatLive2DTouch");
             Require(Directory.Exists(source), "Missing BongoCat example sources.");
             // Package the checked-in source; stale ZIPs must not mask a regression.
@@ -56,12 +56,37 @@ namespace ChunithmMobile.Editor
                             surface.Model.Parts[drawable.ParentPartIndex].Id : "root") + " bounds=" +
                             drawable.GetComponent<Live2D.Cubism.Rendering.CubismRenderer>().Mesh.bounds);
                 Color32[] idle = Capture(renderer, surface, default, "idle");
+                // Sweep the entire touch half: a middle-only pose can pass while
+                // the outer endpoint still leaves a paw beside the tablet.
+                foreach (float x in new[] { 0f, .25f, .5f })
+                {
+                    var probe = new GameplaySkinEvents.TouchTrack(true, 1, x, .5f, 0, 0);
+                    Capture(renderer, surface, new GameplaySkinEvents.TouchTelemetrySnapshot(probe, default, 0, true),
+                        "left-sweep-" + Mathf.RoundToInt(x * 100));
+                    var axis = surface.Model.Parameters.FindById("CatParamStickRX");
+                    var paw = Array.Find(surface.Model.Drawables, drawable => drawable.Id == "ArtMesh30")
+                        .GetComponent<Live2D.Cubism.Rendering.CubismRenderer>();
+                    Debug.Log("Paw calibration x=" + x + " parameter=" + axis.Value + " bounds=" + paw.Mesh.bounds);
+                }
                 var left = new GameplaySkinEvents.TouchTrack(true, 1, .12f, .35f, 0, 0);
                 var right = new GameplaySkinEvents.TouchTrack(true, 1, .86f, .7f, 0, 0);
                 var empty = default(GameplaySkinEvents.TouchTrack);
                 Color32[] l = Capture(renderer, surface, new GameplaySkinEvents.TouchTelemetrySnapshot(left, empty, 0, true), "left");
                 Color32[] r = Capture(renderer, surface, new GameplaySkinEvents.TouchTelemetrySnapshot(empty, right, 0, true), "right");
                 Color32[] both = Capture(renderer, surface, new GameplaySkinEvents.TouchTelemetrySnapshot(left, right, 0, true), "both");
+                // Isolate paw/body layers when calibrating an imported model;
+                // different BongoCat rigs do not share the same drawable layout.
+                var hidden = (System.Collections.Generic.HashSet<CubismDrawable>)typeof(GameplaySkinModelSurface)
+                    .GetField("hidden", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(surface);
+                var previousHidden = new System.Collections.Generic.HashSet<CubismDrawable>(hidden);
+                foreach (string id in new[] { "cat2", "cat3", "rightup", "ArtMesh30" })
+                {
+                    hidden.Clear();
+                    foreach (var drawable in surface.Model.Drawables) if (drawable.Id != id) hidden.Add(drawable);
+                    Capture(renderer, surface, new GameplaySkinEvents.TouchTelemetrySnapshot(left, right, 0, true), "layer-" + id);
+                }
+                hidden.Clear();
+                hidden.UnionWith(previousHidden);
                 Require(Differences(idle, l) > 100, "Left touch did not change rendered model pixels.");
                 Require(Differences(idle, r) > 100, "Right touch did not change rendered model pixels.");
                 Require(Differences(l, both) > 100 && Differences(r, both) > 100, "Both paws cannot move independently.");

@@ -117,6 +117,12 @@ namespace ChunithmMobile.Runtime
         public string Live2DRightVisibleParameter = "";
         public string Live2DLeftDownParameter = "ParamMouseLeftDown";
         public string Live2DRightDownParameter = "ParamMouseRightDown";
+        // Each range is a normalized slice of its model parameter's own limits.
+        // Calibration belongs to the skin; omitted ranges preserve old packages.
+        public Vector2 Live2DLeftXRange = new Vector2(0f, 1f);
+        public Vector2 Live2DLeftYRange = new Vector2(0f, 1f);
+        public Vector2 Live2DRightXRange = new Vector2(0f, 1f);
+        public Vector2 Live2DRightYRange = new Vector2(0f, 1f);
         public float Live2DX = .06f;
         public float Live2DY = .16f;
         public float Live2DWidth = .34f;
@@ -893,6 +899,10 @@ namespace ChunithmMobile.Runtime
                         result.Live2DLeftDownParameter);
                     result.Live2DRightDownParameter = SafeParameterName(manifest.live2d.rightDownParameter,
                         result.Live2DRightDownParameter);
+                    result.Live2DLeftXRange = SafeAxisRange(manifest.live2d.leftXRange);
+                    result.Live2DLeftYRange = SafeAxisRange(manifest.live2d.leftYRange);
+                    result.Live2DRightXRange = SafeAxisRange(manifest.live2d.rightXRange);
+                    result.Live2DRightYRange = SafeAxisRange(manifest.live2d.rightYRange);
                     result.Live2DX = Mathf.Clamp01(manifest.live2d.x);
                     result.Live2DY = Mathf.Clamp01(manifest.live2d.y);
                     result.Live2DWidth = Mathf.Clamp(manifest.live2d.width, .01f, 1f - result.Live2DX);
@@ -904,6 +914,15 @@ namespace ChunithmMobile.Runtime
                 Debug.LogWarning("Gameplay skin UI style failed: " + exception.Message);
             }
             return result;
+        }
+
+        private static Vector2 SafeAxisRange(SkinAxisRangeManifest range)
+        {
+            // Reject non-finite data before it reaches native model evaluation.
+            // Reversed endpoints are intentional: a skin can invert an axis.
+            if (range == null || float.IsNaN(range.min) || float.IsInfinity(range.min) ||
+                float.IsNaN(range.max) || float.IsInfinity(range.max)) return new Vector2(0f, 1f);
+            return new Vector2(Mathf.Clamp01(range.min), Mathf.Clamp01(range.max));
         }
 
         private static Color ParseColor(string value, Color fallback)
@@ -1116,10 +1135,21 @@ namespace ChunithmMobile.Runtime
             public string rightYParameter = "ParamMouseY";
             public string leftDownParameter = "ParamMouseLeftDown";
             public string rightDownParameter = "ParamMouseRightDown";
+            public SkinAxisRangeManifest leftXRange;
+            public SkinAxisRangeManifest leftYRange;
+            public SkinAxisRangeManifest rightXRange;
+            public SkinAxisRangeManifest rightYRange;
             public float x = .06f;
             public float y = .16f;
             public float width = .34f;
             public float height = .64f;
+        }
+
+        [Serializable]
+        private sealed class SkinAxisRangeManifest
+        {
+            public float min;
+            public float max = 1f;
         }
 
         [Serializable]

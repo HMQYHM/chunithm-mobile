@@ -88,29 +88,35 @@ namespace ChunithmMobile.Runtime
             // Apply input after animation sampling so authored idle curves cannot
             // overwrite the fingers. Paused input resets paws to their idle pose.
             ApplyTrack(telemetry.Left, telemetry.InputActive, style.Live2DLeftXParameter,
-                style.Live2DLeftYParameter, style.Live2DLeftVisibleParameter, style.Live2DLeftDownParameter, true);
+                style.Live2DLeftYParameter, style.Live2DLeftVisibleParameter, style.Live2DLeftDownParameter,
+                style.Live2DLeftXRange, style.Live2DLeftYRange, true);
             ApplyTrack(telemetry.Right, telemetry.InputActive, style.Live2DRightXParameter,
-                style.Live2DRightYParameter, style.Live2DRightVisibleParameter, style.Live2DRightDownParameter, false);
+                style.Live2DRightYParameter, style.Live2DRightVisibleParameter, style.Live2DRightDownParameter,
+                style.Live2DRightXRange, style.Live2DRightYRange, false);
             surface.UpdateFrame();
         }
 
         private void ApplyTrack(GameplaySkinEvents.TouchTrack track, bool inputActive,
-            string x, string y, string visible, string down, bool left)
+            string x, string y, string visible, string down, Vector2 xRange, Vector2 yRange, bool left)
         {
             bool pressed = inputActive && track.Active;
-            // Each paw maps its own half of the tablet to the full parameter range.
-            // Sending global coordinates would restrict each paw to half its travel.
+            // Each paw uses its own half of the input, then the skin's calibrated
+            // model range so a gamepad's outer travel cannot put it off the tablet.
             float localX = Mathf.Clamp01(left ? track.CenterX * 2 : (track.CenterX - .5f) * 2);
-            SetAxis(x, pressed ? localX : .5f);
-            SetAxis(y, pressed ? track.CenterY : .5f);
+            SetAxis(x, pressed ? localX : .5f, xRange);
+            SetAxis(y, pressed ? track.CenterY : .5f, yRange);
             SetParameter(visible, pressed ? 1 : 0);
             SetParameter(down, pressed ? 1 : 0);
         }
 
-        private void SetAxis(string id, float normalized)
+        private void SetAxis(string id, float normalized, Vector2 range)
         {
             var parameter = Find(id);
-            if (parameter != null) parameter.Value = Mathf.Lerp(parameter.MinimumValue, parameter.MaximumValue, Mathf.Clamp01(normalized));
+            if (parameter != null)
+            {
+                float calibrated = Mathf.Lerp(range.x, range.y, Mathf.Clamp01(normalized));
+                parameter.Value = Mathf.Lerp(parameter.MinimumValue, parameter.MaximumValue, calibrated);
+            }
         }
 
         private CubismParameter Find(string id) => string.IsNullOrWhiteSpace(id) ? null : surface?.Model.Parameters.FindById(id);
