@@ -3,3 +3,5 @@ node_modules/
 .electron-cache/
 .electron-builder-cache/
 desktop-dist/
+desktop-dist-live2d/
+test-output/

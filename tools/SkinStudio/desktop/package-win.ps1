@@ -8,6 +8,7 @@ try {
     $env:ELECTRON_BUILDER_CACHE = Join-Path $root ".electron-builder-cache"
     # Build the unpacked application first; this target needs no NSIS download.
     npm run dist:win
+    if ($LASTEXITCODE -ne 0) { throw "Desktop build failed (exit=$LASTEXITCODE)" }
     $source = Join-Path $root "desktop-dist\win-unpacked"
     $archive = Join-Path $root "desktop-dist\CHUNITHM-Mobile-Skin-Studio-win-x64.zip"
     if (-not (Test-Path $source)) { throw "Desktop output was not created: $source" }

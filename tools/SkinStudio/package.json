@@ -6,6 +6,7 @@
   "description": "Desktop wrapper for the CHUNITHM Mobile Skin Studio",
   "main": "desktop/main.cjs",
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "start": "electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win dir",
@@ -22,6 +23,9 @@
       "index.html",
       "style.css",
       "app.js",
+      "live2d-config.js",
+      "live2d-panel.js",
+      "live2d.css",
       "manifest.webmanifest",
       "service-worker.js",
       "desktop/**/*"

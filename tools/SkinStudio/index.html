@@ -7,6 +7,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <title>CHUNITHM Mobile Skin Studio</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="live2d.css">
 </head>
 <body>
   <header class="topbar">
@@ -49,7 +50,11 @@
     </section>
 
     <section class="inspector-column panel">
-      <div class="panel-title">属性</div>
+      <div class="panel-title"><span>属性</span><div class="settings-tabs" role="tablist" aria-label="皮肤设置">
+        <button id="layoutTab" role="tab" aria-controls="layoutSettings" aria-selected="false">界面布局</button>
+        <button id="liveTab" role="tab" aria-controls="liveSettings" aria-selected="true">Live2D</button>
+      </div></div>
+      <div id="layoutSettings" role="tabpanel" aria-labelledby="layoutTab" hidden>
       <div id="emptyInspector" class="empty">请选择一个元素</div>
       <form id="inspector" class="inspector" hidden>
         <label class="field wide"><span>元素 ID</span><select id="elementId"></select></label>
@@ -79,9 +84,39 @@
         </select>
         <div id="metricDescription" class="section-note"></div>
       </div>
+      </div>
+      <section id="liveSettings" class="live2d-section" role="tabpanel" aria-labelledby="liveTab">
+        <h2 id="live2dTitle">Live2D</h2>
+        <label class="check"><input id="liveEnabled" type="checkbox">启用 Live2D 模型</label>
+        <div class="resource-actions">
+          <label class="button secondary upload">导入模型文件夹<input id="modelFolder" type="file" webkitdirectory multiple hidden></label>
+          <button id="bongoPreset" type="button">BongoCat 参数</button>
+        </div>
+        <label class="field"><span>模型 .model3.json</span><select id="modelSelect"><option value="">选择已导入的模型</option></select></label>
+        <label class="field"><span>模型路径</span><input id="liveModel" type="text" placeholder="model/cat.model3.json"></label>
+        <div id="modelStatus" role="status" class="resource-status">未导入模型</div>
+        <div class="field-grid">
+          <label class="field"><span>X</span><input data-live="x" type="number" min="0" max="0.99" step="0.001"></label>
+          <label class="field"><span>Y</span><input data-live="y" type="number" min="0" max="0.99" step="0.001"></label>
+          <label class="field"><span>宽度</span><input data-live="width" type="number" min="0.01" max="1" step="0.001"></label>
+          <label class="field"><span>高度</span><input data-live="height" type="number" min="0.01" max="1" step="0.001"></label>
+        </div>
+        <details open><summary>左右手参数映射</summary><div id="liveParameters" class="live-fields"></div></details>
+        <datalist id="liveParameterOptions"></datalist><datalist id="liveMotionOptions"></datalist>
+        <details><summary>动作组与隐藏部件</summary><div id="liveMotions" class="live-fields"></div>
+          <label class="field"><span>隐藏部件 ID（每行一个）</span><textarea id="hiddenParts" rows="4"></textarea></label>
+        </details>
+        <details><summary>模型背景 / 平板</summary>
+          <label class="field"><span>背景 PNG 路径</span><input id="liveBackground" type="text" placeholder="model/resources/background.png"></label>
+          <label class="button secondary upload">选择背景 PNG<input id="liveBackgroundFile" type="file" accept="image/png" hidden></label>
+          <div class="field-grid" id="backgroundFields"></div>
+        </details>
+      </section>
     </section>
   </main>
-  <footer class="footer"><span id="fileSummary">0 个资源</span><span>安全模式：仅 JSON + PNG</span></footer>
+  <footer class="footer"><span id="fileSummary">0 个资源</span><span>本地资源 · 不执行包内代码</span></footer>
+  <script src="live2d-config.js"></script>
+  <script src="live2d-panel.js"></script>
   <script src="app.js"></script>
   <script>if (window.isSecureContext && 'serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});</script>
 </body>

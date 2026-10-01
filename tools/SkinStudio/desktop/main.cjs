@@ -5,6 +5,9 @@ const path = require("path");
 // import/export remains in the browser file-picker and declarative ZIP writer.
 function createWindow() {
   const window = new BrowserWindow({
+    // Automated desktop smoke checks can inspect the real isolated renderer
+    // without opening a visible window on the user's desktop.
+    show: !process.argv.includes("--smoke-test"),
     width: 1440,
     height: 900,
     minWidth: 960,
