@@ -5,6 +5,11 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const {pathToFileURL} = require("node:url");
 const {chromium,_electron} = require("playwright");
+function storedEntries(buffer){
+  const entries=new Map();let end=buffer.length-22;while(end>=0&&buffer.readUInt32LE(end)!==0x06054b50)end--;assert(end>=0,"missing ZIP end");const count=buffer.readUInt16LE(end+10),directory=buffer.readUInt32LE(end+16);let cursor=directory;
+  for(let index=0;index<count;index++){assert.equal(buffer.readUInt32LE(cursor),0x02014b50);const nameLength=buffer.readUInt16LE(cursor+28),extraLength=buffer.readUInt16LE(cursor+30),commentLength=buffer.readUInt16LE(cursor+32),name=buffer.toString("utf8",cursor+46,cursor+46+nameLength),local=buffer.readUInt32LE(cursor+42),size=buffer.readUInt32LE(cursor+24);assert.equal(buffer.readUInt32LE(local),0x04034b50);assert.equal(buffer.readUInt16LE(local+8),0,"test ZIP must be stored");const start=local+30+buffer.readUInt16LE(local+26)+buffer.readUInt16LE(local+28);entries.set(name,buffer.subarray(start,start+size));cursor+=46+nameLength+extraLength+commentLength;}
+  return entries;
+}
 (async()=>{
   const studio=path.resolve(__dirname,".."), project=path.resolve(studio,"../..");
   const sample=path.join(project,"Examples/Skins/BongoCatLive2DTouch");
@@ -21,7 +26,7 @@ const {chromium,_electron} = require("playwright");
     // the same control event while testing the real packaged save/load code.
     const click=selector=>process.env.STUDIO_EXE?page.locator(selector).dispatchEvent("click"):page.locator(selector).click();
     const fill=(selector,value)=>process.env.STUDIO_EXE?page.locator(selector).evaluate((input,text)=>{
-      input.value=text;input.dispatchEvent(new Event("input",{bubbles:true}));
+      input.value=text;input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));
     },value):page.locator(selector).fill(value);
     const desktopTemp=process.env.STUDIO_EXE?await browser.evaluate(({app})=>({root:app.getPath("temp"),pid:process.pid})):null;
     const desktopOutput=desktopTemp?path.resolve(desktopTemp.root,"chunithm-skin-studio-smoke-"+desktopTemp.pid):null;
@@ -52,11 +57,11 @@ const {chromium,_electron} = require("playwright");
     await page.waitForFunction(()=>document.getElementById("modelStatus").textContent.includes("资源齐全"));
     await click("#bongoPreset");
     assert.equal(await page.locator('[data-binding="leftXParameter"]').inputValue(),"CatParamStickRX");
-    await page.locator('[data-binding="leftXRange.min"]').fill("0.7");
+     await fill('[data-binding="leftXRange.min"]',"0.7");
     // A real click/blur, not synthetic change events, must retain edits without
     // deleting the next focused field or swallowing the export click.
     await page.locator('[data-binding="leftXRange.max"]').click();
-    await page.locator('[data-binding="leftXRange.max"]').fill("0.2");
+     await fill('[data-binding="leftXRange.max"]',"0.2");
     await page.locator("details").filter({hasText:"模型背景 / 平板"}).locator("summary").click();
     await page.locator("#liveBackgroundFile").setInputFiles(path.join(sample,"ui/touch/tablet.png"));
     await page.waitForFunction(()=>document.getElementById("liveBackground").value==="ui/studio/tablet.png");
@@ -87,6 +92,40 @@ const {chromium,_electron} = require("playwright");
     assert(entries.has("model/demomodel3.1024/texture_00.png"));
     assert(entries.has("ui/touch/tablet.png"));
     assert.equal(JSON.parse(entries.get("skin.json").toString()).id,"bongocat_live2d_tablet_v4");
+    // ZIP import must rebuild the same editable project, including resource
+    // references, rather than only previewing the archive.
+    await page.locator("#skinZip").setInputFiles(path.join(output,"live2d-skin.zip"));
+    await page.waitForFunction(()=>document.getElementById("liveModel").value==="model/cat.model3.json");
+    assert.equal(await page.locator("#skinId").inputValue(),"bongocat_live2d_tablet_v4");
+    await click("#layoutTab");
+     if(process.env.STUDIO_EXE) await page.evaluate(()=>document.querySelector("#addElement")?.click());
+     else await click("#addElement");
+    const originalX=await page.locator("#x").inputValue();
+     await fill("#x","0.2");
+     await click("#undoButton");assert.equal(await page.locator("#x").inputValue(),originalX);
+     await click("#redoButton");assert.equal(await page.locator("#x").inputValue(),"0.2");
+     if(process.env.STUDIO_EXE) await page.evaluate(()=>document.querySelector("#layerList .eye")?.click());
+     else await click("#layerList .eye");
+     assert.equal(await page.evaluate(()=>document.querySelector("#layerList .eye")?.getAttribute("aria-pressed")),"false");
+     await click("#undoButton");assert.equal(await page.evaluate(()=>document.querySelector("#layerList .eye")?.getAttribute("aria-pressed")),"true");
+     await fill("#textSize","72");await fill("#textColor","#00FFAA");
+     await fill("#comboFontSize","64");await fill("#comboColor","#FFAA00");
+    await new Promise(resolve=>setTimeout(resolve,400));
+    const selectedBox=await page.locator(".skin-element.selected").boundingBox();assert(selectedBox);
+    const beforeDrag=Number(await page.locator("#x").inputValue());
+    await page.evaluate(()=>{window.__dragEvents=[];for(const type of ["pointerdown","pointermove","pointerup"])document.addEventListener(type,event=>window.__dragEvents.push({type,id:event.pointerId,x:event.clientX,y:event.clientY,target:event.target.id||event.target.className}),true);});
+    const dragElement=page.locator(".skin-element.selected");await dragElement.scrollIntoViewIfNeeded();await dragElement.hover();await page.mouse.down();
+    await new Promise(resolve=>setTimeout(resolve,320));assert.equal(await page.locator("#stage").getAttribute("data-dragging"),"true","long press timer did not activate");
+    await page.evaluate(point=>document.dispatchEvent(new PointerEvent("pointermove",{pointerId:1,clientX:point.x,clientY:point.y,bubbles:true})),{x:selectedBox.x+selectedBox.width/2+30,y:selectedBox.y+selectedBox.height/2});
+    await page.evaluate(point=>document.dispatchEvent(new PointerEvent("pointerup",{pointerId:1,clientX:point.x,clientY:point.y,bubbles:true})),{x:selectedBox.x+selectedBox.width/2+30,y:selectedBox.y+selectedBox.height/2});
+    const afterDrag=Number(await page.locator("#x").inputValue());assert(afterDrag!==beforeDrag,"long press did not move the selected element");
+    await click("#undoButton");
+    const saved=page.waitForEvent("download");await click("#saveProject");await (await saved).saveAs(path.join(output,"saved-project.zip"));
+    const savedZip=await fs.readFile(path.join(output,"saved-project.zip"));assert(savedZip.length>1000);
+    const savedEntries=storedEntries(savedZip),savedUi=JSON.parse(savedEntries.get("ui/gameplay-ui.json").toString());
+    assert.equal(savedUi.elements.find(item=>item.id==="songInfo").textSize,72);
+    assert.equal(savedUi.elements.find(item=>item.id==="songInfo").textColor,"#00FFAA");
+    assert.equal(savedUi.combo.fontSize,64);assert.equal(savedUi.combo.color,"#FFAA00");
     // Reopening the actual exported project proves that references survive
     // a close/reopen workflow, not merely a single editor session.
     const reopened=path.join(output,"exported-skin");
@@ -96,6 +135,7 @@ const {chromium,_electron} = require("playwright");
     await page.waitForFunction(()=>document.querySelector('[data-binding="leftXRange.min"]').value==="0.7");
     assert.equal(await page.locator("#liveModel").inputValue(),"model/cat.model3.json");
     assert.equal(await page.locator('[data-binding="background.x"]').inputValue(),"-0.53");
+    await click("#liveTab");
     await page.locator("#live2dTitle").scrollIntoViewIfNeeded();
     if(!process.env.STUDIO_EXE)await page.screenshot({path:path.join(output,"live2d-desktop.png"),fullPage:true});
     if(!process.env.STUDIO_EXE){

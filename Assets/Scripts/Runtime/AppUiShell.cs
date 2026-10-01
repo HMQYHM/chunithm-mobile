@@ -3489,6 +3489,10 @@ namespace ChunithmMobile.Runtime
             RectTransform hud = gameplayHud;
             gameplayScore = Label("0000000", hud, 42, TextAnchor.MiddleCenter, new Vector2(.04f, .42f), new Vector2(.96f, .92f), Color.white);
             gameplayJudgements = Label("JC 0   J 0   AT 0   MISS 0", hud, 16, TextAnchor.MiddleCenter, new Vector2(.04f, .08f), new Vector2(.96f, .42f), muted);
+            // The renderer observes these existing labels and only replaces
+            // numeric rows when the active skin supplies a complete digit set.
+            gameplayCombo.gameObject.AddComponent<GameplaySkinDigitRenderer>().Initialize(gameplayCombo, "combo");
+            gameplayScore.gameObject.AddComponent<GameplaySkinDigitRenderer>().Initialize(gameplayScore, "score");
             AddReadableOutline(gameplayScore, .78f);
             AddReadableOutline(gameplayJudgements, .82f);
             gameplayJudgementBlock = RectObject("Current judgement", page, Vector2.zero, Vector2.one);
@@ -6044,12 +6048,23 @@ namespace ChunithmMobile.Runtime
             gameplaySkinCustomDisplay?.RefreshSkin();
             if (gameplayScore != null) gameplayScore.color = gameplaySkin.ScoreColor;
             if (gameplayCombo != null) gameplayCombo.color = gameplaySkin.ComboColor;
+            gameplayScore?.GetComponent<GameplaySkinDigitRenderer>()?.RefreshSkin();
+            gameplayCombo?.GetComponent<GameplaySkinDigitRenderer>()?.RefreshSkin();
+            if (gameplayScore != null) gameplayScore.fontSize = gameplaySkin.ScoreFontSize;
+            if (gameplayCombo != null) gameplayCombo.fontSize = gameplaySkin.ComboFontSize;
             RefreshJudgementSkin();
             if (gameplayJudgements != null) gameplayJudgements.color = gameplaySkin.JudgementColor;
+            if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (resultScore != null) resultScore.color = gameplaySkin.ScoreColor;
             if (resultRank != null) resultRank.color = gameplaySkin.RankColor;
             if (resultJudgements != null) resultJudgements.color = gameplaySkin.JudgementColor;
             ApplyGameplayElementLayout(settings);
+            // App settings establish the baseline sizes first; the skin's
+            // explicit number styling must be applied after that baseline or
+            // a refresh would silently overwrite the skin's font choices.
+            if (gameplayScore != null) gameplayScore.fontSize = gameplaySkin.ScoreFontSize;
+            if (gameplayCombo != null) gameplayCombo.fontSize = gameplaySkin.ComboFontSize;
+            if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(settings.ShowGameplaySongInfo);
             ApplyGameplaySkinLayout(gameplaySkin);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);

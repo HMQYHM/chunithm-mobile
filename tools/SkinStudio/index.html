@@ -18,7 +18,11 @@
     </div>
     <div class="top-actions">
       <label class="button secondary">打开皮肤文件夹<input id="skinFolder" type="file" webkitdirectory multiple hidden></label>
+      <label class="button secondary">导入皮肤 ZIP<input id="skinZip" type="file" accept=".zip,application/zip" hidden></label>
       <label class="button secondary">导入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
+      <button id="undoButton" class="secondary" title="撤回最近一次修改" disabled>撤回</button>
+      <button id="redoButton" class="secondary" title="取消撤回" disabled>取消撤回</button>
+      <button id="saveProject" class="secondary">保存</button>
       <button id="exportJson" class="button secondary">导出 JSON</button>
       <button id="exportZip" class="button primary">导出皮肤 ZIP</button>
     </div>
@@ -76,6 +80,10 @@
         <label class="field wide"><span>图片路径</span><input id="image" type="text" placeholder="ui/layout/example.png"></label>
         <label class="button secondary wide upload">选择 PNG 图片<input id="imageFile" type="file" accept="image/png" hidden></label>
         <label class="field wide"><span>按钮/文字标签</span><input id="label" type="text" maxlength="80" placeholder="可选"></label>
+        <div class="field-grid">
+          <label class="field"><span>文字大小</span><input id="textSize" type="number" min="0" max="256" step="1" placeholder="跟随游戏"></label>
+          <label class="field"><span>文字颜色</span><input id="textColor" type="text" placeholder="#FFFFFF"></label>
+        </div>
       </form>
 
       <div class="metric-section">
@@ -89,6 +97,19 @@
           <option value="best_score">距离最好成绩</option>
         </select>
         <div id="metricDescription" class="section-note"></div>
+      </div>
+      <div class="metric-section number-style-section">
+        <div class="subheading">数字与文字样式</div>
+        <div class="field-grid">
+          <label class="field"><span>Combo 字号</span><input id="comboFontSize" type="number" min="8" max="256" step="1"></label>
+          <label class="field"><span>Combo 颜色</span><input id="comboColor" type="text" placeholder="#FFFFFF"></label>
+          <label class="field"><span>分数字号</span><input id="scoreFontSize" type="number" min="8" max="256" step="1"></label>
+          <label class="field"><span>分数颜色</span><input id="scoreColor" type="text" placeholder="#FFFFFF"></label>
+          <label class="field"><span>判定字号</span><input id="judgementFontSize" type="number" min="8" max="256" step="1"></label>
+          <label class="field"><span>判定颜色</span><input id="judgementColor" type="text" placeholder="#FFFFFF"></label>
+        </div>
+        <div id="digitEditors" class="digit-assets"></div>
+        <div class="section-note">可分别为 Combo 和分数提供 0–9 PNG。缺少某个数字时，游戏会回退到文字显示。</div>
       </div>
       </div>
       <section id="liveSettings" class="live2d-section" role="tabpanel" aria-labelledby="liveTab">
@@ -120,7 +141,7 @@
       </section>
     </section>
   </main>
-  <footer class="footer"><span id="fileSummary">0 个资源</span><span id="operationStatus" role="status" aria-live="polite"></span><span>本地资源 · 不执行包内代码</span></footer>
+  <footer class="footer"><span id="fileSummary">0 个资源</span><span id="historyStatus">未修改</span><span id="operationStatus" role="status" aria-live="polite"></span><span>本地资源 · 不执行包内代码</span></footer>
   <script src="live2d-config.js"></script>
   <script src="live2d-panel.js"></script>
   <script src="app.js"></script>

@@ -75,6 +75,8 @@ namespace ChunithmMobile.Runtime
         public string Color = "";
         public string Image = "";
         public string Label = "";
+        public int TextSize;
+        public string TextColor = "";
     }
 
     public sealed class GameplaySkinStyle
@@ -112,6 +114,13 @@ namespace ChunithmMobile.Runtime
         public int ComboSize = 58;
         public int ScoreSize = 42;
         public int JudgementSize = 16;
+        public int ComboFontSize = 58;
+        public int ScoreFontSize = 42;
+        public int JudgementFontSize = 16;
+        // Optional per-digit image paths. An incomplete set intentionally falls
+        // back to Unity text so a skin can be edited incrementally.
+        public readonly Dictionary<char, string> ComboDigitPaths = new Dictionary<char, string>();
+        public readonly Dictionary<char, string> ScoreDigitPaths = new Dictionary<char, string>();
         public bool ScoreWarningEnabled;
         public int ScoreWarningThreshold;
         public bool TouchOverlayEnabled;
@@ -254,10 +263,12 @@ namespace ChunithmMobile.Runtime
         private static GameplaySkinInfo active;
         private static GameplaySkinStyle style = GameplaySkinStyle.Original();
         private static bool initialized;
+        private static int styleRevision;
 
         public static IReadOnlyList<GameplaySkinInfo> Installed => installed;
         public static GameplaySkinInfo Active => active ?? BuiltinInfo();
         public static GameplaySkinStyle Style => style ?? GameplaySkinStyle.Original();
+        public static int StyleRevision => styleRevision;
         public static bool ScoreWarningEnabled => Style.ScoreWarningEnabled;
         public static int ScoreWarningThreshold => Style.ScoreWarningThreshold;
 
@@ -315,6 +326,7 @@ namespace ChunithmMobile.Runtime
             ClearTextureCache();
             active = next;
             style = next.BuiltIn ? ReadBuiltinStyle() : ReadStyle(next);
+            styleRevision++;
             return true;
         }
 
@@ -348,6 +360,16 @@ namespace ChunithmMobile.Runtime
             sprite.name = "Gameplay skin sprite " + Path.GetFileName(relativePath);
             externalSprites[key] = sprite;
             return sprite;
+        }
+
+        /// <summary>Loads one authored digit image for the score/combo overlay.</summary>
+        public static Sprite LoadDigitSprite(string part, char digit)
+        {
+            string path = null;
+            if (part == "combo") Style.ComboDigitPaths.TryGetValue(digit, out path);
+            else if (part == "score") Style.ScoreDigitPaths.TryGetValue(digit, out path);
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            return LoadSkinSprite(Active, path);
         }
 
         public static string JudgementTextureKey(Chart.Judgement grade)
@@ -952,6 +974,14 @@ namespace ChunithmMobile.Runtime
                 if (manifest.score != null && manifest.score.defaultSize > 0) result.ScoreSize = manifest.score.defaultSize;
                 if (manifest.judgements != null && manifest.judgements.defaultSize > 0)
                     result.JudgementSize = manifest.judgements.defaultSize;
+                result.ComboFontSize = manifest.combo != null && manifest.combo.fontSize > 0 ?
+                    Mathf.Clamp(manifest.combo.fontSize, 8, 256) : result.ComboSize;
+                result.ScoreFontSize = manifest.score != null && manifest.score.fontSize > 0 ?
+                    Mathf.Clamp(manifest.score.fontSize, 8, 256) : result.ScoreSize;
+                result.JudgementFontSize = manifest.judgements != null && manifest.judgements.fontSize > 0 ?
+                    Mathf.Clamp(manifest.judgements.fontSize, 8, 256) : result.JudgementSize;
+                ApplyDigitManifest(manifest.combo, result.ComboDigitPaths);
+                ApplyDigitManifest(manifest.score, result.ScoreDigitPaths);
                 if (manifest.effects != null) {
                     result.ScoreWarningEnabled = manifest.effects.scoreWarningEnabled;
                     result.ScoreWarningThreshold = Mathf.Clamp(manifest.effects.scoreWarningThreshold, 0, 1010000);
@@ -1062,6 +1092,21 @@ namespace ChunithmMobile.Runtime
             return result;
         }
 
+        // JsonUtility cannot deserialize dictionaries. Keep the package format
+        // as a bounded array of digit/path pairs and reject every other key.
+        private static void ApplyDigitManifest(SkinUiPart part, Dictionary<char, string> destination)
+        {
+            destination.Clear();
+            if (part?.digits == null) return;
+            foreach (SkinDigitManifest item in part.digits.Take(10))
+            {
+                if (item == null || string.IsNullOrEmpty(item.digit) || item.digit.Length != 1 ||
+                    item.digit[0] < '0' || item.digit[0] > '9') continue;
+                string path = SafeSkinRelativePath(item.image, "");
+                if (!string.IsNullOrEmpty(path)) destination[item.digit[0]] = path;
+            }
+        }
+
         private static GameplaySkinElementDefinition ToLayoutElement(SkinLayoutElementManifest item)
         {
             if (item == null || !AllowedLayoutIds.Contains(item.id ?? "")) return null;
@@ -1076,7 +1121,9 @@ namespace ChunithmMobile.Runtime
                 Opacity = ClampFinite(item.opacity, 0f, 1f, 1f),
                 Color = SafeLayoutColor(item.color),
                 Image = image,
-                Label = SafeLayoutLabel(item.label)
+                Label = SafeLayoutLabel(item.label),
+                TextSize = Mathf.Clamp(item.textSize, 0, 256),
+                TextColor = SafeLayoutColor(item.textColor)
             };
             bool hasRect = result.X >= 0 && result.Y >= 0 && result.Width > 0 && result.Height > 0;
             return string.IsNullOrEmpty(item.image) || !string.IsNullOrEmpty(image) ? result : null;
@@ -1388,6 +1435,8 @@ namespace ChunithmMobile.Runtime
             public string color;
             public string image;
             public string label;
+            public int textSize;
+            public string textColor;
         }
 
         [Serializable]
@@ -1523,6 +1572,15 @@ namespace ChunithmMobile.Runtime
         {
             public string color;
             public int defaultSize;
+            public int fontSize;
+            public SkinDigitManifest[] digits;
+        }
+
+        [Serializable]
+        private sealed class SkinDigitManifest
+        {
+            public string digit;
+            public string image;
         }
     }
 }
