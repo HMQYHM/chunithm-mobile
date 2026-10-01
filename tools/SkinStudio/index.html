@@ -47,6 +47,7 @@
           <option value="score900000">分数 900000</option><option value="rankSSS">SSS+</option><option value="touchLeft">左上触控</option><option value="stop">游玩结束</option>
         </select>
         <label class="check"><input id="showGrid" type="checkbox" checked> 网格</label>
+        <label class="check"><input id="placeRule" type="checkbox">定位特效</label>
         <button id="replayPreview" class="icon-button" type="button" title="试播匹配规则" aria-label="试播匹配规则"><span class="play-icon" aria-hidden="true"></span></button>
         <button id="stopPreview" class="icon-button" type="button" title="停止试播" aria-label="停止试播" disabled><span class="stop-icon" aria-hidden="true"></span></button>
       </div>
@@ -179,7 +180,12 @@
       </section>
     </section>
   </main>
-  <footer class="footer"><span id="fileSummary">0 个资源</span><span id="historyStatus">未修改</span><span id="operationStatus" role="status" aria-live="polite"></span><span>本地资源 · 不执行包内代码</span></footer>
+  <footer class="footer"><span id="fileSummary">0 个资源</span><span id="historyStatus">未修改</span><span id="saveStatus" role="status" aria-live="polite">未修改</span><span id="operationStatus" role="status" aria-live="polite"></span><span>本地资源 · 不执行包内代码</span></footer>
+  <dialog id="replaceProjectDialog" aria-labelledby="replaceProjectTitle">
+    <h2 id="replaceProjectTitle">未保存修改</h2>
+    <p>打开新项目将丢失当前未保存的修改。</p>
+    <div class="dialog-actions"><button id="cancelReplace" type="button" autofocus>继续编辑</button><button id="discardProject" class="danger" type="button">放弃修改并打开</button></div>
+  </dialog>
   <script src="live2d-config.js"></script>
   <script src="live2d-panel.js"></script>
   <script src="rule-config.js"></script>

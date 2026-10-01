@@ -13,6 +13,8 @@
   let stageUrls=[];
   let previewAnimations=[];
   let livePanel;
+  let savedFingerprint=null;
+  const fileIds=new WeakMap();let nextFileId=0;
   const $ = id => document.getElementById(id);
   const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   // Inline feedback stays usable in browser and desktop windows, without a
@@ -20,9 +22,28 @@
   function notify(message,error=false){$("operationStatus").textContent=message;$("operationStatus").classList.toggle("invalid",error);}
   function clone(value){return JSON.parse(JSON.stringify(value));}
   function snapshot(){return {elements:clone(state.elements),selected:state.selected,selectedRule:state.selectedRule,metric:state.metric,customDisplays:clone(state.customDisplays),scene:clone(state.scene),document:clone(state.document),manifest:clone(state.manifest),files:[...state.files.entries()],live2d:clone(livePanel?.snapshot?.()||{})};}
+  function fingerprint(){
+    // File identity detects replacing a PNG with different bytes but the same
+    // filename/size. Selection and preview changes never dirty the document.
+    const value=snapshot();delete value.selected;delete value.selectedRule;
+    value.files=value.files.map(([path,file])=>{if(!fileIds.has(file))fileIds.set(file,++nextFileId);return [path,fileIds.get(file)];}).sort((a,b)=>a[0].localeCompare(b[0]));
+    return JSON.stringify(value);
+  }
+  const hasUnsavedChanges=()=>savedFingerprint!==null&&savedFingerprint!==fingerprint();
+  function updateProjectUi(){const dirty=hasUnsavedChanges();$("saveStatus").textContent=dirty?"有未保存修改":"已保存 / 未修改";$("saveStatus").dataset.dirty=String(dirty);}
+  function markSaved(revision=fingerprint()){savedFingerprint=revision;updateProjectUi();}
+  async function confirmReplace(){
+    if(!hasUnsavedChanges())return true;
+    const dialog=$("replaceProjectDialog");dialog.returnValue="";
+    const answer=new Promise(resolve=>dialog.addEventListener("close",()=>resolve(dialog.returnValue==="discard"),{once:true}));dialog.showModal();return answer;
+  }
+  $("cancelReplace").onclick=()=>$("replaceProjectDialog").close("cancel");$("discardProject").onclick=()=>$("replaceProjectDialog").close("discard");
+  window.addEventListener("beforeunload",event=>{if(hasUnsavedChanges()){event.preventDefault();event.returnValue="";}});
+  document.addEventListener("input",()=>queueMicrotask(updateProjectUi));
   function updateHistoryUi(){
     $("undoButton").disabled=!history.undo.length;$("redoButton").disabled=!history.redo.length;
     $("historyStatus").textContent=history.undo.length?`可撤回 ${history.undo.length}/20 次`:"未修改";
+    updateProjectUi();
   }
   function beginEdit(){
     if(!history.editing){history.undo.push(snapshot());if(history.undo.length>20)history.undo.shift();history.redo=[];history.editing=true;updateHistoryUi();}
@@ -63,6 +84,7 @@
     for(const animation of previewAnimations)animation.cancel();previewAnimations=[];$("stopPreview").disabled=true;
   }
   function replayPreview(){
+    $("placeRule").checked=false;
     renderStage();
     try{window.SkinStudioRules.validate(state.customDisplays);}catch(error){notify("无法试播："+error.message,true);return;}
     const animations=[];
@@ -87,25 +109,53 @@
     stage.querySelector(".goal-line").style.backgroundColor=sceneConfig.track.judgementLineColor||"";
     stage.querySelectorAll(".rule-preview").forEach(n=>n.remove());
     const event=previewEvent(),matched=state.customDisplays.filter(ruleMatchesPreview),motions=matched.filter(rule=>rule.action==="live2dMotion");
+    const placement=$("placeRule").checked?state.customDisplays.find(rule=>rule.id===state.selectedRule&&rule.action!=="live2dMotion"):null;
     if(Number.isFinite(event.current))$("metricDemo").textContent=`${event.trigger==="displayed_metric"?metricNames[event.mode]||event.mode:event.trigger==="score"?"分数":"COMBO"} ${event.current}`;
     $("airDemo").style.display=event.trigger==="air"&&!event.exit?"block":"none";
     $("previewResult").textContent=event.invalid?"测试值需要为范围内的整数":`匹配 ${matched.length} 条规则`+(motions.length?` · Live2D 动作组：${motions.map(rule=>rule.motion||"未设置").join("、")}（游戏内播放）`:"");
-    matched.slice(0,24).forEach(rule=>{
-      if(rule.action==="live2dMotion"||!rule.image||!state.files.has(rule.image))return;
-      const n=document.createElement("div");n.className="rule-preview";n.dataset.ruleId=rule.id;n.style.left=`${Number(rule.x||0)*100}%`;n.style.bottom=`${Number(rule.y||0)*100}%`;n.style.width=`${Number(rule.width||.2)*100}%`;n.style.height=`${Number(rule.height||.2)*100}%`;n.style.opacity=String(rule.opacity??1);n.style.transform=`rotate(${-Number(rule.rotation||0)}deg) scale(${Number(rule.scaleTo)||1})`;const img=document.createElement("img");img.src=URL.createObjectURL(state.files.get(rule.image));stageUrls.push(img.src);n.appendChild(img);stage.appendChild(n);});
+    const displayed=matched.filter(rule=>rule!==placement).slice(0,placement?23:24);if(placement)displayed.push(placement);
+    displayed.forEach(rule=>{
+      const editing=rule===placement,hasImage=rule.image&&state.files.has(rule.image);
+      if(rule.action==="live2dMotion"||!editing&&!hasImage)return;
+      const n=document.createElement("div");n.className="rule-preview"+(editing?" rule-placement":"");n.dataset.ruleId=rule.id;
+      Object.assign(n.style,{left:`${Number(rule.x||0)*100}%`,bottom:`${Number(rule.y||0)*100}%`,width:`${Number(rule.width||.2)*100}%`,height:`${Number(rule.height||.2)*100}%`,opacity:String(rule.opacity??1),transform:`rotate(${-Number(rule.rotation||0)}deg) scale(${Number(rule.scaleTo)||1})`});
+      if(hasImage){const img=document.createElement("img");img.src=URL.createObjectURL(state.files.get(rule.image));stageUrls.push(img.src);n.appendChild(img);}else n.textContent="特效图层";
+      if(editing){const handle=document.createElement("button");handle.type="button";handle.className="rule-resize";handle.title="调整特效尺寸";handle.setAttribute("aria-label","调整特效尺寸");n.appendChild(handle);}
+      stage.appendChild(n);
+    });
   }
   function renderStage(){ const stage=$("stage");stageUrls.forEach(URL.revokeObjectURL);stageUrls=[]; stage.querySelectorAll(".skin-element").forEach(n=>n.remove()); state.elements.forEach((e,index)=>{ const n=document.createElement("div"); n.className="skin-element"+(state.selected===e.id?" selected":""); n.dataset.id=e.id; n.style.zIndex=state.selected===e.id?100:index+1; n.textContent=e.label||labels[e.id]||e.id; n.style.left=`${e.x*100}%`;n.style.bottom=`${e.y*100}%`;n.style.width=`${e.width*100}%`;n.style.height=`${e.height*100}%`;n.style.opacity=e.visible?e.opacity:0;if(e.color)n.style.color=e.color;if(e.textColor)n.style.color=e.textColor;if(e.textSize)n.style.fontSize=e.textSize+"px";if(e.image&&state.files.has(e.image)){const img=document.createElement("img");img.src=URL.createObjectURL(state.files.get(e.image));stageUrls.push(img.src);n.textContent="";n.appendChild(img)}n.style.pointerEvents=e.visible?"auto":"none";stage.appendChild(n)}); $("airDemo").style.display=state.preview==="air"?"block":"none"; $("metricDemo").textContent=state.preview==="metricZero"?"SSS+ 剩余 0":state.preview==="miss"?"MISS":state.preview==="combo100"?"COMBO 100":"COMBO 0"; $("statusBadge").textContent={playing:"游玩中",pause:"暂停",miss:"MISS",combo100:"Combo 100",air:"AIR",metricZero:"目标值归零"}[state.preview]; document.querySelector(".stage-grid").style.display=$("showGrid").checked?"block":"none"; renderRulePreview(stage); }
   function hitTest(x,y){return state.elements.filter(e=>e.visible&&x>=e.x&&x<=e.x+e.width&&y>=e.y&&y<=e.y+e.height);}
   let drag=null;
   function stagePoint(event){const rect=$("stage").getBoundingClientRect();return {x:(event.clientX-rect.left)/rect.width,y:1-(event.clientY-rect.top)/rect.height};}
-  $("stage").addEventListener("pointerdown",event=>{const point=stagePoint(event),target=event.target.closest?.(".skin-element"),hits=hitTest(point.x,point.y);if(!target&&!hits.length)return;const selected=find(state.selected),targetElement=target?find(target.dataset.id):null;const chosen=targetElement||(selected&&hits.some(item=>item.id===selected.id)?selected:hits[hits.length-1]);if(state.selected!==chosen.id)beginEdit();state.selected=chosen.id;renderStage();fillInspector();const element=find(chosen.id);drag={id:chosen.id,start:point,offsetX:point.x-element.x,offsetY:point.y-element.y,active:false,timer:setTimeout(()=>{if(!drag)return;drag.active=true;$("stage").dataset.dragging="true";beginEdit();try{$("stage").setPointerCapture?.(event.pointerId);}catch(_){/* synthetic tests have no active pointer */}},260),pointerId:event.pointerId};event.preventDefault();});
-  document.addEventListener("pointermove",event=>{if(!drag||drag.pointerId!==event.pointerId||!drag.active)return;const point=stagePoint(event);const e=find(drag.id);if(!e)return;e.x=Math.min(1-e.width,Math.max(0,point.x-drag.offsetX));e.y=Math.min(1-e.height,Math.max(0,point.y-drag.offsetY));renderStage();fillInspector();event.preventDefault();});
+  $("stage").addEventListener("pointerdown",event=>{
+    if(event.button!==0||drag)return;const point=stagePoint(event),ruleTarget=event.target.closest?.(".rule-placement");
+    finishEdit();
+    const hits=hitTest(point.x,point.y),selected=find(state.selected),target=event.target.closest?.(".skin-element");
+    // A selected overlapping layer wins even if the DOM hit was its child or
+    // another element. Rule placement uses a separate explicit editing mode.
+    const rule=ruleTarget?state.customDisplays.find(item=>item.id===ruleTarget.dataset.ruleId):null;
+    const chosen=rule||(selected&&hits.includes(selected)?selected:target?find(target.dataset.id):hits[hits.length-1]);if(!chosen)return;
+    if(rule){state.selectedRule=chosen.id;setSettingsTab("rules");}else{if(state.selected!==chosen.id)beginEdit();state.selected=chosen.id;setSettingsTab("layout");}
+    const resize=!!event.target.closest?.(".rule-resize");
+    drag={id:chosen.id,kind:rule?"rule":"element",offsetX:point.x-chosen.x,offsetY:point.y-chosen.y,active:resize,changed:false,pointerId:event.pointerId};
+    drag.resize=resize;
+    const activate=()=>{if(!drag)return;drag.active=true;$("stage").dataset.dragging="true";try{$("stage").setPointerCapture?.(event.pointerId);}catch(_){/* synthetic tests have no active pointer */}};
+    if(resize)activate();else drag.timer=setTimeout(activate,260);
+    renderStage();if(rule)renderRuleEditor();else fillInspector();event.preventDefault();
+  });
+  document.addEventListener("pointermove",event=>{
+    if(!drag||drag.pointerId!==event.pointerId||!drag.active)return;const point=stagePoint(event);
+    const e=drag.kind==="rule"?state.customDisplays.find(rule=>rule.id===drag.id):find(drag.id);if(!e)return;
+    const values=drag.resize?{width:Math.min(1-e.x,Math.max(.01,point.x-e.x)),height:Math.min(1-e.y,Math.max(.01,point.y-e.y))}:{x:Math.min(1-e.width,Math.max(0,point.x-drag.offsetX)),y:Math.min(1-e.height,Math.max(0,point.y-drag.offsetY))};
+    if(Object.entries(values).some(([key,value])=>value!==e[key])){if(!drag.changed){beginEdit();drag.changed=true;}Object.assign(e,values);renderStage();if(drag.kind==="rule")renderRuleEditor();else fillInspector();updateProjectUi();}event.preventDefault();
+  });
   document.addEventListener("pointerup",event=>{if(!drag||drag.pointerId!==event.pointerId)return;clearTimeout(drag.timer);const wasDragging=drag.active;drag=null;delete $("stage").dataset.dragging;if(wasDragging)finishEdit();else render();});
   document.addEventListener("pointercancel",event=>{if(drag&&drag.pointerId===event.pointerId){clearTimeout(drag.timer);drag=null;finishEdit();}});
   function fillInspector(){ const e=find(state.selected); $("emptyInspector").hidden=!!e;$("inspector").hidden=!e;if(!e)return; $("elementId").innerHTML=ids.map(id=>`<option value="${id}">${labels[id]}</option>`).join("");$("elementId").value=e.id;$("visible").checked=!!e.visible;["x","y","width","height","opacity","color","image","label","textSize","textColor"].forEach(k=>{$(k).value=e[k]??""});$("opacityValue").value=Number(e.opacity).toFixed(2);$("metricMode").value=state.metric;$("metricDescription").textContent=metricText[state.metric]||""; }
-  function render(){renderLayers();renderStage();fillInspector();renderRules();renderScene();renderNumberStyles();livePanel?.render()}
+  function render(){renderLayers();renderStage();fillInspector();renderRules();renderScene();renderNumberStyles();livePanel?.render();updateProjectUi()}
   $("addRegion").onclick=()=>{beginEdit();const id=$("regionPreset").value;ensure(id);state.selected=id;setSettingsTab("layout");render();finishEdit();};
-  function bindField(id,key,parse){const update=()=>{const e=find(state.selected);if(!e)return;beginEdit();e[key]=parse?parse($(id).value):$(id).value;if(key==="opacity")$("opacityValue").value=Number(e[key]).toFixed(2);renderStage()};$(id).addEventListener("input",update);$(id).addEventListener("change",update)}
+  function bindField(id,key,parse){const update=()=>{const e=find(state.selected);if(!e)return;const value=parse?parse($(id).value):$(id).value;if(Object.is(e[key],value))return;beginEdit();e[key]=value;if(key==="opacity")$("opacityValue").value=Number(e[key]).toFixed(2);renderStage()};$(id).addEventListener("input",update);$(id).addEventListener("change",()=>{update();finishEdit()})}
   ["x","y","width","height","opacity","textSize"].forEach(k=>bindField(k,k,Number));["color","image","label","textColor"].forEach(k=>bindField(k,k));
   $("visible").addEventListener("change",()=>{const e=find(state.selected);if(e){beginEdit();e.visible=$("visible").checked;render();finishEdit()}});
   $("elementId").addEventListener("change",()=>{const current=find(state.selected);const replacement=$("elementId").value;if(!current||find(replacement))return;beginEdit();current.id=replacement;state.selected=replacement;render();finishEdit()});
@@ -133,6 +183,7 @@
   $("previewTrigger").onchange=()=>{renderPreviewFields();renderStage();};
   for(const id of ["previewValue","previewMode","previewEdge","previewPrevious","previewCurrent"])$(id).addEventListener("input",renderStage);
   $("replayPreview").onclick=replayPreview;$("stopPreview").onclick=()=>renderStage();renderPreviewFields();
+  $("placeRule").onchange=()=>{if($("placeRule").checked)setSettingsTab("rules");renderStage();};
   function newRule(){return {id:"rule_"+crypto.randomUUID().replaceAll("-",""),enabled:true,trigger:"combo",condition:"greater_or_equal",value:"",threshold:100,image:"",x:.40,y:.40,width:.20,height:.20,duration:1.2,fadeIn:.12,fadeOut:.35,scaleFrom:.8,scaleTo:1,rotation:0,rotationTo:0,animateRotation:false,opacity:1,mode:"any"};}
   function ruleResourceOptions(selected,empty="选择图片资源"){
     const files=[...state.files.keys()].filter(path=>/\.png$/i.test(path)).sort();return `<option value="">${escapeHtml(empty)}</option>`+files.map(path=>`<option value="${escapeHtml(path)}"${path===selected?" selected":""}>${escapeHtml(path)}</option>`).join("");
@@ -160,12 +211,12 @@
       const target=["combo","score","displayed_metric"].includes(rule.trigger)?`${Number(rule.threshold)||0}`:(triggerValues[rule.trigger]||[]).find(item=>item[0]===rule.value)?.[1]||rule.value||"任意";
       const result=rule.action==="live2dMotion"?"Live2D: "+(rule.motion||"未设置动作"):(rule.image?.split("/").pop()||"未选择图片");
       row.innerHTML=`<button type="button" class="rule-select"><b>${index+1}. 当 ${escapeHtml(triggerNames[rule.trigger]||rule.trigger)}</b><span>${escapeHtml(triggerConditions[rule.trigger]?.find(item=>item[0]===rule.condition)?.[1]||"触发")} ${escapeHtml(target)} → ${escapeHtml(result)}</span></button><button type="button" class="rule-copy" title="复制规则">复制</button><button type="button" class="rule-delete danger" title="删除规则">删除</button>`;
-      row.querySelector(".rule-select").onclick=()=>{state.selectedRule=rule.id;renderRules()};
-      row.querySelector(".rule-copy").onclick=()=>{if(state.customDisplays.length>=48){notify("最多 48 条规则",true);return;}beginEdit();const copy=clone(rule);copy.id="rule_"+crypto.randomUUID().replaceAll("-","");state.customDisplays.splice(index+1,0,copy);state.selectedRule=copy.id;renderRules();finishEdit()};
+      row.querySelector(".rule-select").onclick=()=>{state.selectedRule=rule.id;renderRules();renderStage()};
+      row.querySelector(".rule-copy").onclick=()=>{if(state.customDisplays.length>=48){notify("最多 48 条规则",true);return;}beginEdit();const copy=clone(rule);copy.id="rule_"+crypto.randomUUID().replaceAll("-","");state.customDisplays.splice(index+1,0,copy);state.selectedRule=copy.id;renderRules();renderStage();finishEdit()};
       row.querySelector(".rule-delete").onclick=()=>{beginEdit();state.customDisplays=state.customDisplays.filter(item=>item.id!==rule.id);state.selectedRule=state.customDisplays[0]?.id||null;renderRules();renderStage();finishEdit()};list.appendChild(row);
     });renderRuleEditor();
   }
-  $("addRule").onclick=()=>{if(state.customDisplays.length>=48){notify("最多 48 条规则",true);return;}beginEdit();const rule=newRule();state.customDisplays.push(rule);state.selectedRule=rule.id;renderRules();finishEdit()};
+  $("addRule").onclick=()=>{if(state.customDisplays.length>=48){notify("最多 48 条规则",true);return;}beginEdit();const rule=newRule();state.customDisplays.push(rule);state.selectedRule=rule.id;renderRules();renderStage();finishEdit()};
   $("addRulePreset").onclick=()=>{
     if(state.customDisplays.length>=48){notify("最多 48 条规则",true);return;}
     beginEdit();const rule=newRule();const preset=$("rulePreset").value;
@@ -173,7 +224,7 @@
     if(preset==="miss")Object.assign(rule,{trigger:"judgement",condition:"active",value:"miss"});
     if(preset==="air")Object.assign(rule,{trigger:"air",condition:"active",value:"active"});
     if(preset==="touch")Object.assign(rule,{trigger:"touch",condition:"active",value:"lefttop"});
-    state.customDisplays.push(rule);state.selectedRule=rule.id;renderRules();finishEdit();
+    state.customDisplays.push(rule);state.selectedRule=rule.id;renderRules();renderStage();finishEdit();
   };
   $("ruleEditor").addEventListener("input",event=>{
     const field=event.target.dataset.rule,rule=state.customDisplays.find(item=>item.id===state.selectedRule);if(!field||!rule)return;
@@ -253,8 +304,8 @@
     if(value.background?.opacity!=null&&(!Number.isFinite(value.background.opacity)||value.background.opacity<0||value.background.opacity>1))throw Error("背景透明度需要为 0–1");
     for(const group of Object.values(value))if(group&&typeof group==="object")for(const [key,color] of Object.entries(group))if(/color$/i.test(key)&&color&&!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color))throw Error("场景颜色需要使用 #RRGGBB 或 #RRGGBBAA");
   }
-  function openDocument(data){state.document=data;state.elements=(data.elements||[]).filter(x=>x&&ids.includes(x.id)).map(x=>Object.assign(cloneDefault(x.id),x));state.metric=data.belowNoteMetric?.mode||"combo";state.customDisplays=Array.isArray(data.customDisplays)?data.customDisplays.map(rule=>Object.assign(newRule(),rule)):[];state.scene=data.scene||{};livePanel.set(data.live2d);state.selected=state.elements[0]?.id||null;state.selectedRule=state.customDisplays[0]?.id||null;renderNumberStyles();render();history.undo=[];history.redo=[];finishEdit();}
-  $("importJson").addEventListener("change",async e=>{const file=e.target.files[0];if(!file||state.busy)return;setBusy(true);try{await livePanel.validateFile(file);openDocument(checkDocument(JSON.parse(await file.text())));notify("配置已读取");}catch(err){notify("JSON 读取失败："+err.message,true);}finally{setBusy(false);e.target.value="";}});
+  function openDocument(data,saved=true){state.document=data;state.elements=(data.elements||[]).filter(x=>x&&ids.includes(x.id)).map(x=>Object.assign(cloneDefault(x.id),x));state.metric=data.belowNoteMetric?.mode||"combo";state.customDisplays=Array.isArray(data.customDisplays)?data.customDisplays.map(rule=>Object.assign(newRule(),rule)):[];state.scene=data.scene||{};livePanel.set(data.live2d);state.selected=state.elements[0]?.id||null;state.selectedRule=state.customDisplays[0]?.id||null;$("placeRule").checked=false;renderNumberStyles();render();history.undo=[];history.redo=[];savedFingerprint=saved?fingerprint():"";finishEdit();}
+  $("importJson").addEventListener("change",async e=>{const file=e.target.files[0];if(!file||state.busy)return;setBusy(true);try{await livePanel.validateFile(file);const data=checkDocument(JSON.parse(await file.text()));if(!await confirmReplace()){notify("已取消打开");return;}openDocument(data,false);notify("配置已读取");}catch(err){notify("JSON 读取失败："+err.message,true);}finally{setBusy(false);e.target.value="";}});
   // A complete skin folder retains skin-relative paths and calibrated values.
   // Validate the entire candidate before replacing the current editor project.
   $("skinFolder").addEventListener("change",async event=>{if(state.busy)return;setBusy(true);try{
@@ -272,6 +323,7 @@
     if(data.live2d?.enabled){const model=config.path(data.live2d.model);if(!files.has(model))throw Error("缺少模型文件："+model);
       const report=config.inspect(model,JSON.parse(await files.get(model).text()),files);if(report.missing.length)throw Error("缺少资源："+report.missing.join("、"));}
     const missing=config.imageReferences(data).filter(p=>!files.has(p));if(missing.length)throw Error("缺少图片："+missing.join("、"));
+    if(!await confirmReplace()){notify("已取消打开");return;}
     files.delete("skin.json");files.delete("ui/gameplay-ui.json");state.files.clear();files.forEach((file,p)=>state.files.set(p,file));
     state.manifest=manifest;$("skinName").value=manifest.name;$("skinId").value=manifest.id;openDocument(data);notify("皮肤已打开："+manifest.name);
   }catch(error){notify("无法打开皮肤："+error.message,true);}finally{setBusy(false);event.target.value="";}});
@@ -286,13 +338,13 @@
     if(!entries.length)throw Error("ZIP 为空或格式不支持");return entries;
   }
   $("skinZip").addEventListener("change",async event=>{const file=event.target.files[0];if(!file||state.busy)return;setBusy(true);try{
-    const entries=await readZip(file),root=await fsForZip(entries);state.files.clear();root.files.forEach((value,key)=>state.files.set(key,value));state.manifest=root.manifest;$("skinName").value=root.manifest.name;$("skinId").value=root.manifest.id;openDocument(root.data);notify("皮肤 ZIP 已打开："+root.manifest.name);
+    const entries=await readZip(file),root=await fsForZip(entries);if(!await confirmReplace()){notify("已取消打开");return;}state.files.clear();root.files.forEach((value,key)=>state.files.set(key,value));state.manifest=root.manifest;$("skinName").value=root.manifest.name;$("skinId").value=root.manifest.id;openDocument(root.data);notify("皮肤 ZIP 已打开："+root.manifest.name);
   }catch(error){notify("无法导入皮肤 ZIP："+error.message,true);}finally{setBusy(false);event.target.value="";}});
   async function fsForZip(entries){const map=new Map(),keys=new Set(),config=window.SkinStudioLive2D;
     for(const [rawName,file] of entries){const name=config.path(rawName.replace(/\\/g,"/"));if(!name)throw Error("ZIP 包含非法路径");const lower=name.toLowerCase();if(keys.has(lower))throw Error("ZIP 存在大小写冲突："+name);keys.add(lower);if(name!=="skin.json"&&name!=="ui/gameplay-ui.json"&&name!=="README.txt"&&!config.allowedAsset(name))throw Error("ZIP 包含不支持的文件："+name);if(name!=="README.txt"){await livePanel.validateFile(file);map.set(name,file);}}
     if(!map.has("skin.json")||!map.has("ui/gameplay-ui.json"))throw Error("ZIP 缺少 skin.json 或 ui/gameplay-ui.json");const manifest=JSON.parse(await map.get("skin.json").text()),data=checkDocument(JSON.parse(await map.get("ui/gameplay-ui.json").text()));validateManifest(manifest);const files=new Map(map);files.delete("skin.json");files.delete("ui/gameplay-ui.json");if(data.live2d?.enabled){const model=config.path(data.live2d.model);if(!files.has(model))throw Error("缺少模型文件："+model);const report=config.inspect(model,JSON.parse(await files.get(model).text()),files);if(report.missing.length)throw Error("缺少资源："+report.missing.join("、"));}const missing=config.imageReferences(data).filter(p=>!files.has(p));if(missing.length)throw Error("缺少图片："+missing.join("、"));return {manifest,data,files};}
   $("undoButton").onclick=undo;$("redoButton").onclick=redo;
-  $("saveProject").onclick=async()=>{if(state.busy)return;setBusy(true);try{validateManifest(state.manifest);await livePanel.validate();const missing=window.SkinStudioLive2D.imageReferences(JSON.parse(output())).filter(p=>!state.files.has(p));if(missing.length)throw Error("缺少图片："+missing.join("、"));const result=await zip();notify(result===false?"已取消保存":"项目已保存");}catch(error){notify("保存失败："+error.message,true);}finally{setBusy(false);}};
+  $("saveProject").onclick=async()=>{if(state.busy)return;finishEdit();setBusy(true);try{validateManifest(state.manifest);await livePanel.validate();const missing=window.SkinStudioLive2D.imageReferences(JSON.parse(output())).filter(p=>!state.files.has(p));if(missing.length)throw Error("缺少图片："+missing.join("、"));const revision=fingerprint(),result=await zip();if(result!==false)markSaved(revision);notify(result===false?"已取消保存":"项目已保存");}catch(error){notify("保存失败："+error.message,true);}finally{setBusy(false);}};
   function validateManifest(manifest){if(!manifest||manifest.formatVersion!==1||manifest.gameplaySkin!==true||
     typeof manifest.id!=="string"||!/^[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,63}$/.test(manifest.id)||
     typeof manifest.name!=="string"||!manifest.name.trim()||manifest.name.length>80)throw Error("皮肤名称或 ID 无效（ID 使用字母、数字、_、-、.）");}
@@ -327,12 +379,12 @@
     return download("skin-studio-export.zip",join([body,cd,end]),"application/zip");
   }
   livePanel=window.createLive2DPanel(state.files,render,beginEdit,finishEdit);
-  $("exportZip").onclick=async()=>{if(state.busy)return;setBusy(true);try{validateManifest(state.manifest);await livePanel.validate();
+  $("exportZip").onclick=async()=>{if(state.busy)return;finishEdit();setBusy(true);try{validateManifest(state.manifest);await livePanel.validate();
     const missing=window.SkinStudioLive2D.imageReferences(JSON.parse(output())).filter(p=>!state.files.has(p));if(missing.length)throw Error("缺少图片："+missing.join("、"));
     const paths=new Set();for(const p of state.files.keys()){const key=p.toLowerCase();if(paths.has(key))throw Error("大小写冲突："+p);paths.add(key);}
-    const result=await zip();notify(result===false?"已取消保存":"已生成 skin-studio-export.zip");}catch(error){notify("无法导出皮肤："+error.message,true);}finally{setBusy(false);}};
+    const revision=fingerprint(),result=await zip();if(result!==false)markSaved(revision);notify(result===false?"已取消保存":"已生成 skin-studio-export.zip");}catch(error){notify("无法导出皮肤："+error.message,true);}finally{setBusy(false);}};
   $("skinName").value=state.manifest.name;$("skinId").value=state.manifest.id;renderNumberStyles();updateHistoryUi();
-  ids.slice(0,5).forEach(ensure);state.selected="songInfo";render();
+  ids.slice(0,5).forEach(ensure);state.selected="songInfo";render();markSaved();
   // Register from a local script so CSP never needs to permit inline code.
   if(location.protocol!=="file:"&&window.isSecureContext&&"serviceWorker" in navigator)
     navigator.serviceWorker.register("service-worker.js").catch(()=>{});

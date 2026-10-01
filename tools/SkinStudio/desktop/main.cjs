@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, session, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs/promises");
+const {randomUUID} = require("crypto");
 const {pathToFileURL} = require("url");
 const entry = path.join(__dirname, "..", "index.html");
 let saving = false;
@@ -25,7 +26,11 @@ ipcMain.handle("skin-studio:save", async (event, name, bytes) => {
       if(result.canceled || !result.filePath)return false;
       destination=result.filePath;
     }
-    await fs.writeFile(destination,bytes);return true;
+    // Write next to the chosen destination, then replace it in one rename.
+    // A failed write must not truncate the user's previous exported project.
+    const temporary=path.join(path.dirname(destination),"."+path.basename(destination)+"."+randomUUID()+".tmp");
+    try {await fs.writeFile(temporary,bytes,{flag:"wx"});await fs.rename(temporary,destination);return true;}
+    finally {await fs.rm(temporary,{force:true}).catch(()=>{});}
   } finally {saving=false;}
 });
 
@@ -55,6 +60,14 @@ function createWindow() {
   // browser, and accidental links cannot leave the controlled app window.
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", event => event.preventDefault());
+  // The isolated page's beforeunload guard covers close/reload too. Electron
+  // does not supply a browser confirmation by default, so keep editing unless
+  // the user explicitly discards changes. Hidden smoke tests never show UI.
+  window.webContents.on("will-prevent-unload", event => {
+    if(process.argv.includes("--smoke-test")){event.preventDefault();return;}
+    const answer=dialog.showMessageBoxSync(window,{type:"warning",title:"未保存修改",message:"当前项目有未保存的修改。",buttons:["继续编辑","放弃修改"],defaultId:0,cancelId:0,noLink:true});
+    if(answer===1)event.preventDefault();
+  });
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error("Skin Studio renderer stopped:", details.reason, "exit=" + details.exitCode);
   });

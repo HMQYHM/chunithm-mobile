@@ -49,7 +49,7 @@ const {chromium}=require("playwright");
     // Preview controls do not add undo records or get exported into a skin.
     const history=await page.locator("#historyStatus").textContent();await page.locator("#previewValue").selectOption("righttop");
     assert.equal(await page.locator("#historyStatus").textContent(),history);
-    await page.locator("#skinFolder").setInputFiles(sample);await page.waitForFunction(()=>document.getElementById("skinId").value==="bongocat_live2d_tablet_v4");
+    await page.locator("#skinFolder").setInputFiles(sample);await page.locator("#discardProject").click();await page.waitForFunction(()=>document.getElementById("skinId").value==="bongocat_live2d_tablet_v4");
     await page.locator("#liveTab").click();const initial=await page.locator('[data-binding="leftXRange.min"]').inputValue();
     await page.locator('[data-binding="leftXRange.min"]').fill("0.4");await page.locator('[data-binding="leftXRange.min"]').dispatchEvent("change");
     await page.locator("#undoButton").click();assert.equal(await page.locator('[data-binding="leftXRange.min"]').inputValue(),initial);
