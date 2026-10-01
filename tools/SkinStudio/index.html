@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#071018">
+  <link rel="manifest" href="manifest.webmanifest">
   <title>CHUNITHM Mobile Skin Studio</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -81,5 +83,6 @@
   </main>
   <footer class="footer"><span id="fileSummary">0 个资源</span><span>安全模式：仅 JSON + PNG</span></footer>
   <script src="app.js"></script>
+  <script>if (window.isSecureContext && 'serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});</script>
 </body>
 </html>

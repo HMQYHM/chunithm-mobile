@@ -3,6 +3,11 @@
 制作器位于 `Tools/SkinStudio/index.html`，不依赖 Unity 或服务器。Windows 可以双击
 `open-studio.bat`，macOS/Linux 可以直接用浏览器打开 `index.html`。
 
+当前同时提供 Electron 桌面封装配置。进入 `tools/SkinStudio` 后执行 `npm install`、
+`npm start` 可运行窗口版，执行 `npm run dist:win` 可生成 Windows 桌面目录版，执行
+`npm run dist:win:zip` 可生成可发送的 ZIP。桌面版不向皮肤页面暴露 Node API，只加载
+本地制作器资源；未安装 Electron 时可继续使用浏览器版。
+
 ## 工作流程
 
 1. 在“元素图层”添加或选择元素。

@@ -1,0 +1,10 @@
+{
+  "name": "CHUNITHM Mobile Skin Studio",
+  "short_name": "Skin Studio",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#071018",
+  "theme_color": "#071018",
+  "description": "Create safe declarative gameplay skin layouts.",
+  "icons": []
+}

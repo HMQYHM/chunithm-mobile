@@ -1,2 +1,2 @@
 @echo off
-start "CHUNITHM Mobile Skin Studio" "%~dp0index.html"
+call "%~dp0start-desktop.bat"

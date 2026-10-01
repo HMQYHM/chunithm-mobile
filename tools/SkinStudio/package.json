@@ -1,0 +1,35 @@
+{
+  "name": "chunithm-mobile-skin-studio",
+  "version": "0.1.0",
+  "private": true,
+  "author": "CHUNITHM Mobile contributors",
+  "description": "Desktop wrapper for the CHUNITHM Mobile Skin Studio",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --dir",
+    "dist:win": "electron-builder --win dir",
+    "dist:win:zip": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/package-win.ps1"
+  },
+  "devDependencies": {
+    "electron": "^32.2.7",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.hmqyhm.chunithm.skinstudio",
+    "productName": "CHUNITHM Mobile Skin Studio",
+    "files": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "manifest.webmanifest",
+      "service-worker.js",
+      "desktop/**/*"
+    ],
+    "directories": { "output": "desktop-dist" },
+    "win": {
+      "target": ["dir"],
+      "signAndEditExecutable": false
+    }
+  }
+}

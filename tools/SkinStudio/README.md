@@ -1,6 +1,34 @@
 # Skin Studio
 
-在 Windows、macOS 或 Linux 上直接双击 `index.html` 即可打开。也可以运行同目录的 `open-studio.bat`。
+在 Windows、macOS 或 Linux 上可以直接双击 `index.html` 打开浏览器版，也可以运行同目录的 `open-studio.bat`。
+
+## 桌面版
+
+安装 Node.js 后，在本目录运行：
+
+```text
+npm install
+npm start
+```
+
+生成 Windows 桌面目录版：
+
+```text
+npm run dist:win
+```
+
+输出在 `desktop-dist/win-unpacked/`，运行其中的 `CHUNITHM Mobile Skin Studio.exe`。
+也可以生成可发送的 ZIP：
+
+```text
+npm run dist:win:zip
+```
+
+输出为 `desktop-dist/CHUNITHM-Mobile-Skin-Studio-win-x64.zip`。桌面壳使用 Electron 安全隔离，只加载本地制作器页面，
+不开放 Node API，不允许皮肤包执行代码，也不允许页面跳转到外部网站。没有安装
+Electron 依赖时，`open-studio.bat` 会自动退回浏览器版。
+
+浏览器版和桌面版共用完全相同的皮肤格式与导出逻辑，后续 Android 版也会复用这些文件。
 
 ## 使用
 
