@@ -38,8 +38,36 @@ namespace ChunithmMobile.Runtime
         public readonly List<string> PreviewPaths = new List<string>();
     }
 
+    /// <summary>Validated data-only rule consumed by GameplaySkinCustomDisplay.</summary>
+    public sealed class GameplaySkinCustomDisplayDefinition
+    {
+        public string Id;
+        public string Trigger;
+        public string Condition;
+        public string Value;
+        public float Threshold;
+        public string Image;
+        public float X;
+        public float Y;
+        public float Width;
+        public float Height;
+        public float Duration;
+        public float FadeIn;
+        public float FadeOut;
+        public float ScaleFrom;
+        public float ScaleTo;
+        public float Rotation;
+        public string Mode;
+        public float Opacity;
+        public float RotationTo;
+    }
+
     public sealed class GameplaySkinStyle
     {
+        // Declarative overlay rules are interpreted by the game renderer. They
+        // never load code from a skin package.
+        public readonly List<GameplaySkinCustomDisplayDefinition> CustomDisplays =
+            new List<GameplaySkinCustomDisplayDefinition>();
         public Color ComboColor = Color.white;
         public Color ScoreColor = Color.white;
         public Color RankColor = new Color(.20f, .94f, 1f, 1f);
@@ -147,7 +175,9 @@ namespace ChunithmMobile.Runtime
     /// </summary>
     public static class GameplaySkinManager
     {
-        public const string BuiltinId = "current_original";
+        // The only built-in gameplay skin is the redistributable replacement
+        // palette. All optional external skins fall back to these resources.
+        public const string BuiltinId = "anime_simple_reference_palette";
         private const string SkinFolderName = "GameplaySkins";
         private const int MaxPackageEntries = 2000;
         private const long MaxPackageBytes = 256L * 1024L * 1024L;
@@ -248,7 +278,7 @@ namespace ChunithmMobile.Runtime
 
             ClearTextureCache();
             active = next;
-            style = next.BuiltIn ? GameplaySkinStyle.Original() : ReadStyle(next);
+            style = next.BuiltIn ? ReadBuiltinStyle() : ReadStyle(next);
             return true;
         }
 
@@ -320,7 +350,7 @@ namespace ChunithmMobile.Runtime
             if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(info.RootPath))
             {
                 summary.PreviewPath = null;
-                summary.Missing.Add("外部资源包：内置原版皮肤不需要导入文件");
+                summary.Missing.Add("内置基础皮肤：资源已随应用安装");
                 return summary;
             }
 
@@ -695,8 +725,10 @@ namespace ChunithmMobile.Runtime
                     foreach (ZipArchiveEntry entry in archive.Entries)
                     {
                         if (string.IsNullOrWhiteSpace(entry.FullName) || IsDirectoryEntry(entry)) continue;
-                        if (!IsAllowedPackageFile(entry.FullName))
-                            throw new InvalidDataException("皮肤包包含不允许的文件类型：" + entry.FullName);
+                        // A skin may contain previews, documentation, or assets
+                        // for another platform. Ignore unsupported entries so
+                        // a partial gameplay skin can still be installed.
+                        if (!IsAllowedPackageFile(entry.FullName)) continue;
                         if (entry.Length < 0 || entry.Length > MaxEntryBytes ||
                             expandedBytes > MaxPackageBytes - entry.Length)
                             throw new InvalidDataException("皮肤包过大，导入已取消");
@@ -735,7 +767,7 @@ namespace ChunithmMobile.Runtime
         public static void ExportPackage(GameplaySkinInfo info, string archivePath)
         {
             if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(info.RootPath) || !Directory.Exists(info.RootPath))
-                throw new InvalidOperationException("内置原版皮肤不能导出");
+                throw new InvalidOperationException("内置基础皮肤不能导出");
             string root = Path.GetFullPath(SkinRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             string source = Path.GetFullPath(info.RootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             if (!source.StartsWith(root, StringComparison.OrdinalIgnoreCase))
@@ -818,6 +850,14 @@ namespace ChunithmMobile.Runtime
             }
         }
 
+        private static GameplaySkinStyle ReadBuiltinStyle()
+        {
+            GameplaySkinStyle result = GameplaySkinStyle.Original();
+            TextAsset asset = Resources.Load<TextAsset>("OriginalUI/gameplay-ui");
+            if (asset == null) return result;
+            return ApplyStyleManifest(result, asset.text);
+        }
+
         private static GameplaySkinStyle ReadStyle(GameplaySkinInfo info)
         {
             GameplaySkinStyle result = GameplaySkinStyle.Original();
@@ -825,7 +865,22 @@ namespace ChunithmMobile.Runtime
             if (!File.Exists(path)) return result;
             try
             {
-                SkinUiManifest manifest = JsonUtility.FromJson<SkinUiManifest>(File.ReadAllText(path));
+                return ApplyStyleManifest(result, File.ReadAllText(path));
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Gameplay skin UI style failed: " + exception.Message);
+            }
+            return result;
+        }
+
+        // Keep built-in and external skin style parsing on the same path so a
+        // package can be promoted to the built-in base without visual drift.
+        private static GameplaySkinStyle ApplyStyleManifest(GameplaySkinStyle result, string json)
+        {
+            try
+            {
+                SkinUiManifest manifest = JsonUtility.FromJson<SkinUiManifest>(json);
                 if (manifest == null) return result;
                 result.ComboColor = ParseColor(manifest.combo?.color, result.ComboColor);
                 result.ScoreColor = ParseColor(manifest.score?.color, result.ScoreColor);
@@ -908,6 +963,17 @@ namespace ChunithmMobile.Runtime
                     result.Live2DWidth = Mathf.Clamp(manifest.live2d.width, .01f, 1f - result.Live2DX);
                     result.Live2DHeight = Mathf.Clamp(manifest.live2d.height, .01f, 1f - result.Live2DY);
                 }
+                // Custom displays are independent of Live2D. A skin can use
+                // declarative combo, AIR, judgement, or score effects with
+                // ordinary PNG assets and no model at all.
+                result.CustomDisplays.Clear();
+                var displayIds = new HashSet<string>(StringComparer.Ordinal);
+                if (manifest.customDisplays != null)
+                    foreach (SkinCustomDisplayManifest item in manifest.customDisplays.Take(48))
+                    {
+                        GameplaySkinCustomDisplayDefinition display = ToCustomDisplay(item);
+                        if (display != null && displayIds.Add(display.Id)) result.CustomDisplays.Add(display);
+                    }
             }
             catch (Exception exception)
             {
@@ -923,6 +989,112 @@ namespace ChunithmMobile.Runtime
             if (range == null || float.IsNaN(range.min) || float.IsInfinity(range.min) ||
                 float.IsNaN(range.max) || float.IsInfinity(range.max)) return new Vector2(0f, 1f);
             return new Vector2(Mathf.Clamp01(range.min), Mathf.Clamp01(range.max));
+        }
+
+        private static GameplaySkinCustomDisplayDefinition ToCustomDisplay(SkinCustomDisplayManifest item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.id)) return null;
+            string trigger = (item.trigger ?? "").Trim().ToLowerInvariant();
+            if (trigger != "combo" && trigger != "judgement" && trigger != "score" &&
+                trigger != "rank" && trigger != "air" && trigger != "touch" && trigger != "gameplay" &&
+                trigger != "displayed_metric") return null;
+            string image = SafeDisplayImagePath(item.image);
+            if (string.IsNullOrEmpty(image)) return null;
+            var result = new GameplaySkinCustomDisplayDefinition {
+                Id = SafeDisplayId(item.id), Trigger = trigger,
+                Condition = SafeDisplayCondition(item.condition), Value = (item.value ?? "").Trim().ToLowerInvariant(),
+                Mode = (item.mode ?? "any").Trim().ToLowerInvariant(),
+                Threshold = ClampFinite(item.threshold, -1010000f, 1010000f, 0f),
+                Image = image,
+                X = ClampFinite(item.x, 0f, 1f, 0f), Y = ClampFinite(item.y, 0f, 1f, 0f),
+                Width = ClampFinite(item.width, .01f, 1f, .2f),
+                Height = ClampFinite(item.height, .01f, 1f, .2f),
+                Duration = ClampFinite(item.duration, .05f, 30f, 1.2f),
+                FadeIn = ClampFinite(item.fadeIn, 0f, 30f, .12f),
+                FadeOut = ClampFinite(item.fadeOut, 0f, 30f, .35f),
+                ScaleFrom = ClampFinite(item.scaleFrom, .01f, 4f, .8f),
+                ScaleTo = ClampFinite(item.scaleTo, .01f, 4f, 1f),
+                Rotation = ClampFinite(item.rotation, -360f, 360f, 0f),
+                RotationTo = item.animateRotation ? ClampFinite(item.rotationTo, -360f, 360f, 0f) :
+                    ClampFinite(item.rotation, -360f, 360f, 0f),
+                Opacity = ClampFinite(item.opacity, 0f, 1f, 1f)
+            };
+            // Unknown values are rejected, not silently interpreted as any AIR
+            // contact. Rank names deliberately allow the official '+' suffix.
+            if (string.IsNullOrEmpty(result.Id) || string.IsNullOrEmpty(result.Condition) ||
+                !ValidDisplayValue(result.Trigger, result.Value) ||
+                (result.Mode != "any" && !Enumerable.Range(0, 11).Any(index =>
+                    GameplaySkinEvents.DisplayMetricName(index) == result.Mode))) return null;
+            return result.X + result.Width <= 1.001f && result.Y + result.Height <= 1.001f ? result : null;
+        }
+
+        private static float ClampFinite(float value, float min, float max, float fallback)
+        {
+            return float.IsNaN(value) || float.IsInfinity(value) ? fallback : Mathf.Clamp(value, min, max);
+        }
+
+        private static string SafeDisplayId(string value)
+        {
+            value = value.Trim();
+            return value.Length <= 64 && value.All(character => char.IsLetterOrDigit(character) || character == '_' || character == '-')
+                ? value : "";
+        }
+
+        private static string SafeDisplayCondition(string value)
+        {
+            value = (value ?? "rising").Trim().ToLowerInvariant();
+            if (value == "rising") return "greater_or_equal";
+            return value == "equal" || value == "less_or_equal" || value == "less" || value == "greater_or_equal" ||
+                value == "active" || value == "exit" ? value : "";
+        }
+
+        private static bool ValidDisplayValue(string trigger, string value)
+        {
+            switch (trigger) {
+                case "judgement": return new[] { "justice_critical", "justice", "attack", "miss" }.Contains(value);
+                case "rank": return new[] { "sss+", "sss", "ss+", "ss", "s+", "s", "aaa", "aa", "a", "bbb", "bb", "b", "c", "d" }.Contains(value);
+                case "air": return new[] { "active", "rising", "falling", "enter", "exit", "sensor1", "sensor2", "sensor3", "sensor4", "sensor5", "sensor6" }.Contains(value);
+                case "touch": return new[] { "any", "lefttop", "leftbottom", "righttop", "rightbottom" }.Contains(value);
+                case "gameplay": return value == "start" || value == "stop";
+                default: return string.IsNullOrEmpty(value);
+            }
+        }
+
+        private static string SafeDisplayImagePath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || Path.IsPathRooted(value) || value.Contains(":")) return "";
+            string path = SafeSkinRelativePath(value, "");
+            string extension = Path.GetExtension(path).ToLowerInvariant();
+            // PNG lets the loader bound decoded pixel memory before decoding.
+            return extension == ".png" &&
+                path.Length <= 256 ? path : "";
+        }
+
+        /// <summary>Returns an owned overlay texture, never a preview-cache entry.</summary>
+        public static Texture2D LoadCustomDisplayImage(GameplaySkinInfo info, string relative, long pixelBudget)
+        {
+            string safe = SafeDisplayImagePath(relative);
+            if (info == null || info.BuiltIn || string.IsNullOrEmpty(info.RootPath) || safe.Length == 0) return null;
+            try {
+                string path = SafePath(info.RootPath, safe);
+                var file = new FileInfo(path);
+                if (!file.Exists || file.Length < 24 || file.Length > 8L * 1024 * 1024) return null;
+                // Inspect only the header first: a compressed oversized PNG
+                // must not allocate its pixel buffer even temporarily.
+                byte[] header = new byte[24];
+                using (var stream = File.OpenRead(path))
+                    if (stream.Read(header, 0, header.Length) != header.Length) return null;
+                byte[] signature = { 137, 80, 78, 71, 13, 10, 26, 10 };
+                if (!header.Take(8).SequenceEqual(signature)) return null;
+                uint width = ((uint)header[16] << 24) | ((uint)header[17] << 16) | ((uint)header[18] << 8) | header[19];
+                uint height = ((uint)header[20] << 24) | ((uint)header[21] << 16) | ((uint)header[22] << 8) | header[23];
+                if (width == 0 || height == 0 || width > 4096 || height > 4096 ||
+                    (ulong)width * height > (ulong)Math.Max(0, pixelBudget)) return null;
+                return LoadLive2DAsset(info, typeof(Texture2D), safe) as Texture2D;
+            } catch (Exception exception) {
+                Debug.LogWarning("Skin custom image failed: " + exception.Message);
+                return null;
+            }
         }
 
         private static Color ParseColor(string value, Color fallback)
@@ -983,9 +1155,9 @@ namespace ChunithmMobile.Runtime
         {
             return new GameplaySkinInfo {
                 Id = BuiltinId,
-                Name = "当前原版皮肤",
-                Author = "HMQYHM & Codex",
-                Version = "0.2.7",
+                Name = "简约原版配色（内置）",
+                Author = "CHUNITHM Anime Simple Skin",
+                Version = "1.0.0",
                 RootPath = "",
                 BuiltIn = true
             };
@@ -1065,6 +1237,32 @@ namespace ChunithmMobile.Runtime
             public SkinTouchZoneManifest touchZones;
             public SkinTouchOverlayManifest touchOverlay;
             public SkinLive2DManifest live2d;
+            public SkinCustomDisplayManifest[] customDisplays;
+        }
+
+        [Serializable]
+        private sealed class SkinCustomDisplayManifest
+        {
+            public string id;
+            public string trigger;
+            public string condition = "rising";
+            public string value;
+            public float threshold;
+            public string image;
+            public float x = .4f;
+            public float y = .4f;
+            public float width = .2f;
+            public float height = .2f;
+            public float duration = 1.2f;
+            public float fadeIn = .12f;
+            public float fadeOut = .35f;
+            public float scaleFrom = .8f;
+            public float scaleTo = 1f;
+            public float rotation;
+            public float rotationTo;
+            public bool animateRotation;
+            public float opacity = 1f;
+            public string mode = "any";
         }
 
         [Serializable]
@@ -1133,6 +1331,8 @@ namespace ChunithmMobile.Runtime
             public string leftYParameter = "ParamMouseY";
             public string rightXParameter = "ParamMouseX";
             public string rightYParameter = "ParamMouseY";
+            public string leftVisibleParameter;
+            public string rightVisibleParameter;
             public string leftDownParameter = "ParamMouseLeftDown";
             public string rightDownParameter = "ParamMouseRightDown";
             public SkinAxisRangeManifest leftXRange;

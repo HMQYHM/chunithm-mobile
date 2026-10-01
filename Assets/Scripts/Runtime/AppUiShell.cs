@@ -427,6 +427,7 @@ namespace ChunithmMobile.Runtime
         private GameplaySkinTouchOverlay gameplaySkinTouchOverlay;
         private GameplaySkinLive2DBridge gameplaySkinLive2D;
         private GameplaySkinCubismRenderer gameplaySkinCubism;
+        private GameplaySkinCustomDisplay gameplaySkinCustomDisplay;
         private TouchContactOverlay gameplayTouchContacts;
         private TrackMaskOverlay gameplayTrackMask;
         private readonly List<Image> gameplayLaneHighlights = new List<Image>();
@@ -1658,7 +1659,7 @@ namespace ChunithmMobile.Runtime
             }
             if (skin.BuiltIn)
             {
-                ShowModal("无法导出内置皮肤", "当前原版皮肤由软件内置，没有可导出的外部文件。", null, false);
+                ShowModal("无法导出内置皮肤", "当前基础皮肤由软件内置，没有可导出的外部文件。", null, false);
                 return;
             }
             string directory = Path.Combine(Application.temporaryCachePath, "Exports");
@@ -1751,7 +1752,7 @@ namespace ChunithmMobile.Runtime
                 Label("ID  " + skin.Id + "\n版本  " + (string.IsNullOrWhiteSpace(skin.Version) ? "未填写" : skin.Version), row, 15,
                     TextAnchor.MiddleLeft, selected ? new Vector2(.19f, .43f) : new Vector2(.19f, .13f),
                     selected ? new Vector2(.55f, .61f) : new Vector2(.55f, .43f), muted);
-                Label(skin.BuiltIn ? "内置原版资源" : $"{summary.FileCount} 个文件  ·  {FormatBytes(summary.TotalBytes)}\n音符 {summary.NoteCount}  轨道 {summary.TrackCount}  特效 {summary.EffectCount}  Mesh {summary.MeshCount}  音频 {summary.AudioCount}",
+                Label(skin.BuiltIn ? "内置基础资源" : $"{summary.FileCount} 个文件  ·  {FormatBytes(summary.TotalBytes)}\n音符 {summary.NoteCount}  轨道 {summary.TrackCount}  特效 {summary.EffectCount}  Mesh {summary.MeshCount}  音频 {summary.AudioCount}",
                     row, 15, TextAnchor.MiddleRight, selected ? new Vector2(.56f, .52f) : new Vector2(.56f, .18f),
                     selected ? new Vector2(.97f, .86f) : new Vector2(.97f, .82f), muted);
 
@@ -1798,10 +1799,10 @@ namespace ChunithmMobile.Runtime
                 previous.interactable = managedSkinPreviewPage > 0;
                 next.interactable = managedSkinPreviewPage + 1 < pageCount;
                 string missingText = skin.BuiltIn
-                    ? "内置原版皮肤：所有外部皮肤缺少的资源都会从这里补全。"
+                    ? "内置基础皮肤：所有外部皮肤缺少的资源都会从这里补全。"
                     : summary.Missing.Count == 0
                     ? "缺少资源：无，当前皮肤包资源完整。"
-                    : "缺少资源：" + summary.Missing.Count + " 项，以下项目会使用原版皮肤资源\n" + string.Join("\n", summary.Missing.Take(14).Select(path => "· " + path)) +
+                    : "缺少资源：" + summary.Missing.Count + " 项，以下项目会使用内置基础皮肤资源\n" + string.Join("\n", summary.Missing.Take(14).Select(path => "· " + path)) +
                       (summary.Missing.Count > 14 ? "\n· 其余项目请继续查看导入详情" : "");
                 Label(missingText, row, 13, TextAnchor.UpperLeft, new Vector2(.70f, .03f), new Vector2(.97f, .40f),
                     skin.BuiltIn || summary.Missing.Count == 0 ? new Color(.40f, 1f, .62f) : new Color(1f, .72f, .28f));
@@ -1834,7 +1835,7 @@ namespace ChunithmMobile.Runtime
                 return;
             }
             if (skin.BuiltIn) {
-                ShowModal("无法删除内置皮肤", "当前原版皮肤由软件内置，不能删除。", null, false);
+                ShowModal("无法删除内置皮肤", "当前基础皮肤由软件内置，不能删除。", null, false);
                 return;
             }
             ShowModal("删除游玩皮肤", "将删除“" + skin.Name + "”及其全部资源。\n此操作无法撤销。", DeleteManagedSkin, true);
@@ -2305,11 +2306,11 @@ namespace ChunithmMobile.Runtime
             SkinToggle("AIR 拖尾颜色", "彩虹色", settings.AirTrailRainbow,
                 value => ChangeSetting(() => settings.AirTrailRainbow = value));
             GameplaySkinResourceSummary activeSummary = GameplaySkinManager.GetResourceSummary(GameplaySkinManager.Active);
-            string resourceState = GameplaySkinManager.Active.BuiltIn ? "内置原版资源"
+            string resourceState = GameplaySkinManager.Active.BuiltIn ? "内置基础资源"
                 : activeSummary.Missing.Count == 0 ? "资源完整"
-                : activeSummary.Missing.Count + " 项缺失，将使用原版皮肤";
+                : activeSummary.Missing.Count + " 项缺失，将使用内置基础皮肤";
             SkinAction("当前皮肤资源", resourceState, null);
-            SkinAction("导入游玩皮肤", ".cmgameplay", BeginGameplaySkinImport);
+            SkinAction("导入游玩皮肤", "支持部分资源，缺失项自动使用内置基础皮肤", BeginGameplaySkinImport);
             SkinAction("管理游玩皮肤", "›", OpenGameplaySkinManagement);
             SettingsFooter("音频", () => ShowSettingsCategory("音频"));
         }
@@ -3465,6 +3466,9 @@ namespace ChunithmMobile.Runtime
             gameplaySkinLive2D.Initialize();
             gameplaySkinCubism = live2DLayer.gameObject.AddComponent<GameplaySkinCubismRenderer>();
             gameplaySkinCubism.Initialize(page);
+            RectTransform customDisplayLayer = RectObject("Gameplay skin custom displays", page, Vector2.zero, Vector2.one);
+            gameplaySkinCustomDisplay = customDisplayLayer.gameObject.AddComponent<GameplaySkinCustomDisplay>();
+            gameplaySkinCustomDisplay.Initialize(page);
             gameplayPauseButton = ButtonText("Ⅱ", page, new Vector2(.018f, .88f), new Vector2(.075f, .975f),
                 HighContrastUi ? UiThemeContrast.Yellow : new Color(.025f, .07f, .11f, .92f), RequestPauseGameplay);
             gameplayPauseButton.name = "Pause button";
@@ -5068,6 +5072,7 @@ namespace ChunithmMobile.Runtime
 
         private void SetGameplayScene(bool active)
         {
+            GameplaySkinEvents.PublishGameplayState(active);
             if (!active) {
                 CancelGameplayResume();
                 SetGameplayInputSuppressed(false);
@@ -5174,6 +5179,9 @@ namespace ChunithmMobile.Runtime
             gameplayCountdown.text = "";
             playedDeltas.Clear();
             CaptureGameplayTimingSettings();
+            // A replay is a new visual session, even when the gameplay page
+            // stays enabled. Old threshold edges must not survive the replay.
+            gameplaySkinCustomDisplay?.RefreshSkin();
             gameplaySession.PlaySong(playedSong, playedChart, mods.MusicRate, mods.AutoPlay,
                 mods.AirAreaAuto, mods.DirectionalAirAuto, mods.MineImmunity, mods.AirLongNoMotion,
                 musicOffsetMs: playedMusicOffsetMs, judgementOffsetMs: playedJudgeOffsetMs,
@@ -5630,14 +5638,14 @@ namespace ChunithmMobile.Runtime
                 importDetailLines.Add("作者：" + (string.IsNullOrWhiteSpace(skin.Author) ? "未填写" : skin.Author));
                 GameplaySkinResourceSummary summary = GameplaySkinManager.GetResourceSummary(skin);
                 if (summary.Missing.Count > 0) {
-                    importStatus.text = "皮肤导入完成，部分资源将使用原版";
+                    importStatus.text = "皮肤导入完成，部分资源将使用内置基础皮肤";
                     importEta.text = $"版本 {skin.Version}  ·  缺少 {summary.Missing.Count} 项";
                 }
                 importDetailLines.Add($"资源：音符 {summary.NoteCount}，轨道 {summary.TrackCount}，特效 {summary.EffectCount}，Mesh {summary.MeshCount}，音频 {summary.AudioCount}，UI {summary.UiCount}");
                 if (summary.Missing.Count == 0) {
                     importDetailLines.Add("资源检查完成：没有发现缺少的标准资源。");
                 } else {
-                    importDetailLines.Add($"缺少 {summary.Missing.Count} 项资源；以下缺少项目会使用原版皮肤：");
+                    importDetailLines.Add($"缺少 {summary.Missing.Count} 项资源；以下缺少项目会使用内置基础皮肤：");
                     foreach (string missing in summary.Missing) importDetailLines.Add("· " + missing);
                 }
                 importDetailLines.Add("资源已缓存，下一次进入游玩时使用。");
@@ -5679,6 +5687,7 @@ namespace ChunithmMobile.Runtime
         private void UpdateGameplayHud()
         {
             if (currentPage != AppPage.Gameplay || gameplaySession == null || gameplayScore == null) return;
+            GameplaySkinEvents.PublishGameplayState(gameplaySession.gameObject.activeInHierarchy);
             UpdateGameplayFps();
             double duration = gameplaySession.PlaybackDurationMs;
             SetGameplayProgress(duration > 0
@@ -5723,6 +5732,7 @@ namespace ChunithmMobile.Runtime
             }
             gameplayJudgements.text = $"JC {score.JusticeCritical}   J {score.Justice}   AT {score.Attack}   MISS {score.Miss}";
             GameplaySkinEvents.PublishMetrics(score.Combo, currentScore, score.MaxCombo, ResultViewModel.RankForScore(currentScore));
+            PublishSkinDisplayMetric(score, totalPoints, metricMode, currentScore, remainingCombo);
             if (gameplayJudgementBlock != null && gameplayJudgementBlock.gameObject.activeSelf && Time.unscaledTime >= gameplayTimingHideAt)
                 gameplayJudgementBlock.gameObject.SetActive(false);
             UpdateGameplayInputFeedback();
@@ -5738,6 +5748,28 @@ namespace ChunithmMobile.Runtime
                 4 => 975000,  // S+
                 _ => 950000   // S
             };
+        }
+
+        // Publish the signed allowance, not the clamped/hidden HUD text. Skins
+        // need the crossing below zero to show a lost-rank effect correctly.
+        private void PublishSkinDisplayMetric(GameplayScoreState score, int total, int mode,
+            int currentScore, int remainingCombo)
+        {
+            double loss = total > 0 ? (10000.0 * score.Justice +
+                510000.0 * score.Attack + 1010000.0 * score.Miss) / total : 0;
+            int value;
+            if (mode == 0) value = score.Combo;
+            else if (mode == 1) value = remainingCombo;
+            else if (mode == 2) value = currentScore;
+            else if (mode <= 8) value = (int)Math.Ceiling(1010000.0 - TargetScoreForRank(mode - 3) - loss);
+            else if (mode == 9) value = LostScore(score, total);
+            else {
+                int best = 0;
+                if (playedSong != null && playedChart != null)
+                    SongRecordStore.TryGet(playedSong.Root, playedChart.Difficulty, playedChart.Path, out best);
+                value = best > 0 ? (int)Math.Ceiling(Math.Max(0, 1010000.0 - best) - loss) : 0;
+            }
+            GameplaySkinEvents.PublishDisplayMetric(mode, value);
         }
 
         private static int RemainingRankAllowance(GameplayScoreState score, int total, int rank)
@@ -5801,7 +5833,21 @@ namespace ChunithmMobile.Runtime
         private void UpdateGameplayInputFeedback()
         {
             ArcadeInputFrame frame = inputRig?.Ground?.Current;
-            if (frame == null) return;
+            bool feedbackActive = inputRig != null && !inputRig.InputSuppressed;
+            if (frame == null) {
+                // Publish the suppression edge even when the input rig has no
+                // ground sample, so skins cannot react to one stale touch on
+                // the first paused frame.
+                GameplaySkinEvents.PublishTouchTelemetry(new GameplaySkinEvents.TouchTelemetrySnapshot(
+                    default, default, Time.unscaledTime * 1000.0, feedbackActive));
+                return;
+            }
+            // Publish telemetry before zone/input events; listeners need the
+            // current pause/countdown gate before consuming this same frame.
+            GameplaySkinEvents.PublishTouchTelemetry(new GameplaySkinEvents.TouchTelemetrySnapshot(
+                BuildTouchTrack(frame, true), BuildTouchTrack(frame, false),
+                frame.Ground.Count > 0 ? frame.Ground[0].TimeMs : Time.unscaledTime * 1000.0,
+                feedbackActive));
             GameplaySkinEvents.PublishInput(frame);
             bool leftTop = false, leftBottom = false, rightTop = false, rightBottom = false;
             foreach (GroundContact contact in frame.Ground) {
@@ -5813,10 +5859,6 @@ namespace ChunithmMobile.Runtime
             }
             GameplaySkinEvents.PublishTouchZones(new GameplaySkinEvents.TouchZoneSnapshot(
                 leftTop, leftBottom, rightTop, rightBottom));
-            GameplaySkinEvents.PublishTouchTelemetry(new GameplaySkinEvents.TouchTelemetrySnapshot(
-                BuildTouchTrack(frame, true), BuildTouchTrack(frame, false),
-                frame.Ground.Count > 0 ? frame.Ground[0].TimeMs : Time.unscaledTime * 1000.0,
-                inputRig != null && !inputRig.InputSuppressed));
             UpdateTouchpadFeedback(settings, frame, false);
             if (gameplayAirGuide == null) return;
             bool show = !IsFullscreenTouchpadActive() && settings.ShowAirGuide &&
@@ -5986,6 +6028,7 @@ namespace ChunithmMobile.Runtime
             gameplaySkinTouchOverlay?.RefreshSkin();
             gameplaySkinLive2D?.RefreshSkin();
             gameplaySkinCubism?.RefreshSkin();
+            gameplaySkinCustomDisplay?.RefreshSkin();
             if (gameplayScore != null) gameplayScore.color = gameplaySkin.ScoreColor;
             if (gameplayCombo != null) gameplayCombo.color = gameplaySkin.ComboColor;
             RefreshJudgementSkin();

@@ -49,6 +49,62 @@ LICENSE-MIT.txt
 
 `hiddenParts` 最多 32 个 ID，隐藏直接属于相应模型 Part 的绘制对象，用于去掉摇杆、服饰等附件；不会删除模型或触控功能。
 
+## 声明式自定义显示
+
+自定义图片显示不要求 Live2D。把 `customDisplays` 放在
+`ui/gameplay-ui.json` 的根对象中即可，图片必须是皮肤目录内的 PNG；每条规则的
+`id` 必须唯一，最多 48 条。皮肤包只提供数据和图片，不会执行脚本、DLL、Shader
+或回调，因此显示层不能修改判定、Combo、分数和输入。
+
+```json
+{
+  "customDisplays": [
+    {
+      "id": "combo100",
+      "trigger": "combo",
+      "condition": "equal",
+      "threshold": 100,
+      "image": "ui/custom/combo100.png",
+      "x": 0.40,
+      "y": 0.70,
+      "width": 0.20,
+      "height": 0.16,
+      "duration": 1.2,
+      "fadeIn": 0.12,
+      "fadeOut": 0.35,
+      "scaleFrom": 0.7,
+      "scaleTo": 1.0,
+      "rotation": 0
+    },
+    {
+      "id": "airRise",
+      "trigger": "air",
+      "value": "rising",
+      "image": "ui/custom/air-rise.png"
+    }
+  ]
+}
+```
+
+支持的 `trigger` 是 `combo`、`score`、`rank`、`judgement`、`air`、`touch` 和
+`gameplay`。`combo`/`score` 使用 `threshold`，条件可用 `equal`、
+`less_or_equal` 或默认的跨过阈值；`rank` 可用 `SSS+`、`SSS`、`SS+`、`SS`、
+`S+`、`S` 等评级；`judgement` 的值是 `justice_critical`、`justice`、`attack`、
+`miss`；`air` 可用 `active`、`rising`、`falling`、`enter`、`exit` 或
+`sensor1` 到 `sensor6`；`touch` 可用 `any`、`lefttop`、`leftbottom`、
+`righttop`、`rightbottom`；`gameplay` 可用 `start` 和 `stop`。
+
+若要跟随设置中的“音符下方显示”模式触发，使用 `trigger: "displayed_metric"`，
+`mode` 可填 `combo`、`remaining_combo`、`score`、`sss+`、`sss`、`ss+`、`ss`、
+`s+`、`s`、`lost_score` 或 `best_score`。例如 `condition: "less"`、`threshold: 0`
+会在对应的剩余值第一次跌到 0 以下时显示图片；该值以只读事件传给皮肤，仍不
+参与成绩计算。动画还支持 `opacity`、`rotationTo` 和 `animateRotation: true`。
+
+坐标和尺寸是游玩页面的 0..1 归一化值，原点在左下角。图片会按规则独立创建，
+支持淡入、淡出、缩放和旋转，单次最多同时显示 24 个对象。解析会拒绝重复
+ID、越界路径、非 PNG 图片、超大图片和非法数值。暂停菜单在自定义显示层之上，
+不会被皮肤图片挡住。
+
 ## 动作与边界
 
 可选 `idleMotion`、`leftPressMotion`、`rightPressMotion` 填 `.model3.json` 中的动作组名称。每组播放第一条动作；空闲动作循环，按下动作在新按下时播放一次，然后回到空闲。触控参数在动作采样之后写入，防止动作覆盖猫爪位置。动作只接受模型现有 Parameter、PartOpacity 和 Model/Opacity 曲线，不执行音效、用户事件或外部代码。
@@ -68,7 +124,7 @@ LICENSE-MIT.txt
 
 示例源码位于 `Examples/Skins/BongoCatLive2DTouch`，资源来自 https://github.com/vladelaina/BongoCat ，包含模型素材 MIT 许可证和用户提供的平板图片，不包含 BongoCat 程序源码。
 
-在数据管理中导入 ZIP，然后在游玩皮肤列表选中 `BongoCat Live2D 平板触控 v4`，进入歌曲测试。v4 使用新 ID，并将左侧爪子的横向模型范围收进平板；普通音符继续使用内置基础皮肤。
+在数据管理中导入 ZIP，然后在游玩皮肤列表选中 `BongoCat Live2D 平板触控 v4`，进入歌曲测试。v4 使用新 ID，并将左侧爪子的横向模型范围收进平板；普通音符继续使用内置基础皮肤。没有模型的普通图片皮肤也可以单独使用上面的 `customDisplays`。
 
 `Live2DSkinSelfTest.Run` 覆盖真实 ZIP 导入、原生模型、透明像素、左手/右手/双手/暂停姿态变化、另一套带裁切遮罩的模型、目录限制和资源释放。截图写到 `Build/live2d-*.png`。Editor 测试不能代替 Android/iPhone 真机测试。
 

@@ -61,6 +61,7 @@ $testMarkers = @{
     PreparationAndLongHeadSelfTest = 'Preparation/long-head/level regression passed:'
     DdsTextureDecoderSelfTest = 'DDS texture regression passed:'
     Live2DSkinSelfTest = 'Live2D skin regression passed:'
+    GameplaySkinCustomDisplaySelfTest = 'Custom display regression passed:'
     SkinSettingsSelfTest = 'Skin UI regression passed:'
     SkinWidthSelfTest = 'Skin UV regression passed:'
     SlideHeadSelfTest = 'Slide head regression passed:'

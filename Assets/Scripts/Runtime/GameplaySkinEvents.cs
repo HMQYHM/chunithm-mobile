@@ -91,6 +91,17 @@ namespace ChunithmMobile.Runtime
         /// <summary>发布 Combo、当前分数、最高 Combo 和当前评级。</summary>
         public static event Action<int, int, int, string> MetricsUpdated;
 
+        /// <summary>The below-note mode and signed value, even after its text is hidden.</summary>
+        public static event Action<string, int> DisplayMetricUpdated;
+
+        private static readonly string[] displayMetricNames = {
+            "combo", "remaining_combo", "score", "sss+", "sss", "ss+", "ss", "s+", "s", "lost_score", "best_score"
+        };
+
+        /// <summary>Stable package names matching the persisted HUD mode indices.</summary>
+        public static string DisplayMetricName(int mode) =>
+            mode >= 0 && mode < displayMetricNames.Length ? displayMetricNames[mode] : "unknown";
+
         /// <summary>发布一次判定结果；皮肤只能读取结果，不能修改成绩。</summary>
         public static event Action<Chart.Judgement> JudgementUpdated;
 
@@ -110,6 +121,10 @@ namespace ChunithmMobile.Runtime
         /// <summary>将成绩指标广播给皮肤表现层。</summary>
         public static void PublishMetrics(int combo, int score, int maxCombo, string rank) =>
             MetricsUpdated?.Invoke(combo, score, maxCombo, rank ?? "");
+
+        /// <summary>Visual telemetry only; publishing this never changes score or judgement.</summary>
+        public static void PublishDisplayMetric(int mode, int value) =>
+            DisplayMetricUpdated?.Invoke(DisplayMetricName(mode), value);
 
         /// <summary>将判定等级广播给皮肤表现层。</summary>
         public static void PublishJudgement(Chart.Judgement judgement) => JudgementUpdated?.Invoke(judgement);
