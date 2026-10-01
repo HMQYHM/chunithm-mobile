@@ -1,0 +1,82 @@
+{
+  "combo": {
+    "color": "#F8FBFF",
+    "fontSize": 58,
+    "digits": [
+      { "digit": "0", "image": "ui/numbers/combo/0.png" },
+      { "digit": "1", "image": "ui/numbers/combo/1.png" },
+      { "digit": "2", "image": "ui/numbers/combo/2.png" },
+      { "digit": "3", "image": "ui/numbers/combo/3.png" },
+      { "digit": "4", "image": "ui/numbers/combo/4.png" },
+      { "digit": "5", "image": "ui/numbers/combo/5.png" },
+      { "digit": "6", "image": "ui/numbers/combo/6.png" },
+      { "digit": "7", "image": "ui/numbers/combo/7.png" },
+      { "digit": "8", "image": "ui/numbers/combo/8.png" },
+      { "digit": "9", "image": "ui/numbers/combo/9.png" }
+    ]
+  },
+  "score": {
+    "color": "#DDF7FF",
+    "fontSize": 42,
+    "digits": [
+      { "digit": "0", "image": "ui/numbers/score/0.png" },
+      { "digit": "1", "image": "ui/numbers/score/1.png" },
+      { "digit": "2", "image": "ui/numbers/score/2.png" },
+      { "digit": "3", "image": "ui/numbers/score/3.png" },
+      { "digit": "4", "image": "ui/numbers/score/4.png" },
+      { "digit": "5", "image": "ui/numbers/score/5.png" },
+      { "digit": "6", "image": "ui/numbers/score/6.png" },
+      { "digit": "7", "image": "ui/numbers/score/7.png" },
+      { "digit": "8", "image": "ui/numbers/score/8.png" },
+      { "digit": "9", "image": "ui/numbers/score/9.png" }
+    ]
+  },
+  "judgements": { "color": "#FFFFFF", "fontSize": 16 },
+  "elements": [
+    { "id": "songInfo", "visible": true, "x": 0.03, "y": 0.72, "width": 0.28, "height": 0.14, "opacity": 0.94, "color": "#071521" },
+    { "id": "songCover", "visible": true, "x": 0.04, "y": 0.73, "width": 0.10, "height": 0.12, "opacity": 1, "image": "ui/tablet.png" },
+    { "id": "scoreHud", "visible": true, "x": 0.77, "y": 0.80, "width": 0.21, "height": 0.18, "opacity": 1 },
+    { "id": "comboHud", "visible": true, "x": 0.80, "y": 0.84, "width": 0.16, "height": 0.10, "opacity": 1, "textColor": "#F8FBFF", "textSize": 58 },
+    { "id": "judgement", "visible": true, "x": 0.34, "y": 0.42, "width": 0.32, "height": 0.20, "opacity": 1 },
+    { "id": "judgementImage", "visible": true, "x": 0.40, "y": 0.48, "width": 0.20, "height": 0.10, "opacity": 1 },
+    { "id": "pauseButton", "visible": true, "x": 0.018, "y": 0.88, "width": 0.06, "height": 0.08, "opacity": 1, "label": "Ⅱ" },
+    { "id": "pausePanel", "visible": true, "x": 0.34, "y": 0.24, "width": 0.32, "height": 0.52, "opacity": 0.96 },
+    { "id": "progressBar", "visible": true, "x": 0.05, "y": 0.96, "width": 0.90, "height": 0.008, "opacity": 0.9, "color": "#4DE6FF" },
+    { "id": "fps", "visible": true, "x": 0.02, "y": 0.02, "width": 0.14, "height": 0.04, "opacity": 0.58, "textSize": 18 },
+    { "id": "countdown", "visible": true, "x": 0.38, "y": 0.36, "width": 0.24, "height": 0.30, "opacity": 1, "textSize": 96 },
+    { "id": "touchpad", "visible": true, "x": 0.20, "y": 0.04, "width": 0.60, "height": 0.34, "opacity": 0.82 },
+    { "id": "airZone", "visible": true, "x": 0.05, "y": 0.55, "width": 0.90, "height": 0.34, "opacity": 0.10 },
+    { "id": "airBoundaryBottom", "visible": true, "x": 0.05, "y": 0.52, "width": 0.90, "height": 0.008, "opacity": 0.88, "color": "#29E9FF" },
+    { "id": "airBoundaryTop", "visible": true, "x": 0.05, "y": 0.88, "width": 0.90, "height": 0.008, "opacity": 0.72, "color": "#A0B2FF" },
+    { "id": "airGuide", "visible": true, "x": 0.05, "y": 0.70, "width": 0.90, "height": 0.008, "opacity": 0.94, "color": "#59F0FF" },
+    { "id": "trackMask", "visible": true, "x": 0.05, "y": 0.72, "width": 0.90, "height": 0.20, "opacity": 0.20 },
+    { "id": "touchFeedback", "visible": true, "x": 0, "y": 0, "width": 1, "height": 1, "opacity": 1 }
+  ],
+  "belowNoteMetric": { "mode": "combo" },
+  "scene": {
+    "background": { "image": "ui/tablet.png", "color": "#06111B", "opacity": 0.10 },
+    "track": { "image": "ui/tablet.png", "laneImage": "ui/tablet.png", "color": "#FFFFFF", "laneColor": "#36CBE0", "guideColor": "#7FEFFF", "edgeColor": "#A9F5FF", "judgementLineColor": "#FFFFFF" }
+  },
+  "live2d": {
+    "enabled": true,
+    "model": "model/cat.model3.json",
+    "x": 0.015, "y": 0.34, "width": 0.20, "height": 0.36,
+    "background": { "image": "ui/tablet.png", "x": -0.53, "y": -0.375, "width": 1.2, "height": 0.72 },
+    "hiddenParts": ["leftstick", "rightstick", "Part8", "Part10", "Part4", "Part6"],
+    "leftXParameter": "CatParamStickRX", "leftYParameter": "CatParamStickRY", "leftXRange": { "min": 0.75, "max": 1.0 },
+    "rightXParameter": "CatParamStickLX", "rightYParameter": "CatParamStickLY", "rightXRange": { "min": 0.0, "max": 0.5 },
+    "leftVisibleParameter": "CatParamStickShowRightHand", "rightVisibleParameter": "CatParamStickShowLeftHand",
+    "leftDownParameter": "CatParamRightHandDown", "rightDownParameter": "CatParamLeftHandDown",
+    "idleMotion": "CAT_motion", "leftPressMotion": "CAT_motion_lock", "rightPressMotion": "CAT_motion_lock"
+  },
+  "customDisplays": [
+    { "id": "combo100", "enabled": true, "trigger": "combo", "condition": "equal", "threshold": 100, "action": "image", "image": "ui/tablet.png", "x": 0.39, "y": 0.70, "width": 0.22, "height": 0.10, "duration": 0.60, "fadeIn": 0.08, "fadeOut": 0.25, "scaleFrom": 0.70, "scaleTo": 1.0, "opacity": 0.20 },
+    { "id": "score100k", "enabled": true, "trigger": "score", "condition": "greater_or_equal", "threshold": 100000, "action": "image", "image": "ui/tablet.png", "x": 0.38, "y": 0.62, "width": 0.24, "height": 0.10, "duration": 0.35, "fadeIn": 0.05, "fadeOut": 0.20, "opacity": 0.16 },
+    { "id": "sssPlus", "enabled": true, "trigger": "rank", "value": "sss+", "action": "image", "image": "ui/tablet.png", "x": 0.42, "y": 0.74, "width": 0.16, "height": 0.08, "duration": 0.80, "fadeIn": 0.08, "fadeOut": 0.40, "scaleFrom": 0.80, "scaleTo": 1.10, "opacity": 0.18 },
+    { "id": "justiceCritical", "enabled": true, "trigger": "judgement", "value": "justice_critical", "action": "image", "image": "ui/tablet.png", "x": 0.45, "y": 0.52, "width": 0.10, "height": 0.06, "duration": 0.20, "fadeOut": 0.15, "opacity": 0.14 },
+    { "id": "airEnter", "enabled": true, "trigger": "air", "value": "enter", "condition": "enter", "action": "image", "image": "ui/tablet.png", "x": 0.30, "y": 0.60, "width": 0.40, "height": 0.08, "duration": 0.25, "fadeOut": 0.18, "opacity": 0.12 },
+    { "id": "touchAny", "enabled": true, "trigger": "touch", "value": "any", "condition": "rising", "action": "image", "image": "ui/tablet.png", "x": 0.40, "y": 0.30, "width": 0.20, "height": 0.08, "duration": 0.12, "fadeOut": 0.10, "opacity": 0.10 },
+    { "id": "startMotion", "enabled": true, "trigger": "gameplay", "value": "start", "action": "live2dMotion", "motion": "CAT_motion" },
+    { "id": "metricLoss", "enabled": false, "trigger": "displayed_metric", "mode": "sss+", "condition": "less", "threshold": 0, "action": "image", "image": "ui/tablet.png", "x": 0, "y": 0, "width": 1, "height": 1, "duration": 0.4, "opacity": 0.06 }
+  ]
+}

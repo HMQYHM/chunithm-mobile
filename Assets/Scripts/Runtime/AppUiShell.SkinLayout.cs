@@ -14,12 +14,30 @@ namespace ChunithmMobile.Runtime
         private void ApplyGameplaySkinLayout(GameplaySkinStyle style)
         {
             if (style == null) return;
+            if (!pages.TryGetValue(AppPage.Gameplay, out RectTransform canvas)) return;
+            // Parent geometry must settle before child coordinates are converted.
+            // Export order is a layer list, not a transform dependency order.
             foreach (GameplaySkinElementDefinition element in style.LayoutElements)
             {
                 if (element == null) continue;
                 RectTransform target = LayoutTarget(element.Id);
                 if (target == null) continue;
-                ApplySkinRect(target, element);
+                if (element.Id == "songCover" || element.Id == "judgementImage") continue;
+                SetCanvasSkinRect(target, canvas, element);
+            }
+            foreach (GameplaySkinElementDefinition element in style.LayoutElements)
+            {
+                if (element == null) continue;
+                RectTransform target = LayoutTarget(element.Id);
+                if (target == null) continue;
+                if (element.Id == "songCover")
+                    SetCanvasSkinRect(gameplaySongInfoCoverMask, canvas, element);
+                if (element.Id == "judgementImage") {
+                    // FitInParent otherwise overwrites the authored rectangle.
+                    var fitter = target.GetComponent<AspectRatioFitter>();
+                    if (fitter != null) fitter.enabled = false;
+                    SetCanvasSkinRect(target, canvas, element);
+                }
                 ApplySkinVisual(target.gameObject, element, IsDynamicLayoutElement(element.Id));
             }
         }
@@ -63,10 +81,30 @@ namespace ChunithmMobile.Runtime
             // cannot restore AIR or shrink that MOD's full-screen ground area.
             if (IsFullscreenTouchpadActive() || inputRig == null || style == null) return;
             GameplaySkinElementDefinition ground = style.LayoutElement("touchpad");
-            if (TrySkinArea(ground, out Rect groundArea)) inputRig.Ground?.SetPlayArea(groundArea);
+            Rect viewport = SkinCanvasViewport();
+            if (TrySkinArea(ground, out Rect groundArea)) inputRig.Ground?.SetPlayArea(MapSkinArea(groundArea, viewport));
             GameplaySkinElementDefinition air = style.LayoutElement("airZone");
-            if (TrySkinArea(air, out Rect airArea)) inputRig.Air?.SetAirArea(airArea);
+            if (TrySkinArea(air, out Rect airArea)) inputRig.Air?.SetAirArea(MapSkinArea(airArea, viewport));
         }
+
+        // Sensor coordinates are screen-relative; Studio coordinates belong to
+        // the safe gameplay page. Use its actual corners, including iOS insets.
+        private Rect SkinCanvasViewport()
+        {
+            if (!pages.TryGetValue(AppPage.Gameplay, out RectTransform page) || Screen.width <= 0 || Screen.height <= 0)
+                return new Rect(0, 0, 1, 1);
+            var corners = new Vector3[4];
+            page.GetWorldCorners(corners);
+            Canvas canvas = page.GetComponentInParent<Canvas>();
+            Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            Vector2 min = RectTransformUtility.WorldToScreenPoint(camera, corners[0]);
+            Vector2 max = RectTransformUtility.WorldToScreenPoint(camera, corners[2]);
+            return Rect.MinMaxRect(min.x / Screen.width, min.y / Screen.height, max.x / Screen.width, max.y / Screen.height);
+        }
+
+        private static Rect MapSkinArea(Rect area, Rect viewport) => new Rect(
+            viewport.x + area.x * viewport.width, viewport.y + area.y * viewport.height,
+            area.width * viewport.width, area.height * viewport.height);
 
         private static bool TrySkinArea(GameplaySkinElementDefinition element, out Rect area)
         {
@@ -79,12 +117,19 @@ namespace ChunithmMobile.Runtime
             return area.width >= .01f && area.height >= .01f;
         }
 
-        private void ApplySkinRect(RectTransform target, GameplaySkinElementDefinition element)
+        private static void SetCanvasSkinRect(RectTransform target, RectTransform canvas, GameplaySkinElementDefinition element)
         {
+            if (target == null || canvas == null || !(target.parent is RectTransform parent)) return;
             if (element.X < 0 || element.Y < 0 || element.Width <= 0 || element.Height <= 0) return;
-            target.anchorMin = new Vector2(Mathf.Clamp01(element.X), Mathf.Clamp01(element.Y));
-            target.anchorMax = new Vector2(Mathf.Clamp01(element.X + element.Width),
-                Mathf.Clamp01(element.Y + element.Height));
+            if (parent.rect.width <= 0 || parent.rect.height <= 0) return;
+            Rect bounds = canvas.rect;
+            Vector3 min = parent.InverseTransformPoint(canvas.TransformPoint(new Vector3(
+                bounds.xMin + bounds.width * element.X, bounds.yMin + bounds.height * element.Y)));
+            Vector3 max = parent.InverseTransformPoint(canvas.TransformPoint(new Vector3(
+                bounds.xMin + bounds.width * Mathf.Min(1, element.X + element.Width),
+                bounds.yMin + bounds.height * Mathf.Min(1, element.Y + element.Height))));
+            target.anchorMin = new Vector2((min.x - parent.rect.xMin) / parent.rect.width, (min.y - parent.rect.yMin) / parent.rect.height);
+            target.anchorMax = new Vector2((max.x - parent.rect.xMin) / parent.rect.width, (max.y - parent.rect.yMin) / parent.rect.height);
             target.offsetMin = target.offsetMax = Vector2.zero;
             target.pivot = new Vector2(.5f, .5f);
             target.localRotation = Quaternion.identity;

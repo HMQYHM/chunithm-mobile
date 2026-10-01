@@ -19,21 +19,20 @@ namespace ChunithmMobile.Runtime
         private string lastText;
         private int lastRevision = -1;
         private Color sourceColor;
+        private int lastFontSize;
 
         public void Initialize(Text text, string stylePart)
         {
             source = text;
             part = stylePart;
-            sourceColor = stylePart == "combo" ? GameplaySkinManager.Style.ComboColor :
-                GameplaySkinManager.Style.ScoreColor;
+            sourceColor = EffectiveColor();
             Refresh(true);
         }
 
         /// <summary>Refreshes the renderer after a skin or color setting changes.</summary>
         public void RefreshSkin()
         {
-            sourceColor = part == "combo" ? GameplaySkinManager.Style.ComboColor :
-                GameplaySkinManager.Style.ScoreColor;
+            sourceColor = EffectiveColor();
             lastRevision = -1;
             Refresh(true);
         }
@@ -46,7 +45,11 @@ namespace ChunithmMobile.Runtime
         private void Refresh(bool force)
         {
             if (source == null) return;
-            if (!force && lastText == source.text && lastRevision == GameplaySkinManager.StyleRevision) return;
+            Color color = EffectiveColor();
+            if (!force && lastText == source.text && lastRevision == GameplaySkinManager.StyleRevision &&
+                lastFontSize == source.fontSize && sourceColor == color) return;
+            sourceColor = color;
+            lastFontSize = source.fontSize;
             lastText = source.text;
             lastRevision = GameplaySkinManager.StyleRevision;
             string[] lines = (source.text ?? string.Empty).Split('\n');
@@ -83,7 +86,14 @@ namespace ChunithmMobile.Runtime
         private void Build(List<List<Sprite>> rows, List<string> labels)
         {
             EnsureLayer();
-            foreach (Transform child in layer.transform) Destroy(child.gameObject);
+            // Deferred destruction must not leave old digits in the layout for
+            // the remainder of the frame; Editor self-tests cannot use Destroy.
+            while (layer.transform.childCount > 0) {
+                GameObject child = layer.transform.GetChild(0).gameObject;
+                child.SetActive(false);
+                child.transform.SetParent(null, false);
+                if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
+            }
             var vertical = layer.GetComponent<VerticalLayoutGroup>();
             vertical.childAlignment = TextAnchor.MiddleCenter;
             vertical.childControlWidth = true;
@@ -103,6 +113,7 @@ namespace ChunithmMobile.Runtime
                     label.fontSize = source.fontSize;
                     label.alignment = TextAnchor.MiddleCenter;
                     label.color = sourceColor;
+                    label.raycastTarget = false;
                     label.text = labels[rowIndex];
                     continue;
                 }
@@ -124,6 +135,7 @@ namespace ChunithmMobile.Runtime
                     image.sprite = sprite;
                     image.preserveAspect = true;
                     image.color = sourceColor;
+                    image.raycastTarget = false;
                     float aspect = sprite.rect.height > 0 ? sprite.rect.width / sprite.rect.height : 1f;
                     image.rectTransform.sizeDelta = new Vector2(source.fontSize * aspect, source.fontSize);
                 }
@@ -149,6 +161,16 @@ namespace ChunithmMobile.Runtime
         {
             if (layer != null) layer.SetActive(false);
             source.color = sourceColor;
+        }
+
+        // The element inspector overrides the part-wide tint, just as it does
+        // for ordinary Text. Generated sprites never become input targets.
+        private Color EffectiveColor()
+        {
+            GameplaySkinStyle style = GameplaySkinManager.Style;
+            var element = style.LayoutElement(part == "combo" ? "comboHud" : "scoreHud");
+            return element != null && ColorUtility.TryParseHtmlString(element.TextColor, out Color color)
+                ? color : part == "combo" ? style.ComboColor : style.ScoreColor;
         }
     }
 }

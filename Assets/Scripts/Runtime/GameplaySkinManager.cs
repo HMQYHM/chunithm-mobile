@@ -1162,8 +1162,9 @@ namespace ChunithmMobile.Runtime
                 Visible = item.visible,
                 X = ClampFinite(item.x, 0f, 1f, -1f),
                 Y = ClampFinite(item.y, 0f, 1f, -1f),
-                Width = ClampFinite(item.width, .01f, 1f, -1f),
-                Height = ClampFinite(item.height, .01f, 1f, -1f),
+                // Studio uses sub-percent rectangles for borders and progress.
+                Width = ClampFinite(item.width, .001f, 1f, -1f),
+                Height = ClampFinite(item.height, .001f, 1f, -1f),
                 Opacity = ClampFinite(item.opacity, 0f, 1f, 1f),
                 Color = SafeLayoutColor(item.color),
                 Image = image,
@@ -1171,7 +1172,6 @@ namespace ChunithmMobile.Runtime
                 TextSize = Mathf.Clamp(item.textSize, 0, 256),
                 TextColor = SafeLayoutColor(item.textColor)
             };
-            bool hasRect = result.X >= 0 && result.Y >= 0 && result.Width > 0 && result.Height > 0;
             return string.IsNullOrEmpty(item.image) || !string.IsNullOrEmpty(image) ? result : null;
         }
 

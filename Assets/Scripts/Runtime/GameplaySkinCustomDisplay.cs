@@ -56,8 +56,8 @@ namespace ChunithmMobile.Runtime
             haveMetrics = false;
             previousCombo = previousScore = 0;
             previousRank = "";
-            gameplayActive = false;
-            inputActive = true;
+            // Refreshing appearance must not invent a gameplay stop/start or
+            // resume frozen effects while the pause menu is open.
             // Preload once per enabled session, not once per judgement. The
             // entire overlay has a 64 MiB decoded RGBA budget, shared by rules.
             long pixels = 0;
@@ -105,6 +105,7 @@ namespace ChunithmMobile.Runtime
             GameplaySkinEvents.TouchTelemetryUpdated -= OnTouchTelemetry;
             GameplaySkinEvents.GameplayStateChanged -= OnGameplayState;
             subscribed = false;
+            gameplayActive = false;
             StopDisplays();
         }
 
@@ -245,6 +246,15 @@ namespace ChunithmMobile.Runtime
         private void OnGameplayState(bool playing)
         {
             if (!CanDisplay()) return;
+            if (playing && !gameplayActive) {
+                // A restarted song has its own threshold crossings. Old Combo
+                // and touch edges must not suppress the next song's effects.
+                edgeStates.Clear();
+                previousMetrics.Clear();
+                previousCombo = previousScore = 0;
+                previousRank = "";
+                haveMetrics = false;
+            }
             foreach (GameplaySkinCustomDisplayDefinition definition in style.CustomDisplays)
             {
                 if (definition == null || definition.Trigger != "gameplay") continue;
