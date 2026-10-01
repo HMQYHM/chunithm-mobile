@@ -91,7 +91,7 @@
       if (depth > 32) throw Error("Configuration nesting exceeds 32");
       if (!value || typeof value !== "object") return;
       for (const [key, child] of Object.entries(value)) {
-        if (key === "image" && typeof child === "string" && child) {
+        if ((key === "image" || key === "laneImage") && typeof child === "string" && child) {
           const p = path(child); if (!p || !/\.png$/i.test(p)) throw Error("Invalid image: " + child);
           result.add(p);
         } else if (child && typeof child === "object") visit(child, depth + 1);

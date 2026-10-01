@@ -60,6 +60,8 @@ namespace ChunithmMobile.Runtime
         public string Mode;
         public float Opacity;
         public float RotationTo;
+        public string Action = "image";
+        public string Motion = "";
     }
 
     /// <summary>Validated layout override for a built-in gameplay UI element.</summary>
@@ -111,6 +113,14 @@ namespace ChunithmMobile.Runtime
         public Color AirDownColor = new Color(1f, .24f, .68f, 1f);
         public Color AirHoldColor = new Color(.18f, 1f, .62f, 1f);
         public Color AirActionColor = new Color(.76f, .34f, 1f, 1f);
+        // Scene settings are data-only overrides edited by Skin Studio. Empty
+        // image paths preserve the normal song background and built-in track.
+        public string SceneBackgroundImage = "";
+        public bool HasSceneBackground;
+        public Color SceneBackgroundColor = Color.white;
+        public float SceneBackgroundOpacity = 1f;
+        public string TrackTexturePath = "";
+        public string LaneTexturePath = "";
         public int ComboSize = 58;
         public int ScoreSize = 42;
         public int JudgementSize = 16;
@@ -402,6 +412,24 @@ namespace ChunithmMobile.Runtime
             texture = LoadExternalTexture("track/runtime/" + normalized + ".png");
             if (texture != null) return texture;
             return Resources.Load<Texture2D>("OriginalField/" + normalized);
+        }
+
+        /// <summary>Loads an authored scene PNG after applying the same path and size checks as other skin images.</summary>
+        public static Texture2D LoadSceneTexture(string relativePath)
+        {
+            string normalized = SafeDisplayImagePath(relativePath);
+            if (string.IsNullOrEmpty(normalized)) return null;
+            string key = "scene|" + Active.Id + "|" + normalized;
+            if (externalTextures.TryGetValue(key, out Texture2D cached)) return cached;
+            // Header-checked decode is cached for the active skin. It is not
+            // part of the inspect-preview eviction queue used by UI thumbnails.
+            long budget = 16L * 1024 * 1024;
+            foreach (var entry in externalTextures)
+                if (entry.Key.StartsWith("scene|", StringComparison.Ordinal) && entry.Value != null)
+                    budget -= (long)entry.Value.width * entry.Value.height;
+            Texture2D texture = LoadCustomDisplayImage(Active, normalized, budget);
+            if (texture != null) externalTextures[key] = texture;
+            return texture;
         }
 
         public static Texture2D LoadEffectTexture(string relativePath)
@@ -986,6 +1014,24 @@ namespace ChunithmMobile.Runtime
                     result.ScoreWarningEnabled = manifest.effects.scoreWarningEnabled;
                     result.ScoreWarningThreshold = Mathf.Clamp(manifest.effects.scoreWarningThreshold, 0, 1010000);
                 }
+                if (manifest.scene != null)
+                {
+                    result.SceneBackgroundImage = SafeDisplayImagePath(manifest.scene.background?.image);
+                    result.HasSceneBackground = !string.IsNullOrEmpty(result.SceneBackgroundImage) ||
+                        !string.IsNullOrEmpty(SafeLayoutColor(manifest.scene.background?.color));
+                    result.SceneBackgroundColor = ParseColor(manifest.scene.background?.color, result.SceneBackgroundColor);
+                    result.SceneBackgroundOpacity = ClampFinite(manifest.scene.background?.opacity ?? 1f, 0f, 1f, 1f);
+                    result.TrackTexturePath = SafeDisplayImagePath(manifest.scene.track?.image);
+                    result.LaneTexturePath = SafeDisplayImagePath(manifest.scene.track?.laneImage);
+                    if (manifest.scene.track != null)
+                    {
+                        result.TrackColor = ParseColor(manifest.scene.track.color, result.TrackColor);
+                        result.LaneColor = ParseColor(manifest.scene.track.laneColor, result.LaneColor);
+                        result.GuideColor = ParseColor(manifest.scene.track.guideColor, result.GuideColor);
+                        result.EdgeColor = ParseColor(manifest.scene.track.edgeColor, result.EdgeColor);
+                        result.JudgementLineColor = ParseColor(manifest.scene.track.judgementLineColor, result.JudgementLineColor);
+                    }
+                }
                 if (manifest.touchZones != null) {
                     result.TouchOverlayEnabled = manifest.touchZones.enabled;
                     result.TouchOverlayX = Mathf.Clamp01(manifest.touchZones.x);
@@ -1173,15 +1219,20 @@ namespace ChunithmMobile.Runtime
 
         private static GameplaySkinCustomDisplayDefinition ToCustomDisplay(SkinCustomDisplayManifest item)
         {
-            if (item == null || string.IsNullOrWhiteSpace(item.id)) return null;
+            if (item == null || !item.enabled || string.IsNullOrWhiteSpace(item.id)) return null;
             string trigger = (item.trigger ?? "").Trim().ToLowerInvariant();
             if (trigger != "combo" && trigger != "judgement" && trigger != "score" &&
                 trigger != "rank" && trigger != "air" && trigger != "touch" && trigger != "gameplay" &&
                 trigger != "displayed_metric") return null;
             string image = SafeDisplayImagePath(item.image);
-            if (string.IsNullOrEmpty(image)) return null;
+            string action = string.IsNullOrEmpty(item.action) ? "image" : item.action;
+            string motion = SafeMotionName(item.motion);
+            if (action != "image" && action != "live2dMotion" ||
+                action == "image" && string.IsNullOrEmpty(image) ||
+                action == "live2dMotion" && string.IsNullOrEmpty(motion)) return null;
             var result = new GameplaySkinCustomDisplayDefinition {
                 Id = SafeDisplayId(item.id), Trigger = trigger,
+                Action = action, Motion = motion,
                 Condition = SafeDisplayCondition(item.condition), Value = (item.value ?? "").Trim().ToLowerInvariant(),
                 Mode = (item.mode ?? "any").Trim().ToLowerInvariant(),
                 Threshold = ClampFinite(item.threshold, -1010000f, 1010000f, 0f),
@@ -1420,6 +1471,34 @@ namespace ChunithmMobile.Runtime
             public SkinCustomDisplayManifest[] customDisplays;
             public SkinLayoutElementManifest[] elements;
             public SkinMetricModeManifest belowNoteMetric;
+            public SkinSceneManifest scene;
+        }
+
+        [Serializable]
+        private sealed class SkinSceneManifest
+        {
+            public SkinSceneBackgroundManifest background;
+            public SkinSceneTrackManifest track;
+        }
+
+        [Serializable]
+        private sealed class SkinSceneBackgroundManifest
+        {
+            public string image;
+            public string color;
+            public float opacity = 1f;
+        }
+
+        [Serializable]
+        private sealed class SkinSceneTrackManifest
+        {
+            public string image;
+            public string laneImage;
+            public string color;
+            public string laneColor;
+            public string guideColor;
+            public string edgeColor;
+            public string judgementLineColor;
         }
 
         [Serializable]
@@ -1448,6 +1527,9 @@ namespace ChunithmMobile.Runtime
         [Serializable]
         private sealed class SkinCustomDisplayManifest
         {
+            public bool enabled = true;
+            public string action = "image";
+            public string motion;
             public string id;
             public string trigger;
             public string condition = "rising";

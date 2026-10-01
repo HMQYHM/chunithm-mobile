@@ -6067,6 +6067,7 @@ namespace ChunithmMobile.Runtime
             if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(settings.ShowGameplaySongInfo);
             ApplyGameplaySkinLayout(gameplaySkin);
+            ApplySkinInputAreas(gameplaySkin);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
             FindObjectOfType<RuntimeLoadingOverlay>()?.SetHighContrastPalette(HighContrastUi);
         }

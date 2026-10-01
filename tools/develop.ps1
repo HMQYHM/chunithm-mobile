@@ -63,6 +63,7 @@ $testMarkers = @{
     Live2DSkinSelfTest = 'Live2D skin regression passed:'
     GameplaySkinCustomDisplaySelfTest = 'Custom display regression passed:'
     GameplaySkinDigitsSelfTest = 'Gameplay skin digit regression passed:'
+    SkinStudioRulesSelfTest = 'Skin Studio rules regression passed:'
     SkinSettingsSelfTest = 'Skin UI regression passed:'
     SkinWidthSelfTest = 'Skin UV regression passed:'
     SlideHeadSelfTest = 'Slide head regression passed:'

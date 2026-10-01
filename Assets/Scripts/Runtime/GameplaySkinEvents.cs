@@ -108,6 +108,12 @@ namespace ChunithmMobile.Runtime
         /// <summary>通知皮肤当前是否处于有效游玩状态。</summary>
         public static event Action<bool> GameplayStateChanged;
 
+        /// <summary>Data-only motion group request; only the active model may consume it.</summary>
+        public static event Action<string> SkinMotionRequested;
+
+        /// <summary>Requests only a named visual motion, never a gameplay callback.</summary>
+        public static void PublishSkinMotion(string group) => SkinMotionRequested?.Invoke(group);
+
         /// <summary>将输入采样广播给所有已启用的皮肤表现层。</summary>
         public static void PublishInput(ArcadeInputFrame frame) => InputUpdated?.Invoke(frame);
 

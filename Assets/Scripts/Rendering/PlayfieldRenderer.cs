@@ -26,8 +26,8 @@ namespace ChunithmMobile.Rendering
         private void Awake()
         {
             GameplaySkinStyle skin = GameplaySkinManager.Style;
-            trackMaterial = MeshFactory.Material(GameplaySkinManager.LoadTrackTexture("field_blue_16"), skin.TrackColor, true);
-            laneMaterial = MeshFactory.Material(GameplaySkinManager.LoadTrackTexture("barline_blue"), skin.LaneColor);
+            trackMaterial = MeshFactory.Material(GameplaySkinManager.LoadSceneTexture(skin.TrackTexturePath) ?? GameplaySkinManager.LoadTrackTexture("field_blue_16"), skin.TrackColor, true);
+            laneMaterial = MeshFactory.Material(GameplaySkinManager.LoadSceneTexture(skin.LaneTexturePath) ?? GameplaySkinManager.LoadTrackTexture("barline_blue"), skin.LaneColor);
             guideMaterial = MeshFactory.Material(skin.GuideColor);
             // goal_line contains transparent glow pixels. Use the transparent
             // material path so its edge does not depth-fight the track when
@@ -50,9 +50,9 @@ namespace ChunithmMobile.Rendering
         {
             if (!initialized) return;
             GameplaySkinStyle skin = GameplaySkinManager.Style;
-            trackMaterial.mainTexture = GameplaySkinManager.LoadTrackTexture("field_blue_16");
+            trackMaterial.mainTexture = GameplaySkinManager.LoadSceneTexture(skin.TrackTexturePath) ?? GameplaySkinManager.LoadTrackTexture("field_blue_16");
             trackMaterial.color = skin.TrackColor;
-            laneMaterial.mainTexture = GameplaySkinManager.LoadTrackTexture("barline_blue");
+            laneMaterial.mainTexture = GameplaySkinManager.LoadSceneTexture(skin.LaneTexturePath) ?? GameplaySkinManager.LoadTrackTexture("barline_blue");
             laneMaterial.color = skin.LaneColor;
             guideMaterial.mainTexture = null;
             guideMaterial.color = skin.GuideColor;

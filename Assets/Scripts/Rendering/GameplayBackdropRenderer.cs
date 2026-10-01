@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using ChunithmMobile.Runtime;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -12,6 +13,11 @@ namespace ChunithmMobile.Rendering
         private MeshRenderer coverRenderer;
         private Material blurredMaterial;
         private Material coverMaterial;
+        private MeshRenderer skinBackgroundRenderer;
+        private Material skinBackgroundMaterial;
+        private int skinRevision = -1;
+        private bool showing;
+        private bool usingSkinBackground;
         private Texture2D loadedSource;
         private Texture2D loadedBlurred;
         private Texture2D loadedCover;
@@ -32,6 +38,9 @@ namespace ChunithmMobile.Rendering
             coverMaterial = MeshFactory.Material((Texture)null, new Color(.7f, .7f, .7f, 1f), true);
             coverMaterial.renderQueue = 1001;
             blurredRenderer = CreateQuad("Blurred jacket background", distance, width, height, blurredMaterial);
+            skinBackgroundMaterial = MeshFactory.Material((Texture)null, Color.white, true);
+            skinBackgroundMaterial.renderQueue = 1002;
+            skinBackgroundRenderer = CreateQuad("Skin authored background", distance - .16f, width, height, skinBackgroundMaterial, false);
             float coverSize = height * .56f;
             coverRenderer = CreateQuad("Centered jacket", distance - .08f, coverSize, coverSize, coverMaterial);
             SetVisible(false);
@@ -41,11 +50,14 @@ namespace ChunithmMobile.Rendering
         {
             brightness = Mathf.Clamp01(backgroundBrightness);
             opacity = Mathf.Clamp01(jacketOpacity);
+            RefreshScene();
             ApplyColors();
         }
 
         public void ShowJacket(string path)
         {
+            showing = true;
+            RefreshScene();
             requestVersion++;
             if (loading != null) StopCoroutine(loading);
             ReleaseTextures();
@@ -58,6 +70,7 @@ namespace ChunithmMobile.Rendering
 
         public void ClearJacket()
         {
+            showing = false;
             requestVersion++;
             if (loading != null) StopCoroutine(loading);
             loading = null;
@@ -109,6 +122,30 @@ namespace ChunithmMobile.Rendering
             ReleaseTextures();
             if (blurredMaterial != null) Destroy(blurredMaterial);
             if (coverMaterial != null) Destroy(coverMaterial);
+            if (skinBackgroundMaterial != null) Destroy(skinBackgroundMaterial);
+        }
+
+        private void RefreshScene()
+        {
+            if (skinBackgroundMaterial == null) return;
+            var style = GameplaySkinManager.Style;
+            if (skinRevision != GameplaySkinManager.StyleRevision)
+            {
+                // The manager owns the cached scene PNG; this renderer must
+                // not destroy it when the song's separately-owned cover changes.
+                skinBackgroundMaterial.mainTexture = GameplaySkinManager.LoadSceneTexture(style.SceneBackgroundImage);
+                skinRevision = GameplaySkinManager.StyleRevision;
+            }
+            Color tint = style.SceneBackgroundColor;
+            tint.a *= style.SceneBackgroundOpacity;
+            skinBackgroundMaterial.color = tint;
+            usingSkinBackground = style.HasSceneBackground &&
+                (string.IsNullOrEmpty(style.SceneBackgroundImage) || skinBackgroundMaterial.mainTexture != null);
+            if (skinBackgroundRenderer != null) skinBackgroundRenderer.enabled = showing && usingSkinBackground;
+            // Skin switches need to replace, not pile onto, a cached song
+            // background. Invalid/missing PNGs keep the previous song fallback.
+            if (blurredRenderer != null) blurredRenderer.enabled = showing && !usingSkinBackground && loadedBlurred != null;
+            if (coverRenderer != null) coverRenderer.enabled = showing && !usingSkinBackground && loadedCover != null;
         }
 
         private void ApplyColors()
@@ -121,11 +158,13 @@ namespace ChunithmMobile.Rendering
 
         private void SetVisible(bool visible)
         {
-            if (blurredRenderer != null) blurredRenderer.enabled = visible;
-            if (coverRenderer != null) coverRenderer.enabled = visible;
+            bool custom = usingSkinBackground;
+            if (blurredRenderer != null) blurredRenderer.enabled = visible && !custom;
+            if (coverRenderer != null) coverRenderer.enabled = visible && !custom;
+            if (skinBackgroundRenderer != null) skinBackgroundRenderer.enabled = showing && custom;
         }
 
-        private MeshRenderer CreateQuad(string name, float z, float width, float height, Material material)
+        private MeshRenderer CreateQuad(string name, float z, float width, float height, Material material, bool jacketOrigin = true)
         {
             var child = new GameObject(name);
             child.transform.SetParent(transform, false);
@@ -140,7 +179,11 @@ namespace ChunithmMobile.Rendering
             // world-space quad. UI jackets correct this in LocalCoverLoader;
             // keep the same orientation for the blurred and centred gameplay
             // images without rotating or mirroring the artwork horizontally.
-            quad.uv = new[] { new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0), Vector2.zero };
+            // Authored PNG backgrounds use the normal Unity texture origin,
+            // unlike the extracted jackets. Do not invert the Studio preview.
+            quad.uv = jacketOrigin
+                ? new[] { new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0), Vector2.zero }
+                : new[] { Vector2.zero, Vector2.right, Vector2.one, Vector2.up };
             filter.sharedMesh = quad;
             var renderer = child.AddComponent<MeshRenderer>();
             renderer.sharedMaterial = material;

@@ -23,6 +23,7 @@
       "index.html",
       "style.css",
       "app.js",
+      "rule-config.js",
       "live2d-config.js",
       "live2d-panel.js",
       "live2d.css",

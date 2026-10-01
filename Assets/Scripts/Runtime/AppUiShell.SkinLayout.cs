@@ -56,6 +56,29 @@ namespace ChunithmMobile.Runtime
                 id == "countdown" || id == "airGuide" || id == "touchFeedback";
         }
 
+        /// <summary>Match sensor bounds to authored region rectangles, without changing scoring rules.</summary>
+        private void ApplySkinInputAreas(GameplaySkinStyle style)
+        {
+            // The room's fullscreen MOD remains authoritative. A local skin
+            // cannot restore AIR or shrink that MOD's full-screen ground area.
+            if (IsFullscreenTouchpadActive() || inputRig == null || style == null) return;
+            GameplaySkinElementDefinition ground = style.LayoutElement("touchpad");
+            if (TrySkinArea(ground, out Rect groundArea)) inputRig.Ground?.SetPlayArea(groundArea);
+            GameplaySkinElementDefinition air = style.LayoutElement("airZone");
+            if (TrySkinArea(air, out Rect airArea)) inputRig.Air?.SetAirArea(airArea);
+        }
+
+        private static bool TrySkinArea(GameplaySkinElementDefinition element, out Rect area)
+        {
+            area = default;
+            if (element == null || element.X < 0 || element.Y < 0 || element.Width <= 0 || element.Height <= 0) return false;
+            area = new Rect(element.X, element.Y, Mathf.Min(element.Width, 1f - element.X),
+                Mathf.Min(element.Height, 1f - element.Y));
+            // Visibility is visual only: hiding the input surface must not
+            // accidentally disable touch sampling for a minimal HUD skin.
+            return area.width >= .01f && area.height >= .01f;
+        }
+
         private void ApplySkinRect(RectTransform target, GameplaySkinElementDefinition element)
         {
             if (element.X < 0 || element.Y < 0 || element.Width <= 0 || element.Height <= 0) return;

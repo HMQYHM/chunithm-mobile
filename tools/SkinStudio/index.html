@@ -43,6 +43,7 @@
           <option value="playing">游玩中</option><option value="pause">暂停</option>
           <option value="miss">MISS</option><option value="combo100">Combo 100</option>
           <option value="air">AIR</option><option value="metricZero">目标值归零</option>
+          <option value="score900000">分数 900000</option><option value="rankSSS">SSS+</option><option value="touchLeft">左上触控</option><option value="stop">游玩结束</option>
         </select>
         <label class="check"><input id="showGrid" type="checkbox" checked> 网格</label>
       </div>
@@ -55,6 +56,7 @@
       </div>
       <div class="panel-title"><span>元素图层</span><button id="addElement" class="icon-button" title="添加元素">+</button></div>
       <div id="layerList" class="layer-list"></div>
+      <div class="region-actions"><select id="regionPreset" aria-label="输入区域"><option value="touchpad">触控板</option><option value="airZone">AIR 区域</option><option value="airBoundaryBottom">AIR 下边界</option><option value="airBoundaryTop">AIR 上边界</option><option value="airGuide">AIR 引导线</option><option value="trackMask">轨道遮罩</option></select><button id="addRegion" type="button">编辑区域</button></div>
       <div class="layer-actions"><button id="removeElement" class="button danger">移除当前元素</button></div>
       <div class="section-note">只能导出游戏已支持的元素 ID；按钮只改变外观和位置，不会替换原有行为。</div>
     </section>
@@ -63,6 +65,8 @@
       <div class="panel-title"><span>属性</span><div class="settings-tabs" role="tablist" aria-label="皮肤设置">
         <button id="layoutTab" role="tab" aria-controls="layoutSettings" aria-selected="false">界面布局</button>
         <button id="liveTab" role="tab" aria-controls="liveSettings" aria-selected="true">Live2D</button>
+        <button id="ruleTab" role="tab" aria-controls="ruleSettings" aria-selected="false">规则积木</button>
+        <button id="sceneTab" role="tab" aria-controls="sceneSettings" aria-selected="false">场景轨道</button>
       </div></div>
       <div id="layoutSettings" role="tabpanel" aria-labelledby="layoutTab" hidden>
       <div id="emptyInspector" class="empty">请选择一个元素</div>
@@ -112,6 +116,28 @@
         <div class="section-note">可分别为 Combo 和分数提供 0–9 PNG。缺少某个数字时，游戏会回退到文字显示。</div>
       </div>
       </div>
+      <section id="ruleSettings" class="builder-section" role="tabpanel" aria-labelledby="ruleTab" hidden>
+        <div class="section-heading"><span id="rulesTitle">可视化规则积木</span><button id="addRule" class="icon-button" type="button" title="添加规则">+</button></div>
+        <div class="region-actions"><select id="rulePreset" aria-label="规则预设"><option value="combo">Combo 达到 100</option><option value="target">SSS+ 目标失守</option><option value="miss">MISS 特效</option><option value="air">AIR 进入</option><option value="touch">左上触控</option></select><button id="addRulePreset" type="button">添加预设</button></div>
+        <div id="ruleList" class="rule-list"></div>
+        <div id="ruleEditor" class="rule-editor" hidden></div>
+      </section>
+      <section id="sceneSettings" class="builder-section" role="tabpanel" aria-labelledby="sceneTab" hidden>
+        <div class="section-heading"><span id="sceneTitle">场景与轨道</span></div>
+        <label class="button secondary upload">导入场景 PNG<input id="sceneImageFile" type="file" accept="image/png" multiple hidden></label>
+        <div class="scene-fields">
+          <label class="field wide"><span>游玩背景图片</span><select id="sceneBackgroundImage"><option value="">使用歌曲背景</option></select></label>
+          <label class="field"><span>背景颜色</span><input id="sceneBackgroundColor" type="text" placeholder="#071018"></label>
+          <label class="field"><span>背景透明度</span><input id="sceneBackgroundOpacity" type="number" min="0" max="1" step="0.01"></label>
+          <label class="field"><span>轨道颜色</span><input id="sceneTrackColor" type="text" placeholder="#071018"></label>
+          <label class="field"><span>分道线颜色</span><input id="sceneLaneColor" type="text" placeholder="#1688A0"></label>
+          <label class="field"><span>引导线颜色</span><input id="sceneGuideColor" type="text" placeholder="#0A3345"></label>
+          <label class="field"><span>边缘颜色</span><input id="sceneEdgeColor" type="text" placeholder="#1688A0"></label>
+          <label class="field"><span>判定线颜色</span><input id="sceneJudgementLineColor" type="text" placeholder="#FFAD0F"></label>
+          <label class="field wide"><span>轨道底图 PNG</span><select id="sceneTrackImage"><option value="">使用内置轨道</option></select></label>
+          <label class="field wide"><span>分道线 PNG</span><select id="sceneLaneImage"><option value="">使用内置分道线</option></select></label>
+        </div>
+      </section>
       <section id="liveSettings" class="live2d-section" role="tabpanel" aria-labelledby="liveTab">
         <h2 id="live2dTitle">Live2D</h2>
         <label class="check"><input id="liveEnabled" type="checkbox">启用 Live2D 模型</label>
@@ -144,6 +170,7 @@
   <footer class="footer"><span id="fileSummary">0 个资源</span><span id="historyStatus">未修改</span><span id="operationStatus" role="status" aria-live="polite"></span><span>本地资源 · 不执行包内代码</span></footer>
   <script src="live2d-config.js"></script>
   <script src="live2d-panel.js"></script>
+  <script src="rule-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

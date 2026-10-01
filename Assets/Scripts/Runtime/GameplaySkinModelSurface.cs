@@ -229,8 +229,10 @@ namespace ChunithmMobile.Runtime
             for (int i = 0; i < groups.GroupNames.Length; i++)
             {
                 string name = groups.GroupNames[i];
+                bool ruleMotion = style.CustomDisplays.Exists(rule =>
+                    rule.Action == "live2dMotion" && rule.Motion == name);
                 if (name != style.Live2DIdleMotion && name != style.Live2DLeftPressMotion &&
-                    name != style.Live2DRightPressMotion) continue;
+                    name != style.Live2DRightPressMotion && !ruleMotion) continue;
                 if (groups.Motions[i].Length == 0) continue;
                 string path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(source.AssetPath), groups.Motions[i][0].File);
                 var json = GameplaySkinManager.LoadLive2DAsset(skin, typeof(string), path) as string;

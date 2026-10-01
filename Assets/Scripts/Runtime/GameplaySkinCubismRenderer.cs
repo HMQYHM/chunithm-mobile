@@ -33,6 +33,7 @@ namespace ChunithmMobile.Runtime
             composite = new Material(Resources.Load<Shader>("SkinLive2D/Composite"));
             output.material = composite;
             GameplaySkinEvents.TouchTelemetryUpdated += OnTouch;
+            GameplaySkinEvents.SkinMotionRequested += OnSkinMotion;
             RefreshSkin();
         }
 
@@ -79,6 +80,17 @@ namespace ChunithmMobile.Runtime
             }
             leftPressed = left;
             rightPressed = right;
+        }
+
+        private void OnSkinMotion(string group)
+        {
+            if (!isActiveAndEnabled || surface == null || style == null) return;
+            foreach (var rule in style.CustomDisplays)
+                if (rule.Action == "live2dMotion" && rule.Motion == group)
+                {
+                    surface.PlayMotion(group);
+                    break;
+                }
         }
 
         private void LateUpdate()
@@ -155,6 +167,7 @@ namespace ChunithmMobile.Runtime
         private void OnDestroy()
         {
             GameplaySkinEvents.TouchTelemetryUpdated -= OnTouch;
+            GameplaySkinEvents.SkinMotionRequested -= OnSkinMotion;
             DisposeSurface();
             if (composite != null)
             {

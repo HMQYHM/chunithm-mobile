@@ -64,6 +64,7 @@ namespace ChunithmMobile.Runtime
             if (skin != null && !skin.BuiltIn && style != null)
                 foreach (var rule in style.CustomDisplays)
                 {
+                    if (rule.Action != "image") continue;
                     if (ownedTextures.ContainsKey(rule.Image)) continue;
                     Texture2D image = GameplaySkinManager.LoadCustomDisplayImage(
                         skin, rule.Image, 16L * 1024 * 1024 - pixels);
@@ -256,6 +257,13 @@ namespace ChunithmMobile.Runtime
 
         private void Trigger(GameplaySkinCustomDisplayDefinition definition)
         {
+            // Motion requests are checked against this skin's bounded rules
+            // again by the model renderer; they never target game objects.
+            if (definition != null && definition.Action == "live2dMotion")
+            {
+                GameplaySkinEvents.PublishSkinMotion(definition.Motion);
+                return;
+            }
             if (definition == null || active.Count >= 24 || string.IsNullOrEmpty(definition.Image)) return;
             StartCoroutine(Animate(definition));
         }
