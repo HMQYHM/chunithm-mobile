@@ -3549,6 +3549,9 @@ namespace ChunithmMobile.Runtime
                 LocalCoverLoader.Reset(gameplaySongInfoCover);
                 gameplaySongInfoCover.sprite = null;
                 gameplaySongInfoCover.color = new Color(.08f, .14f, .18f, 1f);
+                // Re-apply after clearing the runtime cover so a skin-owned
+                // songCover image remains visible in the layout preview.
+                ApplyGameplaySkinLayout(GameplaySkinManager.Style);
                 return;
             }
             gameplaySongInfo.text = song.Name + "\n" + song.Artist + "\n" +
@@ -3556,8 +3559,14 @@ namespace ChunithmMobile.Runtime
             LocalCoverLoader.Reset(gameplaySongInfoCover);
             gameplaySongInfoCover.sprite = null;
             gameplaySongInfoCover.color = new Color(.08f, .14f, .18f, 1f);
-            if (!string.IsNullOrWhiteSpace(song.JacketPath))
-                LocalCoverLoader.Load(this, song.JacketPath, gameplaySongInfoCover, true);
+            GameplaySkinElementDefinition coverOverride = GameplaySkinManager.Style.LayoutElement("songCover");
+            if (coverOverride == null || string.IsNullOrWhiteSpace(coverOverride.Image)) {
+                if (!string.IsNullOrWhiteSpace(song.JacketPath))
+                    LocalCoverLoader.Load(this, song.JacketPath, gameplaySongInfoCover, true);
+            }
+            // LocalCoverLoader is asynchronous; apply the declarative layer last
+            // and skip the loader above when the active skin owns the cover.
+            ApplyGameplaySkinLayout(GameplaySkinManager.Style);
         }
 
         private void BuildResults()
@@ -5112,7 +5121,7 @@ namespace ChunithmMobile.Runtime
             SetGameplayInputSuppressed(true);
             SetGameplayJudgementSuppressed(true);
             ConfigureMultiplayerPauseV2();
-            gameplayPausePanel?.gameObject.SetActive(true);
+            gameplayPausePanel?.gameObject.SetActive(GameplaySkinManager.Style.LayoutElementVisible("pausePanel"));
         }
 
         private void CancelGameplayResume()
@@ -5698,7 +5707,9 @@ namespace ChunithmMobile.Runtime
             int currentScore = score.Score(gameplaySession.JudgeTotal);
             int totalPoints = Mathf.Max(0, gameplaySession.JudgeTotal);
             int remainingCombo = Mathf.Max(0, totalPoints - score.Resolved);
-            int metricMode = settings?.GameplayBelowNoteMetricMode ?? 3;
+            int metricMode = GameplaySkinManager.Style.HasMetricModeOverride
+                ? GameplaySkinManager.Style.MetricModeOverride
+                : settings?.GameplayBelowNoteMetricMode ?? 3;
             if (metricMode <= 1) {
                 // Combo below the notes means the main HUD remains the
                 // increasing score counter.
@@ -5862,6 +5873,7 @@ namespace ChunithmMobile.Runtime
             UpdateTouchpadFeedback(settings, frame, false);
             if (gameplayAirGuide == null) return;
             bool show = !IsFullscreenTouchpadActive() && settings.ShowAirGuide &&
+                GameplaySkinManager.Style.LayoutElementVisible("airGuide") &&
                 frame.Air.Present && frame.Air.ContactCount > 0;
             gameplayAirGuide.gameObject.SetActive(show);
             if (!show) return;
@@ -5999,7 +6011,8 @@ namespace ChunithmMobile.Runtime
                 gameplayTouchpad.gameObject.SetActive(!fullscreenTouchpad && settings.ShowTouchpadVisual);
             }
             UpdateAirZone(gameplayAirZone, activeAirBottom, activeAirTop);
-            if (gameplayAirZone != null) gameplayAirZone.gameObject.SetActive(!fullscreenTouchpad);
+            if (gameplayAirZone != null) gameplayAirZone.gameObject.SetActive(!fullscreenTouchpad &&
+                GameplaySkinManager.Style.LayoutElementVisible("airZone"));
             PositionHorizontalLine(gameplayAirBoundaryBottom, activeAirBottom);
             PositionHorizontalLine(gameplayAirBoundaryTop, activeAirTop);
             if (gameplayAirBoundaryBottom != null) gameplayAirBoundaryBottom.gameObject.SetActive(
@@ -6038,6 +6051,7 @@ namespace ChunithmMobile.Runtime
             if (resultJudgements != null) resultJudgements.color = gameplaySkin.JudgementColor;
             ApplyGameplayElementLayout(settings);
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(settings.ShowGameplaySongInfo);
+            ApplyGameplaySkinLayout(gameplaySkin);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
             FindObjectOfType<RuntimeLoadingOverlay>()?.SetHighContrastPalette(HighContrastUi);
         }
@@ -6168,9 +6182,24 @@ namespace ChunithmMobile.Runtime
         private void ShowGameplayJudgement(ChunithmMobile.Chart.Judgement result, double deltaMs, bool showMilliseconds)
         {
             if (gameplayJudgementBlock == null) return;
+            if (!GameplaySkinManager.Style.LayoutElementVisible("judgement")) {
+                gameplayJudgementBlock.gameObject.SetActive(false);
+                return;
+            }
             Texture2D texture = gameplayJudgementTextures[(int)result];
+            // A skin may replace the judgement artwork without replacing the
+            // judgement state or timing text. Resolve that asset at display time
+            // because the built-in texture is refreshed for every result.
+            GameplaySkinElementDefinition judgementOverride =
+                GameplaySkinManager.Style.LayoutElement("judgementImage");
+            if (judgementOverride != null && !string.IsNullOrWhiteSpace(judgementOverride.Image)) {
+                Texture2D customTexture = GameplaySkinManager.LoadSkinImage(
+                    GameplaySkinManager.Active, judgementOverride.Image);
+                if (customTexture != null) texture = customTexture;
+            }
             gameplayJudgementImage.texture = texture;
-            gameplayJudgementImage.gameObject.SetActive(texture != null);
+            gameplayJudgementImage.gameObject.SetActive(texture != null &&
+                GameplaySkinManager.Style.LayoutElementVisible("judgementImage"));
             if (texture != null)
                 gameplayJudgementImage.GetComponent<AspectRatioFitter>().aspectRatio = (float)texture.width / texture.height;
             string grade = result switch {

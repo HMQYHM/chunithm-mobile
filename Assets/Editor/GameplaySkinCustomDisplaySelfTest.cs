@@ -34,11 +34,19 @@ namespace ChunithmMobile.Editor
                             "{\"id\":\"airRise\",\"trigger\":\"air\",\"value\":\"rising\",\"image\":\"ui/custom/air.png\"}," +
                             "{\"id\":\"rankLoss\",\"trigger\":\"displayed_metric\",\"mode\":\"sss+\",\"condition\":\"less\",\"threshold\":0,\"image\":\"ui/custom/air.png\"}," +
                             "{\"id\":\"badPath\",\"trigger\":\"combo\",\"threshold\":1,\"image\":\"../outside.png\"}," +
-                            "{\"id\":\"combo100\",\"trigger\":\"combo\",\"threshold\":2,\"image\":\"ui/custom/duplicate.png\"}]}" );
+                            "{\"id\":\"combo100\",\"trigger\":\"combo\",\"threshold\":2,\"image\":\"ui/custom/duplicate.png\"}]," +
+                            "\"belowNoteMetric\":{\"mode\":\"sss+\"}," +
+                            "\"elements\":[" +
+                            "{\"id\":\"pauseButton\",\"visible\":true,\"x\":0.02,\"y\":0.88,\"width\":0.06,\"height\":0.08,\"image\":\"ui/custom/pause.png\"}," +
+                            "{\"id\":\"airZone\",\"visible\":true,\"x\":2,\"y\":-1,\"width\":0.5,\"height\":0.2}," +
+                            "{\"id\":\"pauseButton\",\"visible\":false,\"x\":0,\"y\":0,\"width\":1,\"height\":1}," +
+                            "{\"id\":\"notAllowed\",\"visible\":false}]}" );
                     byte[] png = fixtureTexture.EncodeToPNG();
                     using (Stream output = archive.CreateEntry("ui/custom/combo100.png").Open())
                         output.Write(png, 0, png.Length);
                     using (Stream output = archive.CreateEntry("ui/custom/air.png").Open())
+                        output.Write(png, 0, png.Length);
+                    using (Stream output = archive.CreateEntry("ui/custom/pause.png").Open())
                         output.Write(png, 0, png.Length);
                 }
 
@@ -50,6 +58,21 @@ namespace ChunithmMobile.Editor
                 Require(GameplaySkinManager.Style.CustomDisplays[0].Id == "combo100" &&
                     GameplaySkinManager.Style.CustomDisplays[1].Trigger == "air",
                     "custom display rules were parsed in the wrong shape");
+                Require(GameplaySkinManager.Style.HasMetricModeOverride &&
+                    GameplaySkinManager.Style.MetricModeOverride == 3,
+                    "below-note metric mode was not parsed");
+                Require(GameplaySkinManager.Style.LayoutElements.Count == 2 &&
+                    GameplaySkinManager.Style.LayoutElement("pauseButton") != null &&
+                    GameplaySkinManager.Style.LayoutElementVisible("pauseButton"),
+                    "layout elements were not deduplicated or queried correctly");
+                GameplaySkinElementDefinition airZone = GameplaySkinManager.Style.LayoutElement("airZone");
+                Require(airZone != null && airZone.X == 1f && airZone.Y == 0f,
+                    "layout coordinates were not clamped safely");
+                Sprite pauseSprite = GameplaySkinManager.LoadSkinSprite(imported, "ui/custom/pause.png");
+                Require(pauseSprite != null && pauseSprite.texture.width == 2,
+                    "layout PNG sprite was not loaded");
+                Require(GameplaySkinManager.LoadSkinImage(imported, "ui/custom/pause.jpg") == null,
+                    "non-PNG layout asset was accepted");
                 Texture2D decoded = GameplaySkinManager.LoadCustomDisplayImage(
                     imported, "ui/custom/combo100.png", 16L * 1024L * 1024L);
                 Require(decoded != null && decoded.width == 2 && decoded.height == 2,

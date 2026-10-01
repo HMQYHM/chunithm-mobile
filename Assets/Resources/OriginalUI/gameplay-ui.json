@@ -1,0 +1,18 @@
+{
+  "effects": {
+    "scoreWarningEnabled": true,
+    "scoreWarningThreshold": 900000
+  },
+  "judgements": {
+    "color": "#FFFFFF",
+    "defaultSize": 1.0
+  },
+  "score": {
+    "color": "#FFFFFF",
+    "defaultSize": 1.0
+  },
+  "combo": {
+    "color": "#FFFFFF",
+    "defaultSize": 1.0
+  }
+}

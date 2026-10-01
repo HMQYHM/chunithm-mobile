@@ -62,12 +62,33 @@ namespace ChunithmMobile.Runtime
         public float RotationTo;
     }
 
+    /// <summary>Validated layout override for a built-in gameplay UI element.</summary>
+    public sealed class GameplaySkinElementDefinition
+    {
+        public string Id;
+        public bool Visible = true;
+        public float X = -1f;
+        public float Y = -1f;
+        public float Width = -1f;
+        public float Height = -1f;
+        public float Opacity = 1f;
+        public string Color = "";
+        public string Image = "";
+        public string Label = "";
+    }
+
     public sealed class GameplaySkinStyle
     {
         // Declarative overlay rules are interpreted by the game renderer. They
         // never load code from a skin package.
         public readonly List<GameplaySkinCustomDisplayDefinition> CustomDisplays =
             new List<GameplaySkinCustomDisplayDefinition>();
+        // Skin layout is an override layer. Missing elements retain the game's
+        // normal settings and behavior, so old packages remain compatible.
+        public readonly List<GameplaySkinElementDefinition> LayoutElements =
+            new List<GameplaySkinElementDefinition>();
+        public bool HasMetricModeOverride;
+        public int MetricModeOverride;
         public Color ComboColor = Color.white;
         public Color ScoreColor = Color.white;
         public Color RankColor = new Color(.20f, .94f, 1f, 1f);
@@ -167,6 +188,19 @@ namespace ChunithmMobile.Runtime
                    (rank.StartsWith("SS", StringComparison.OrdinalIgnoreCase) || rank == "S+")
                 ? RankColor : Color.white;
         }
+
+        /// <summary>Returns the skin's visibility choice, defaulting to the game UI.</summary>
+        public bool LayoutElementVisible(string id)
+        {
+            GameplaySkinElementDefinition item = LayoutElements.FirstOrDefault(value => value.Id == id);
+            return item == null || item.Visible;
+        }
+
+        /// <summary>Returns a validated layout override for runtime asset loaders.</summary>
+        public GameplaySkinElementDefinition LayoutElement(string id)
+        {
+            return LayoutElements.FirstOrDefault(value => value.Id == id);
+        }
     }
 
     /// <summary>
@@ -211,6 +245,8 @@ namespace ChunithmMobile.Runtime
         private static readonly List<GameplaySkinInfo> installed = new List<GameplaySkinInfo>();
         private static readonly Dictionary<string, Texture2D> externalTextures =
             new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, Sprite> externalSprites =
+            new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
         private static readonly Queue<string> previewTextureOrder = new Queue<string>();
         private static readonly HashSet<Texture2D> externalNoteTextures = new HashSet<Texture2D>();
         private static readonly Dictionary<string, Mesh> externalMeshes =
@@ -297,6 +333,21 @@ namespace ChunithmMobile.Runtime
         {
             string key = JudgementTextureKey(grade);
             return LoadTexture("ui/judgements/" + key + ".png", "OriginalUI/Judgements/" + key);
+        }
+
+        /// <summary>Loads a skin PNG as a cached UI sprite for layout elements.</summary>
+        public static Sprite LoadSkinSprite(GameplaySkinInfo info, string relativePath)
+        {
+            if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(relativePath)) return null;
+            string key = "sprite|" + info.Id + "|" + relativePath.Replace('\\', '/');
+            if (externalSprites.TryGetValue(key, out Sprite cached)) return cached;
+            Texture2D texture = LoadSkinImage(info, relativePath);
+            if (texture == null) return null;
+            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
+                new Vector2(.5f, .5f), 100f);
+            sprite.name = "Gameplay skin sprite " + Path.GetFileName(relativePath);
+            externalSprites[key] = sprite;
+            return sprite;
         }
 
         public static string JudgementTextureKey(Chart.Judgement grade)
@@ -409,6 +460,9 @@ namespace ChunithmMobile.Runtime
             if (info == null || info.BuiltIn || string.IsNullOrWhiteSpace(info.RootPath) ||
                 string.IsNullOrWhiteSpace(relativePath)) return null;
             string normalized = relativePath.Replace('\\', '/').TrimStart('/');
+            // Declarative UI overrides accept PNG only; this keeps the package
+            // surface small and consistent with the skin documentation.
+            if (!normalized.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) return null;
             string cacheKey = "inspect|" + info.Id + "|" + normalized;
             if (externalTextures.TryGetValue(cacheKey, out Texture2D cached)) return cached;
             string path;
@@ -422,7 +476,13 @@ namespace ChunithmMobile.Runtime
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp
                 };
-                if (!texture.LoadImage(File.ReadAllBytes(path), false)) {
+                byte[] bytes = File.ReadAllBytes(path);
+                if (bytes.Length < 8 || bytes[0] != 137 || bytes[1] != 80 || bytes[2] != 78 || bytes[3] != 71 ||
+                    bytes[4] != 13 || bytes[5] != 10 || bytes[6] != 26 || bytes[7] != 10) {
+                    UnityEngine.Object.Destroy(texture);
+                    return null;
+                }
+                if (!texture.LoadImage(bytes, false)) {
                     UnityEngine.Object.Destroy(texture);
                     return null;
                 }
@@ -597,6 +657,9 @@ namespace ChunithmMobile.Runtime
         public static void ClearTextureCache()
         {
             externalNoteTextures.Clear();
+            foreach (Sprite sprite in externalSprites.Values)
+                if (sprite != null) UnityEngine.Object.Destroy(sprite);
+            externalSprites.Clear();
             foreach (Texture2D texture in externalTextures.Values)
                 if (texture != null) UnityEngine.Object.Destroy(texture);
             externalTextures.Clear();
@@ -974,12 +1037,82 @@ namespace ChunithmMobile.Runtime
                         GameplaySkinCustomDisplayDefinition display = ToCustomDisplay(item);
                         if (display != null && displayIds.Add(display.Id)) result.CustomDisplays.Add(display);
                     }
+                result.LayoutElements.Clear();
+                var layoutIds = new HashSet<string>(StringComparer.Ordinal);
+                if (manifest.elements != null)
+                    foreach (SkinLayoutElementManifest item in manifest.elements.Take(64))
+                    {
+                        GameplaySkinElementDefinition element = ToLayoutElement(item);
+                        if (element != null && layoutIds.Add(element.Id)) result.LayoutElements.Add(element);
+                    }
+                result.HasMetricModeOverride = false;
+                if (manifest.belowNoteMetric != null)
+                {
+                    int metric = MetricModeIndex(manifest.belowNoteMetric.mode);
+                    if (metric >= 0) {
+                        result.HasMetricModeOverride = true;
+                        result.MetricModeOverride = metric;
+                    }
+                }
             }
             catch (Exception exception)
             {
                 Debug.LogWarning("Gameplay skin UI style failed: " + exception.Message);
             }
             return result;
+        }
+
+        private static GameplaySkinElementDefinition ToLayoutElement(SkinLayoutElementManifest item)
+        {
+            if (item == null || !AllowedLayoutIds.Contains(item.id ?? "")) return null;
+            string image = SafeLayoutImagePath(item.image);
+            var result = new GameplaySkinElementDefinition {
+                Id = item.id,
+                Visible = item.visible,
+                X = ClampFinite(item.x, 0f, 1f, -1f),
+                Y = ClampFinite(item.y, 0f, 1f, -1f),
+                Width = ClampFinite(item.width, .01f, 1f, -1f),
+                Height = ClampFinite(item.height, .01f, 1f, -1f),
+                Opacity = ClampFinite(item.opacity, 0f, 1f, 1f),
+                Color = SafeLayoutColor(item.color),
+                Image = image,
+                Label = SafeLayoutLabel(item.label)
+            };
+            bool hasRect = result.X >= 0 && result.Y >= 0 && result.Width > 0 && result.Height > 0;
+            return string.IsNullOrEmpty(item.image) || !string.IsNullOrEmpty(image) ? result : null;
+        }
+
+        private static readonly HashSet<string> AllowedLayoutIds = new HashSet<string>(StringComparer.Ordinal) {
+            "songInfo", "songCover", "scoreHud", "comboHud", "judgement", "judgementImage",
+            "pauseButton", "pausePanel", "progressBar", "fps", "countdown", "touchpad",
+            "airZone", "airBoundaryBottom", "airBoundaryTop", "airGuide", "trackMask", "touchFeedback"
+        };
+
+        private static int MetricModeIndex(string value)
+        {
+            string mode = (value ?? "").Trim().ToLowerInvariant();
+            for (int index = 0; index < 11; index++)
+                if (GameplaySkinEvents.DisplayMetricName(index) == mode) return index;
+            return -1;
+        }
+
+        private static string SafeLayoutColor(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "";
+            return ColorUtility.TryParseHtmlString(value.Trim(), out _) ? value.Trim() : "";
+        }
+
+        private static string SafeLayoutLabel(string value)
+        {
+            value = value ?? "";
+            return value.Length <= 80 && !value.Contains("\0") ? value : "";
+        }
+
+        private static string SafeLayoutImagePath(string value)
+        {
+            string path = SafeSkinRelativePath(value, "");
+            return Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase) && path.Length <= 256
+                ? path : "";
         }
 
         private static Vector2 SafeAxisRange(SkinAxisRangeManifest range)
@@ -1238,6 +1371,29 @@ namespace ChunithmMobile.Runtime
             public SkinTouchOverlayManifest touchOverlay;
             public SkinLive2DManifest live2d;
             public SkinCustomDisplayManifest[] customDisplays;
+            public SkinLayoutElementManifest[] elements;
+            public SkinMetricModeManifest belowNoteMetric;
+        }
+
+        [Serializable]
+        private sealed class SkinLayoutElementManifest
+        {
+            public string id;
+            public bool visible = true;
+            public float x = -1f;
+            public float y = -1f;
+            public float width = -1f;
+            public float height = -1f;
+            public float opacity = 1f;
+            public string color;
+            public string image;
+            public string label;
+        }
+
+        [Serializable]
+        private sealed class SkinMetricModeManifest
+        {
+            public string mode;
         }
 
         [Serializable]

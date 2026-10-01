@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CHUNITHM Mobile Skin Studio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">CHUNITHM MOBILE</div>
+      <h1>Skin Studio</h1>
+    </div>
+    <div class="top-actions">
+      <label class="button secondary">导入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
+      <button id="exportJson" class="button secondary">导出 JSON</button>
+      <button id="exportZip" class="button primary">导出皮肤 ZIP</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="preview-column panel">
+      <div class="panel-title"><span>游玩界面预览</span><span id="statusBadge" class="badge">游玩中</span></div>
+      <div id="stage" class="stage" aria-label="横屏游玩界面预览">
+        <div class="stage-grid"></div>
+        <div class="lane lane-left"></div><div class="lane lane-right"></div><div class="goal-line"></div>
+        <div id="airDemo" class="air-demo">AIR</div>
+        <div id="metricDemo" class="metric-demo">COMBO 100</div>
+      </div>
+      <div class="preview-controls">
+        <span>预览状态</span>
+        <select id="previewState">
+          <option value="playing">游玩中</option><option value="pause">暂停</option>
+          <option value="miss">MISS</option><option value="combo100">Combo 100</option>
+          <option value="air">AIR</option><option value="metricZero">目标值归零</option>
+        </select>
+        <label class="check"><input id="showGrid" type="checkbox" checked> 网格</label>
+      </div>
+    </section>
+
+    <section class="layers-column panel">
+      <div class="panel-title"><span>元素图层</span><button id="addElement" class="icon-button" title="添加元素">+</button></div>
+      <div id="layerList" class="layer-list"></div>
+      <div class="layer-actions"><button id="removeElement" class="button danger">移除当前元素</button></div>
+      <div class="section-note">只能导出游戏已支持的元素 ID；按钮只改变外观和位置，不会替换原有行为。</div>
+    </section>
+
+    <section class="inspector-column panel">
+      <div class="panel-title">属性</div>
+      <div id="emptyInspector" class="empty">请选择一个元素</div>
+      <form id="inspector" class="inspector" hidden>
+        <label class="field wide"><span>元素 ID</span><select id="elementId"></select></label>
+        <label class="check wide"><input id="visible" type="checkbox"> 显示此元素</label>
+        <div class="field-grid">
+          <label class="field"><span>X</span><input id="x" type="number" min="0" max="1" step="0.001"></label>
+          <label class="field"><span>Y</span><input id="y" type="number" min="0" max="1" step="0.001"></label>
+          <label class="field"><span>宽度</span><input id="width" type="number" min="0.01" max="1" step="0.001"></label>
+          <label class="field"><span>高度</span><input id="height" type="number" min="0.01" max="1" step="0.001"></label>
+        </div>
+        <label class="field wide"><span>透明度</span><input id="opacity" type="range" min="0" max="1" step="0.01"><output id="opacityValue">1.00</output></label>
+        <label class="field wide"><span>颜色</span><input id="color" type="text" placeholder="#FFFFFF"></label>
+        <label class="field wide"><span>图片路径</span><input id="image" type="text" placeholder="ui/layout/example.png"></label>
+        <label class="button secondary wide upload">选择 PNG 图片<input id="imageFile" type="file" accept="image/png" hidden></label>
+        <label class="field wide"><span>按钮/文字标签</span><input id="label" type="text" maxlength="80" placeholder="可选"></label>
+      </form>
+
+      <div class="metric-section">
+        <div class="subheading">音符下方显示模式</div>
+        <select id="metricMode" class="wide">
+          <option value="combo">当前 Combo</option><option value="remaining_combo">剩余 Combo</option>
+          <option value="score">当前分数</option><option value="sss+">SSS+ 剩余分数</option>
+          <option value="sss">SSS 剩余分数</option><option value="ss+">SS+ 剩余分数</option>
+          <option value="ss">SS 剩余分数</option><option value="s+">S+ 剩余分数</option>
+          <option value="s">S 剩余分数</option><option value="lost_score">已损失分数</option>
+          <option value="best_score">距离最好成绩</option>
+        </select>
+        <div id="metricDescription" class="section-note"></div>
+      </div>
+    </section>
+  </main>
+  <footer class="footer"><span id="fileSummary">0 个资源</span><span>安全模式：仅 JSON + PNG</span></footer>
+  <script src="app.js"></script>
+</body>
+</html>
