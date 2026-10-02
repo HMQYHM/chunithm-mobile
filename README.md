@@ -1,31 +1,46 @@
 # CHUNITHM Mobile
 
-独立 Unity 实现的 CHUNITHM 风格移动端项目，包含游戏客户端、多人服务端和 Skin Studio。
+独立 Unity 实现的 CHUNITHM 风格移动端项目，包含游戏客户端、多人联机核心服务端和完整开源 Skin Studio 皮肤编辑器。
 
 - 当前版本：**0.3.3**
 - Unity：2022.3.62f3c1
 - Android：Android 7.0+，ARM64，Vulkan / OpenGL ES 3
-- iOS：iOS 15+，需使用自己的 Apple 签名
-- 服务端：Node.js 内置模块 + WebSocket，无 npm 运行时依赖
-- 皮肤编辑器：浏览器版和 Electron 桌面版
+- iOS：iOS 15+，需要自己的 Apple 签名
+
+## 组件
+
+- **Unity 客户端**：`CHUNITHM-Mobile-Unity/`，包含游戏、联机客户端、Live2D 运行时和示例皮肤。
+- **多人联机核心**：`CHUNITHM-Mobile-Multiplayer-Server/`，只包含 WebSocket/HTTP 房间、同步、歌曲传输和烟测。
+- **Skin Studio**：`CHUNITHM-Mobile-Unity/tools/SkinStudio/`，浏览器版与 Electron 桌面版共用的完整开源皮肤制作器，含规则积木、场景轨道、数字 PNG 和 Live2D 配置。
+
+QQ Bot、机器人测试、机器人凭据、管理后台扩展和运行时 `data/` 不在公开仓库中。联机核心不依赖 Bot。
+
+## 快速开始
+
+### Skin Studio
+
+直接打开 `CHUNITHM-Mobile-Unity/tools/SkinStudio/index.html` 使用浏览器版；桌面版在该目录运行 `npm install` 后使用 `npm start`。测试：`npm test`。
+
+皮肤编辑器文档：[`tools/SkinStudio/README.md`](CHUNITHM-Mobile-Unity/tools/SkinStudio/README.md)；游戏皮肤格式和 Live2D 说明：[`docs/SKIN-STUDIO.md`](CHUNITHM-Mobile-Unity/docs/SKIN-STUDIO.md)。
+
+### 联机核心服务端
+
+```text
+cd CHUNITHM-Mobile-Multiplayer-Server
+copy config.example.json config.json
+node start-server.js
+node smoke-test.js
+```
+
+服务端默认监听 `27960`，需要 Node.js 18+。公网部署前必须配置长随机 `authToken` 和 TLS/WSS。
 
 ## 下载
 
-请从 [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) 下载 APK 和 IPA。
-
-`CHUNITHMMobile-0.3.3-223-unsigned.ipa` 是未签名 IPA，不能直接安装；需要在 Xcode 中使用自己的开发者账号和 provisioning profile 重新签名。
-
-## 项目目录
-
-- `CHUNITHM-Mobile-Unity/`：Unity 客户端、Live2D 集成、运行时和 Skin Studio
-- `CHUNITHM-Mobile-Multiplayer-Server/`：HTTP/WebSocket 多人服务端、管理后台和 QQ Bot
-- `PROJECT-ANALYSIS-REPORT-20261002.md`：项目结构、服务端、皮肤编辑器和构建说明
+请从 [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) 下载 APK 和 IPA。IPA 为未签名构建，需要使用自己的 Apple 开发者账号重新签名。
 
 ## 开源与第三方内容
 
-本仓库中的原创源代码按 MIT License 发布。Live2D Cubism、Twemoji、vgmstream、BongoCat 和其他第三方内容继续遵守各自许可证；详见 `THIRD-PARTY-LICENSES.md` 和对应目录中的声明。歌曲、谱面、角色、商标和音乐不随本项目授权。
-
-本项目是独立的同人/致敬实现，不是官方产品。
+原创代码按 MIT License 发布。Live2D Cubism、Twemoji、vgmstream、BongoCat 和其他第三方内容遵守各自许可证，详见 `THIRD-PARTY-LICENSES.md`。歌曲、谱面、角色、商标和音乐不随本项目授权。本项目是独立的同人/致敬实现，不是官方产品。
 
 ## 多语言
 

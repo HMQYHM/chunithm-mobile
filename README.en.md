@@ -1,24 +1,23 @@
 # CHUNITHM Mobile
 
-An independent Unity mobile project inspired by CHUNITHM. It includes the game client, multiplayer server, and Skin Studio.
+An independent Unity mobile project containing the game client, a focused multiplayer core server, and the complete open-source Skin Studio editor.
 
-- Current version: **0.3.3**
-- Unity: 2022.3.62f3c1
-- Android: Android 7.0+, ARM64, Vulkan / OpenGL ES 3
-- iOS: iOS 15+, signed with your own Apple credentials
-- Server: Node.js built-ins + WebSocket, with no runtime npm dependencies
-- Skin editor: browser and Electron desktop versions
+## Components
 
-## Downloads
+- `CHUNITHM-Mobile-Unity/`: game client, multiplayer client, Live2D runtime, and sample skins.
+- `CHUNITHM-Mobile-Multiplayer-Server/`: WebSocket/HTTP rooms, synchronization, song transfer, and smoke tests only.
+- `CHUNITHM-Mobile-Unity/tools/SkinStudio/`: full browser and Electron editor source, including rule blocks, scene tracks, PNG digits, and Live2D configuration.
 
-Download the APK and IPA from [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases).
+QQ Bot code, bot tests, bot credentials, extended admin pages, and runtime data are excluded. The multiplayer core does not depend on a bot.
 
-`CHUNITHMMobile-0.3.3-223-unsigned.ipa` is unsigned and cannot be installed directly. Re-sign it in Xcode with your own developer account and provisioning profile.
+## Quick start
 
-## Open source and third-party content
+Open `CHUNITHM-Mobile-Unity/tools/SkinStudio/index.html` for the browser editor. For the desktop editor, run `npm install` and `npm start` in that directory; run `npm test` for unit tests.
 
-Original source code in this repository is released under the MIT License. Live2D Cubism, Twemoji, vgmstream, BongoCat, and other third-party content remain under their respective licenses; see `THIRD-PARTY-LICENSES.md` and the notices in the relevant directories. Songs, charts, characters, trademarks, and music are not licensed by this project.
+For the server, use Node.js 18+, copy `config.example.json` to `config.json`, then run `node start-server.js` and `node smoke-test.js`.
 
-This is an independent fan-made tribute project and is not an official product.
+Download APK and IPA builds from [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases). The IPA is unsigned and must be re-signed with your own Apple developer account.
 
-Languages: [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)
+Original code is released under the MIT License. Third-party content remains under its own licenses; see `THIRD-PARTY-LICENSES.md`.
+
+- [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)

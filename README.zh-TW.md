@@ -1,24 +1,23 @@
 # CHUNITHM Mobile
 
-獨立 Unity 實作的 CHUNITHM 風格行動端專案，包含遊戲用戶端、多人伺服器與 Skin Studio。
+獨立 Unity 風格行動專案，包含遊戲客戶端、多人連線核心伺服器，以及完整開源的 Skin Studio 皮膚編輯器。
 
-- 目前版本：**0.3.3**
-- Unity：2022.3.62f3c1
-- Android：Android 7.0 以上，ARM64，Vulkan / OpenGL ES 3
-- iOS：iOS 15 以上，需使用自己的 Apple 簽名
-- 伺服器：Node.js 內建模組 + WebSocket，執行時不需要 npm 相依套件
-- 皮膚編輯器：瀏覽器版與 Electron 桌面版
+## 組件
 
-## 下載
+- `CHUNITHM-Mobile-Unity/`：遊戲、聯機客戶端、Live2D 執行時與示例皮膚。
+- `CHUNITHM-Mobile-Multiplayer-Server/`：只保留 WebSocket/HTTP 房間、同步、歌曲傳輸與煙測核心。
+- `CHUNITHM-Mobile-Unity/tools/SkinStudio/`：瀏覽器版與 Electron 桌面版完整原始碼，支援規則積木、場景、PNG 數字與 Live2D。
 
-請從 [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) 下載 APK 與 IPA。
+QQ Bot、機器人測試、機器人憑據、管理後台擴展與執行資料不公開；聯機核心不依賴 Bot。
 
-`CHUNITHMMobile-0.3.3-223-unsigned.ipa` 是未簽名 IPA，不能直接安裝；需在 Xcode 使用自己的開發者帳號與 provisioning profile 重新簽名。
+## 使用
 
-## 開源與第三方內容
+Skin Studio 可直接開啟 `CHUNITHM-Mobile-Unity/tools/SkinStudio/index.html`，桌面版在該目錄執行 `npm install`、`npm start`，測試使用 `npm test`。
 
-本儲存庫中的原創程式碼以 MIT License 發布。Live2D Cubism、Twemoji、vgmstream、BongoCat 與其他第三方內容仍依各自授權條款使用；詳見 `THIRD-PARTY-LICENSES.md` 與對應目錄中的聲明。歌曲、譜面、角色、商標與音樂不包含在本專案授權內。
+服務端需要 Node.js 18+：複製 `config.example.json` 為 `config.json`，執行 `node start-server.js`，再執行 `node smoke-test.js`。
 
-本專案是獨立的同人／致敬作品，並非官方產品。
+請從 [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) 下載 APK 與 IPA。IPA 未簽名，需要使用自己的 Apple 開發者帳號重新簽名。
 
-語言版本：[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)
+原創程式碼採 MIT License；第三方內容遵循各自授權，詳見 `THIRD-PARTY-LICENSES.md`。
+
+- [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)
