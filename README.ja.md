@@ -20,4 +20,11 @@ APK と IPA は [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/rele
 
 オリジナルコードは MIT License、第三者コンテンツは各ライセンスに従います。詳細は `THIRD-PARTY-LICENSES.md` を確認してください。
 
+## ソースアーカイブ
+
+- [完全な Skin Studio ソース ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip)：ブラウザ版、Electron 版、ルール、シーン、PNG 数字、Live2D。
+- [マルチプレイ中核ソース ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip)：WebSocket/HTTP ルーム、同期、楽曲転送、スモークテスト。
+
+どちらのアーカイブにも QQ Bot、Bot テスト、Bot 認証情報、管理画面拡張、実行時データは含まれません。
+
 - [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)

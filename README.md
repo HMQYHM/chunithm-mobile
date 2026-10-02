@@ -42,6 +42,13 @@ node smoke-test.js
 
 原创代码按 MIT License 发布。Live2D Cubism、Twemoji、vgmstream、BongoCat 和其他第三方内容遵守各自许可证，详见 `THIRD-PARTY-LICENSES.md`。歌曲、谱面、角色、商标和音乐不随本项目授权。本项目是独立的同人/致敬实现，不是官方产品。
 
+## 源码归档
+
+- [完整 Skin Studio 源码 ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip)：浏览器版、Electron 桌面版、规则积木、场景轨道、PNG 数字和 Live2D 配置。
+- [多人联机核心源码 ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip)：WebSocket/HTTP 房间、同步、歌曲传输和烟测。
+
+这两个压缩包均不包含 QQ Bot、Bot 测试、Bot 凭据、管理后台扩展或运行时数据。
+
 ## 多语言
 
 - [简体中文](README.md)

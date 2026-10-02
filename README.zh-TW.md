@@ -20,4 +20,11 @@ Skin Studio 可直接開啟 `CHUNITHM-Mobile-Unity/tools/SkinStudio/index.html`�
 
 原創程式碼採 MIT License；第三方內容遵循各自授權，詳見 `THIRD-PARTY-LICENSES.md`。
 
+## 原始碼封存
+
+- [完整 Skin Studio 原始碼 ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip)：瀏覽器版、Electron 桌面版、規則積木、場景、PNG 數字與 Live2D。
+- [多人聯機核心原始碼 ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip)：WebSocket/HTTP 房間、同步、歌曲傳輸與煙測。
+
+兩個壓縮包都不包含 QQ Bot、Bot 測試、Bot 憑據、管理後台擴展或執行資料。
+
 - [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)

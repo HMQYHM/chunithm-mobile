@@ -20,4 +20,11 @@ Download APK and IPA builds from [GitHub Releases](https://github.com/HMQYHM/chu
 
 Original code is released under the MIT License. Third-party content remains under its own licenses; see `THIRD-PARTY-LICENSES.md`.
 
+## Source archives
+
+- [Complete Skin Studio source ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip): browser editor, Electron desktop editor, rule blocks, scene tracks, PNG digits, and Live2D configuration.
+- [Multiplayer core source ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip): WebSocket/HTTP rooms, synchronization, song transfer, and smoke tests.
+
+Neither archive contains QQ Bot code, bot tests, bot credentials, extended admin pages, or runtime data.
+
 - [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)
