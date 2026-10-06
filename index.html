@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-language="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CHUNITHM Mobile 项目说明、下载和开发文档。">
+  <meta name="theme-color" content="#101522">
+  <title>CHUNITHM Mobile | 项目说明</title>
+  <link rel="icon" type="image/png" href="assets/download.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="CHUNITHM Mobile 首页" data-i18n-aria="brandAria">
+        <img src="assets/download.png" alt="CHUNITHM Mobile 图标" data-i18n-alt="brandAlt">
+        <span>CHUNITHM <b>Mobile</b></span>
+      </a>
+      <nav class="desktop-nav" aria-label="主导航" data-i18n-aria="mainNavAria">
+        <a href="#download"><span data-i18n="navDownload">下载</span></a>
+        <a href="#game"><span data-i18n="navGame">游戏</span></a>
+        <a href="#server"><span data-i18n="navServer">服务端</span></a>
+        <a href="#skin-studio"><span data-i18n="navSkin">Skin Studio</span></a>
+        <a href="#community"><span data-i18n="navCommunity">社区</span></a>
+      </nav>
+      <div class="header-actions">
+        <a class="github-link" href="https://github.com/HMQYHM/chunithm-mobile" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+        <label class="language-control">
+          <span class="sr-only" data-i18n="languageLabel">语言</span>
+          <select id="languageSelect" class="language-select" aria-label="选择语言" data-i18n-aria="languageLabel">
+            <option value="zh-CN">简体中文</option>
+            <option value="zh-TW">繁體中文</option>
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <button class="icon-button" id="themeToggle" type="button" aria-label="切换主题" title="切换主题" data-i18n-aria="themeToggleAria"><span aria-hidden="true">☾</span></button>
+        <button class="icon-button menu-button" id="menuToggle" type="button" aria-expanded="false" aria-controls="mobileNav" aria-label="打开菜单" data-i18n-aria="menuAria"><span aria-hidden="true">☰</span></button>
+      </div>
+    </div>
+    <nav class="mobile-nav" id="mobileNav" aria-label="移动端导航" data-i18n-aria="mainNavAria">
+      <a href="#download"><span data-i18n="navDownload">下载</span></a>
+      <a href="#game"><span data-i18n="navGame">游戏</span></a>
+      <a href="#server"><span data-i18n="navServer">服务端</span></a>
+      <a href="#skin-studio"><span data-i18n="navSkin">Skin Studio</span></a>
+      <a href="#community"><span data-i18n="navCommunity">社区</span></a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero section-wrap">
+      <div class="hero-copy">
+        <p class="kicker" data-i18n="heroKicker">OPEN PROJECT · MOBILE RHYTHM GAME</p>
+        <h1 data-i18n="heroTitle">把 CHUNITHM 的游玩体验带到移动端。</h1>
+        <p class="hero-lead" data-i18n="heroLead">这是一个独立的 Unity 移动端项目。这里集中放置当前构建、开发说明、联机核心和皮肤制作工具的入口。</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#download"><span data-i18n="heroDownload">查看下载</span></a>
+          <a class="button button-quiet" href="https://github.com/HMQYHM/chunithm-mobile/releases" target="_blank" rel="noopener"><span data-i18n="heroReleases">GitHub Releases</span> <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="fact-row" aria-label="平台信息" data-i18n-aria="platformFactsAria">
+          <div><strong>Android / iOS</strong><span data-i18n="mobileBuild">移动端构建</span></div>
+          <div><strong>HarmonyOS</strong><span data-i18n="harmonyComing">敬请期待</span></div>
+        </div>
+      </div>
+      <div class="hero-art" aria-label="游戏轨道视觉图" data-i18n-aria="heroArtAria">
+        <img src="assets/download.png" alt="游戏轨道与音符视觉图" data-i18n-alt="heroArtAlt">
+        <div class="art-caption"><span class="live-dot"></span> CHUNITHM Mobile</div>
+      </div>
+    </section>
+
+    <section class="section-wrap section-block" id="download">
+      <div class="section-intro">
+        <p class="kicker">DOWNLOADS</p>
+        <h2 data-i18n="downloadTitle">当前构建</h2>
+        <p data-i18n="downloadIntro">优先从 GitHub Releases 获取公开版本。本机生成的构建记录用于开发测试时核对文件。</p>
+      </div>
+      <div class="download-grid">
+        <article class="download-card">
+          <div class="file-mark android">APK</div>
+          <div class="card-content"><h3 data-i18n="apkTitle">Android APK</h3><p data-i18n="apkDescription">ARM64 构建，适用于 Android 7.0 及以上设备。</p></div>
+          <a class="text-link" href="https://github.com/HMQYHM/chunithm-mobile/releases" target="_blank" rel="noopener"><span data-i18n="openReleases">打开发布页</span> ↗</a>
+        </article>
+        <article class="download-card">
+          <div class="file-mark apple">IPA</div>
+          <div class="card-content"><h3 data-i18n="ipaTitle">iOS IPA</h3><p data-i18n="ipaDescription">使用 Xcode 生成的未签名包，需要使用自己的 Apple 开发者账号签名。</p></div>
+          <a class="text-link" href="https://github.com/HMQYHM/chunithm-mobile/releases" target="_blank" rel="noopener"><span data-i18n="openReleases">打开发布页</span> ↗</a>
+        </article>
+      </div>
+      <div class="build-note"><span class="note-icon">i</span><p data-i18n="buildNote">本机工作区已保存 APK 与 IPA 构建目录；安装时如果提示签名不一致，请卸载旧包后再安装新包。</p></div>
+    </section>
+
+    <section class="section-wrap section-block" id="game">
+      <div class="section-intro split-intro">
+        <div><p class="kicker">GAME CLIENT</p><h2 data-i18n="gameTitle">游戏客户端</h2></div>
+        <p data-i18n-html="gameIntro">Unity 客户端位于 <code>CHUNITHM-Mobile-Unity/</code>。页面只展示当前文档已确认的内容，具体支持范围以仓库和实际构建为准。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-item"><span class="feature-number">01</span><h3 data-i18n="gameFeature1Title">移动端游玩</h3><p data-i18n="gameFeature1Text">面向 Android 与 iOS 的独立 Unity 客户端，支持移动端构建与本地资源导入。</p></article>
+        <article class="feature-item"><span class="feature-number">02</span><h3 data-i18n="gameFeature2Title">谱面与皮肤</h3><p data-i18n="gameFeature2Text">项目包含谱面读取、游玩界面元素和可导入的皮肤资源，制作方式见 Skin Studio 文档。</p></article>
+        <article class="feature-item"><span class="feature-number">03</span><h3 data-i18n="gameFeature3Title">以实际版本为准</h3><p data-i18n="gameFeature3Text">功能说明以当前仓库、构建文件和测试结果为准，未完成的内容不会写入发布说明。</p></article>
+      </div>
+    </section>
+
+    <section class="section-wrap section-block two-panel-block" id="server">
+      <div class="section-intro"><p class="kicker">MULTIPLAYER CORE</p><h2 data-i18n="serverTitle">服务端</h2><p data-i18n-html="serverIntro">服务端目录为 <code>CHUNITHM-Mobile-Multiplayer-Server/</code>，用于本地或自建环境的联机核心测试。</p></div>
+      <div class="docs-panel">
+        <div class="doc-row"><span class="doc-label" data-i18n="runtimeLabel">运行环境</span><strong>Node.js 18+</strong></div>
+        <div class="doc-row"><span class="doc-label" data-i18n="portLabel">默认端口</span><strong>27960</strong></div>
+        <div class="doc-row"><span class="doc-label" data-i18n="startLabel">启动方式</span><code>node start-server.js</code></div>
+        <div class="doc-row"><span class="doc-label" data-i18n="checkLabel">检查方式</span><code>node smoke-test.js</code></div>
+        <a class="button button-dark" href="https://github.com/HMQYHM/chunithm-mobile/blob/main/CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip" target="_blank" rel="noopener"><span data-i18n="viewServer">查看服务端目录</span> ↗</a>
+      </div>
+    </section>
+
+    <section class="section-wrap section-block" id="skin-studio">
+      <div class="section-intro split-intro">
+        <div><p class="kicker">SKIN STUDIO</p><h2 data-i18n="skinTitle">皮肤制作器</h2></div>
+        <p data-i18n-html="skinIntro">Skin Studio 位于 <code>CHUNITHM-Mobile-Unity/tools/SkinStudio/</code>，可以在浏览器中打开，也可以按目录说明运行桌面版。</p>
+      </div>
+      <div class="studio-layout">
+        <div class="studio-preview studio-carousel" data-carousel aria-label="Skin Studio 截图轮播">
+          <div class="carousel-track">
+            <figure class="carousel-slide is-active"><img src="assets/skin-studio-editor.svg" alt="Skin Studio 编辑器界面"><figcaption>Skin Studio 编辑器</figcaption></figure>
+            <figure class="carousel-slide"><img src="assets/skin-studio-layout.svg" alt="Skin Studio 布局设置"><figcaption>布局与元素设置</figcaption></figure>
+            <figure class="carousel-slide"><img src="assets/skin-studio-assets.svg" alt="Skin Studio 资源设置"><figcaption>资源与皮肤包设置</figcaption></figure>
+            <figure class="carousel-slide"><img src="assets/skin-studio-japanese.svg" alt="Skin Studio 日文界面"><figcaption>多语言界面</figcaption></figure>
+          </div>
+          <button class="carousel-button carousel-prev" type="button" aria-label="上一张截图">‹</button>
+          <button class="carousel-button carousel-next" type="button" aria-label="下一张截图">›</button>
+          <div class="carousel-dots" role="tablist" aria-label="选择 Skin Studio 截图"></div>
+        </div>
+        <div class="studio-copy">
+          <h3 data-i18n="skinEditTitle">从已有皮肤开始编辑</h3>
+          <p data-i18n="skinEditText">按照现有文档，编辑器用于调整游玩界面的皮肤元素与布局，并导出游戏可读取的皮肤包。导入和字段限制以仓库内的 Skin Studio 文档为准。</p>
+          <div class="code-block"><span data-i18n="browserVersion"># 浏览器版</span><code>tools/SkinStudio/index.html</code><span data-i18n="desktopVersion"># 桌面版</span><code>npm install &amp;&amp; npm start</code></div>
+          <a class="text-link" href="https://github.com/HMQYHM/chunithm-mobile/blob/main/CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip" target="_blank" rel="noopener"><span data-i18n="viewStudio">查看编辑器目录</span> ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-wrap section-block" id="community">
+      <div class="community-band">
+        <div><p class="kicker">COMMUNITY</p><h2 data-i18n="communityTitle">加入项目讨论</h2><p data-i18n="communityText">获取版本消息、交流使用问题或反馈测试结果。</p></div>
+        <div class="community-links">
+          <a class="community-link discord" href="https://discord.gg/uuVWNBBhXR" target="_blank" rel="noopener"><span>Discord</span><b data-i18n="joinServer">加入服务器</b> ↗</a>
+          <a class="community-link qq" href="https://qm.qq.com/q/LOzdadEsy6" target="_blank" rel="noopener"><span data-i18n="qqGroup">QQ群</span><b data-i18n="joinGroup">点击加入群聊</b> ↗</a>
+          <a class="community-link github" href="https://github.com/HMQYHM/chunithm-mobile" target="_blank" rel="noopener"><span>GitHub</span><b data-i18n="viewSource">查看源码</b> ↗</a>
+          <a class="community-link support-link" href="https://space.bilibili.com/351963496" target="_blank" rel="noopener"><span>Bilibili</span><b data-i18n="bilibiliHome">我的 Bilibili 主页</b> ↗</a>
+          <a class="community-link support-link" href="https://afdian.com/a/HMQYHM" target="_blank" rel="noopener"><span data-i18n="supportProject">支持项目运营</span><b data-i18n="supportProjectAction">支持项目持续开发</b> ↗</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer section-wrap">
+    <div class="footer-brand"><img src="assets/download.png" alt="" data-i18n-alt="brandAlt"> <span>CHUNITHM Mobile</span></div>
+    <p data-i18n="footerText">独立项目说明站 · 内容以当前仓库和已验证构建为准</p>
+  </footer>
+
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const languageSelect = document.getElementById('languageSelect');
+      const themeToggle = document.getElementById('themeToggle');
+      const menuToggle = document.getElementById('menuToggle');
+      const mobileNav = document.getElementById('mobileNav');
+      const messages = {
+        'zh-CN': {
+          title: 'CHUNITHM Mobile | 项目说明', metaDescription: 'CHUNITHM Mobile 项目说明、下载和开发文档。', brandAria: 'CHUNITHM Mobile 首页', brandAlt: 'CHUNITHM Mobile 图标', mainNavAria: '主导航', languageLabel: '选择语言', themeToggleAria: '切换到亮色模式', themeToggleAriaLight: '切换到暗色模式', menuAria: '打开菜单', platformFactsAria: '平台信息', heroArtAria: '游戏轨道视觉图', heroArtAlt: '游戏轨道与音符视觉图', navDownload: '下载', navGame: '游戏', navServer: '服务端', navBots: '机器人', navSkin: 'Skin Studio', navCommunity: '社区', heroKicker: 'OPEN PROJECT · MOBILE RHYTHM GAME', heroTitle: '把 CHUNITHM 的游玩体验带到移动端。', heroLead: '这是一个独立的 Unity 移动端项目。这里集中放置当前构建、开发说明、联机核心和皮肤制作工具的入口。', heroDownload: '查看下载', heroReleases: 'GitHub Releases', mobileBuild: '移动端构建', harmonyComing: '敬请期待', downloadTitle: '当前构建', downloadIntro: '优先从 GitHub Releases 获取公开版本。本机生成的构建记录用于开发测试时核对文件。', apkTitle: 'Android APK', apkDescription: 'ARM64 构建，适用于 Android 7.0 及以上设备。', ipaTitle: 'iOS IPA', ipaDescription: '使用 Xcode 生成的未签名包，需要使用自己的 Apple 开发者账号签名。', openReleases: '打开发布页', buildNote: '本机工作区已保存 APK 与 IPA 构建目录；安装时如果提示签名不一致，请卸载旧包后再安装新包。', gameTitle: '游戏客户端', gameIntro: 'Unity 客户端位于 <code>CHUNITHM-Mobile-Unity/</code>。页面只展示当前文档已确认的内容，具体支持范围以仓库和实际构建为准。', gameFeature1Title: '移动端游玩', gameFeature1Text: '面向 Android 与 iOS 的独立 Unity 客户端，支持移动端构建与本地资源导入。', gameFeature2Title: '谱面与皮肤', gameFeature2Text: '项目包含谱面读取、游玩界面元素和可导入的皮肤资源，制作方式见 Skin Studio 文档。', gameFeature3Title: '以实际版本为准', gameFeature3Text: '功能说明以当前仓库、构建文件和测试结果为准，未完成的内容不会写入发布说明。', serverTitle: '服务端', serverIntro: '公开仓库提供联机核心源码 ZIP，用于本地或自建环境的联机核心测试。', runtimeLabel: '运行环境', portLabel: '默认端口', startLabel: '启动方式', checkLabel: '检查方式', viewServer: '下载联机核心源码', skinTitle: '皮肤制作器', skinIntro: '公开仓库提供 Skin Studio 源码 ZIP，包含浏览器版和桌面版制作工具说明。', skinArtAlt: 'Skin Studio 预览视觉', skinCaption: '可视化编辑 · 导出皮肤包', skinEditTitle: '从已有皮肤开始编辑', skinEditText: '按照现有文档，编辑器用于调整游玩界面的皮肤元素与布局，并导出游戏可读取的皮肤包。导入和字段限制以仓库内的 Skin Studio 文档为准。', browserVersion: '# 浏览器版', desktopVersion: '# 桌面版', viewStudio: '下载 Skin Studio 源码', communityTitle: '加入项目讨论', communityText: '获取版本消息、交流使用问题或反馈测试结果。', joinServer: '加入服务器', qqGroup: 'QQ群', joinGroup: '点击加入群聊', viewSource: '查看源码', footerText: '独立项目说明站 · 内容以当前仓库和已验证构建为准', readmePreview: 'README 草稿预览', supportProject: '支持项目运营', botTitle: '机器人设置说明', botIntro: 'QQ Bot 与 Discord 社区入口分开维护，配置时请按实际支持情况操作。', qqBotTitle: 'QQ Bot', botAvailable: '当前服务端支持', qqBotText: '在服务端后台打开 <code>/admin-v2</code>，进入 QQ Bot 设置。可选择 QQ 官方机器人或 OneBot/NapCat，分别填写对应凭据、管理员和群号；保存后再启动或重载 Bot。', qqBotStep1: '准备对应平台的 AppID、密钥或 WebSocket 地址与令牌。', qqBotStep2: '只在服务端后台录入凭据，不要提交到公开仓库。', qqBotStep3: '在状态面板确认连接状态，再使用 QQ 指令。', qqBotDocs: '查看 QQ Bot 服务端说明', botNotConnected: '当前版本未接入', discordBotText: '当前公开服务端没有 Discord Bot 适配器或 Discord Token 配置入口，因此网页只保留 Discord 社区链接，不提供虚假的配置步骤。Discord 与 QQ Bot 的配置不会共用或覆盖。', discordBotNote: '需要 Discord Bot 时，请等待对应适配器和后台字段实际加入后再配置 Token、Gateway 权限与管理员角色。', openDiscord: '打开 Discord 社区'
+        },
+        'zh-TW': {
+          title: 'CHUNITHM Mobile | 專案說明', metaDescription: 'CHUNITHM Mobile 專案說明、下載與開發文件。', brandAria: 'CHUNITHM Mobile 首頁', brandAlt: 'CHUNITHM Mobile 圖示', mainNavAria: '主導覽', languageLabel: '選擇語言', themeToggleAria: '切換至淺色模式', themeToggleAriaLight: '切換至深色模式', menuAria: '開啟選單', platformFactsAria: '平台資訊', heroArtAria: '遊戲軌道視覺圖', heroArtAlt: '遊戲軌道與音符視覺圖', navDownload: '下載', navGame: '遊戲', navServer: '伺服器', navBots: '機器人', navSkin: 'Skin Studio', navCommunity: '社群', heroKicker: 'OPEN PROJECT · MOBILE RHYTHM GAME', heroTitle: '將 CHUNITHM 的遊玩體驗帶到行動端。', heroLead: '這是一個獨立的 Unity 行動端專案。這裡集中放置目前建置、開發說明、連線核心與皮膚製作工具的入口。', heroDownload: '查看下載', heroReleases: 'GitHub Releases', mobileBuild: '行動端建置', harmonyComing: '敬請期待', downloadTitle: '目前建置', downloadIntro: '請優先從 GitHub Releases 取得公開版本。本機產生的建置記錄用於開發測試時核對檔案。', apkTitle: 'Android APK', apkDescription: 'ARM64 建置，適用於 Android 7.0 以上裝置。', ipaTitle: 'iOS IPA', ipaDescription: '使用 Xcode 產生的未簽名封裝，需要使用自己的 Apple 開發者帳號簽名。', openReleases: '開啟發布頁', buildNote: '本機工作區已保存 APK 與 IPA 建置目錄；安裝時若提示簽名不一致，請先移除舊版本再安裝。', gameTitle: '遊戲客戶端', gameIntro: 'Unity 客戶端位於 <code>CHUNITHM-Mobile-Unity/</code>。頁面只展示目前文件已確認的內容，實際支援範圍以儲存庫和建置為準。', gameFeature1Title: '行動端遊玩', gameFeature1Text: '面向 Android 與 iOS 的獨立 Unity 客戶端，支援行動端建置與本機資源匯入。', gameFeature2Title: '譜面與皮膚', gameFeature2Text: '專案包含譜面讀取、遊玩介面元素和可匯入的皮膚資源，製作方式見 Skin Studio 文件。', gameFeature3Title: '以實際版本為準', gameFeature3Text: '功能說明以目前儲存庫、建置檔案和測試結果為準，尚未完成的內容不會寫入發布說明。', serverTitle: '伺服器', serverIntro: '公開儲存庫提供連線核心原始碼 ZIP，用於本機或自建環境的連線核心測試。', runtimeLabel: '執行環境', portLabel: '預設連接埠', startLabel: '啟動方式', checkLabel: '檢查方式', viewServer: '下載連線核心原始碼', skinTitle: '皮膚製作器', skinIntro: '公開儲存庫提供 Skin Studio 原始碼 ZIP，包含瀏覽器版和桌面版製作工具說明。', skinArtAlt: 'Skin Studio 預覽視覺', skinCaption: '視覺化編輯 · 匯出皮膚包', skinEditTitle: '從現有皮膚開始編輯', skinEditText: '依照現有文件，編輯器可調整遊玩介面的皮膚元素與布局，並匯出遊戲可讀取的皮膚包。匯入和欄位限制以儲存庫內的 Skin Studio 文件為準。', browserVersion: '# 瀏覽器版', desktopVersion: '# 桌面版', viewStudio: '下載 Skin Studio 原始碼', communityTitle: '加入專案討論', communityText: '取得版本消息、交流使用問題或回報測試結果。', joinServer: '加入伺服器', qqGroup: 'QQ群', joinGroup: '點擊加入群聊', viewSource: '查看原始碼', footerText: '獨立專案說明站 · 內容以目前儲存庫和已驗證建置為準', readmePreview: 'README 草稿預覽', supportProject: '支持專案營運', botTitle: '機器人設定說明', botIntro: 'QQ Bot 與 Discord 社群入口分開維護，請依實際支援狀態設定。', qqBotTitle: 'QQ Bot', botAvailable: '目前伺服器支援', qqBotText: '在伺服器後台開啟 <code>/admin-v2</code>，進入 QQ Bot 設定。可選擇 QQ 官方機器人或 OneBot/NapCat，分別填寫憑據、管理員與群組；儲存後再啟動或重新載入 Bot。', qqBotStep1: '準備對應平台的 AppID、密鑰或 WebSocket 位址與權杖。', qqBotStep2: '只在伺服器後台輸入憑據，不要提交到公開儲存庫。', qqBotStep3: '在狀態面板確認連線後，再使用 QQ 指令。', qqBotDocs: '查看 QQ Bot 伺服器說明', botNotConnected: '目前版本未接入', discordBotText: '目前公開伺服器沒有 Discord Bot 配接器或 Discord Token 設定入口，因此網頁只保留 Discord 社群連結，不提供虛假的設定步驟。Discord 與 QQ Bot 設定不會共用或覆蓋。', discordBotNote: '需要 Discord Bot 時，請等待對應配接器與後台欄位實際加入後，再設定 Token、Gateway 權限與管理員角色。', openDiscord: '開啟 Discord 社群'
+        },
+        ja: {
+          title: 'CHUNITHM Mobile | プロジェクト説明', metaDescription: 'CHUNITHM Mobile のプロジェクト説明、ダウンロード、開発ドキュメント。', brandAria: 'CHUNITHM Mobile ホーム', brandAlt: 'CHUNITHM Mobile アイコン', mainNavAria: 'メインナビゲーション', languageLabel: '言語を選択', themeToggleAria: '明るいテーマに切り替える', themeToggleAriaLight: '暗いテーマに切り替える', menuAria: 'メニューを開く', platformFactsAria: '対応プラットフォーム', heroArtAria: 'ゲームレーンのビジュアル', heroArtAlt: 'ゲームレーンとノーツのビジュアル', navDownload: 'ダウンロード', navGame: 'ゲーム', navServer: 'サーバー', navBots: 'ボット', navSkin: 'Skin Studio', navCommunity: 'コミュニティ', heroKicker: 'OPEN PROJECT · MOBILE RHYTHM GAME', heroTitle: 'CHUNITHM のプレイ体験をモバイルへ。', heroLead: 'Unity で開発している独立したモバイルプロジェクトです。ビルド、開発ドキュメント、通信コア、スキン制作ツールへの入口をまとめています。', heroDownload: 'ダウンロードを見る', heroReleases: 'GitHub Releases', mobileBuild: 'モバイルビルド', harmonyComing: 'お楽しみに', downloadTitle: '現在のビルド', downloadIntro: '公開版は GitHub Releases から取得してください。ローカルのビルド記録は開発テスト用の確認に使用します。', apkTitle: 'Android APK', apkDescription: 'ARM64 ビルド。Android 7.0 以降に対応します。', ipaTitle: 'iOS IPA', ipaDescription: 'Xcode で作成した未署名パッケージです。自分の Apple 開発者アカウントで署名してください。', openReleases: 'リリースを開く', buildNote: 'ローカルのワークスペースには APK と IPA のビルドディレクトリがあります。署名が一致しない場合は旧バージョンを削除してからインストールしてください。', gameTitle: 'ゲームクライアント', gameIntro: 'Unity クライアントは <code>CHUNITHM-Mobile-Unity/</code> にあります。このページは現在のドキュメントで確認できる内容だけを掲載しています。', gameFeature1Title: 'モバイルプレイ', gameFeature1Text: 'Android と iOS 向けの Unity クライアントで、モバイルビルドとローカルリソースの読み込みに対応します。', gameFeature2Title: '譜面とスキン', gameFeature2Text: '譜面の読み込み、プレイ画面の要素、インポート可能なスキンを含みます。制作方法は Skin Studio のドキュメントをご覧ください。', gameFeature3Title: '実際の版を基準に', gameFeature3Text: '機能説明は現在のリポジトリ、ビルドファイル、テスト結果を基準にしています。未完成の内容はリリース説明に記載しません。', serverTitle: 'サーバー', serverIntro: '公開リポジトリでは通信コアのソース ZIP を提供しています。ローカルまたは自分で用意した環境でテストできます。', runtimeLabel: '実行環境', portLabel: 'デフォルトポート', startLabel: '起動方法', checkLabel: '確認方法', viewServer: '通信コアのソースをダウンロード', skinTitle: 'スキン制作ツール', skinIntro: '公開リポジトリでは Skin Studio のソース ZIP と、ブラウザ版・デスクトップ版の説明を提供しています。', skinArtAlt: 'Skin Studio のプレビュー', skinCaption: 'ビジュアル編集 · スキンを書き出す', skinEditTitle: '既存のスキンから編集する', skinEditText: 'ドキュメントに沿ってプレイ画面のスキン要素とレイアウトを調整し、ゲームで読み込めるスキンパッケージを書き出せます。インポートと項目の制限はリポジトリ内のドキュメントを確認してください。', browserVersion: '# ブラウザ版', desktopVersion: '# デスクトップ版', viewStudio: 'Skin Studio ソースをダウンロード', communityTitle: 'プロジェクトに参加', communityText: 'バージョン情報、使い方の相談、テスト結果のフィードバックはこちらへ。', joinServer: 'サーバーに参加', qqGroup: 'QQグループ', joinGroup: 'グループに参加', viewSource: 'ソースを見る', footerText: '独立プロジェクトの説明サイト · 内容は現在のリポジトリと確認済みビルドを基準にしています', readmePreview: 'README 草稿プレビュー', supportProject: 'プロジェクトを支援', botTitle: 'ボット設定ガイド', botIntro: 'QQ Bot と Discord コミュニティの入口は分けて管理します。実際に対応している機能だけを設定してください。', qqBotTitle: 'QQ Bot', botAvailable: '現在のサーバーで対応', qqBotText: 'サーバー管理画面の <code>/admin-v2</code> を開き、QQ Bot 設定へ進みます。QQ 公式 Bot または OneBot/NapCat を選び、それぞれの認証情報、管理者、グループを入力してから Bot を起動または再読み込みします。', qqBotStep1: '対象プラットフォームの AppID、秘密鍵、または WebSocket アドレスとトークンを準備します。', qqBotStep2: '認証情報はサーバー管理画面だけに入力し、公開リポジトリへ保存しません。', qqBotStep3: 'ステータス画面で接続を確認してから QQ コマンドを使います。', qqBotDocs: 'QQ Bot のサーバー説明を見る', botNotConnected: '現在の版では未接続', discordBotText: '現在公開されているサーバーには Discord Bot アダプターや Discord Token の設定画面がありません。そのため、このページには Discord コミュニティへのリンクだけを掲載し、存在しない設定手順は案内しません。Discord と QQ Bot の設定は共有・上書きされません。', discordBotNote: 'Discord Bot が実装された後に、Token、Gateway 権限、管理者ロールを設定してください。', openDiscord: 'Discord コミュニティを開く'
+        },
+        en: {
+          title: 'CHUNITHM Mobile | Project Guide', metaDescription: 'Project guide, downloads, and development documentation for CHUNITHM Mobile.', brandAria: 'CHUNITHM Mobile home', brandAlt: 'CHUNITHM Mobile icon', mainNavAria: 'Main navigation', languageLabel: 'Choose language', themeToggleAria: 'Switch to light theme', themeToggleAriaLight: 'Switch to dark theme', menuAria: 'Open menu', platformFactsAria: 'Platform information', heroArtAria: 'Gameplay lane artwork', heroArtAlt: 'Gameplay lane and note artwork', navDownload: 'Downloads', navGame: 'Game', navServer: 'Server', navBots: 'Bots', navSkin: 'Skin Studio', navCommunity: 'Community', heroKicker: 'OPEN PROJECT · MOBILE RHYTHM GAME', heroTitle: 'Bring the CHUNITHM experience to mobile.', heroLead: 'An independent Unity mobile project with one place for current builds, development notes, the multiplayer core, and skin-making tools.', heroDownload: 'View downloads', heroReleases: 'GitHub Releases', mobileBuild: 'Mobile builds', harmonyComing: 'Coming soon', downloadTitle: 'Current builds', downloadIntro: 'Use GitHub Releases for public builds. Local build records are kept for development and test verification.', apkTitle: 'Android APK', apkDescription: 'ARM64 build for Android 7.0 and later.', ipaTitle: 'iOS IPA', ipaDescription: 'Unsigned package produced with Xcode. Sign it with your own Apple developer account.', openReleases: 'Open releases', buildNote: 'The local workspace contains APK and IPA build directories. If installation is rejected because the signing certificate differs, remove the old package before installing.', gameTitle: 'Game client', gameIntro: 'The Unity client is in <code>CHUNITHM-Mobile-Unity/</code>. This page only describes content confirmed by the current documentation; the repository and actual builds are authoritative.', gameFeature1Title: 'Mobile play', gameFeature1Text: 'An independent Unity client for Android and iOS with mobile builds and local resource imports.', gameFeature2Title: 'Charts and skins', gameFeature2Text: 'Includes chart loading, gameplay UI elements, and importable skin resources. See Skin Studio documentation for the authoring workflow.', gameFeature3Title: 'Based on the current build', gameFeature3Text: 'Feature notes follow the current repository, build files, and test results. Unfinished work is not listed in release notes.', serverTitle: 'Server', serverIntro: 'The public repository provides a multiplayer core source ZIP for local testing or deployment on your own host.', runtimeLabel: 'Runtime', portLabel: 'Default port', startLabel: 'Start command', checkLabel: 'Check command', viewServer: 'Download multiplayer core source', skinTitle: 'Skin Studio', skinIntro: 'The public repository provides a Skin Studio source ZIP with instructions for the browser and desktop versions.', skinArtAlt: 'Skin Studio preview artwork', skinCaption: 'Visual editing · Export skin packages', skinEditTitle: 'Start from an existing skin', skinEditText: 'Use the documented editor to adjust gameplay skin elements and layout, then export a package that the game can read. Import and field limits are defined by the repository documentation.', browserVersion: '# Browser version', desktopVersion: '# Desktop version', viewStudio: 'Download Skin Studio source', communityTitle: 'Join the project', communityText: 'Get version updates, discuss usage, or share test feedback.', joinServer: 'Join server', qqGroup: 'QQ group', joinGroup: 'Join the group', viewSource: 'View source', footerText: 'Independent project guide · Content follows the current repository and verified builds', readmePreview: 'README draft preview', supportProject: 'Support the project', botTitle: 'Bot setup notes', botIntro: 'The QQ Bot configuration and the Discord community link are maintained separately. Configure only features that exist in the current server.', qqBotTitle: 'QQ Bot', botAvailable: 'Supported by the current server', qqBotText: 'Open <code>/admin-v2</code> in the server admin panel and enter QQ Bot settings. Choose the official QQ bot or OneBot/NapCat, enter its credentials, administrators, and groups, then start or reload the bot.', qqBotStep1: 'Prepare the platform AppID, secret, or WebSocket URL and token.', qqBotStep2: 'Enter credentials only in the server admin panel; do not commit them to a public repository.', qqBotStep3: 'Confirm the connection in the status panel before using QQ commands.', qqBotDocs: 'Read the QQ Bot server notes', botNotConnected: 'Not connected in this version', discordBotText: 'The public server currently has no Discord Bot adapter or Discord Token settings. This page therefore keeps only the Discord community link and does not describe a configuration flow that does not exist. Discord and QQ Bot settings are separate.', discordBotNote: 'Configure a Discord token, Gateway permissions, and administrator roles only after the corresponding adapter and admin fields are actually added.', openDiscord: 'Open Discord community'
+        }
+      };
+      Object.assign(messages['zh-CN'], { bilibiliHome: '我的 Bilibili 主页', supportProjectAction: '支持项目持续开发' });
+      Object.assign(messages['zh-TW'], { bilibiliHome: '我的 Bilibili 主頁', supportProjectAction: '支持專案持續開發' });
+      Object.assign(messages.ja, { bilibiliHome: 'Bilibili ホーム', supportProjectAction: '継続開発を支援' });
+      Object.assign(messages.en, { bilibiliHome: 'My Bilibili profile', supportProjectAction: 'Support continued development' });
+
+      function setTheme(theme) {
+        root.dataset.theme = theme;
+        themeToggle.querySelector('span').textContent = theme === 'dark' ? '☾' : '☀';
+        const key = theme === 'dark' ? 'themeToggleAria' : 'themeToggleAriaLight';
+        const themeLabel = messages[root.dataset.language][key] || (theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+        themeToggle.setAttribute('aria-label', themeLabel);
+        themeToggle.title = themeLabel;
+        localStorage.setItem('chunithm-theme', theme);
+      }
+
+      function setLanguage(language) {
+        const selected = messages[language] ? language : 'zh-CN';
+        const t = messages[selected];
+        root.dataset.language = selected;
+        root.lang = selected;
+        document.title = t.title;
+        document.querySelector('meta[name="description"]').content = t.metaDescription;
+        document.querySelectorAll('[data-i18n]').forEach((element) => { if (t[element.dataset.i18n] !== undefined) element.textContent = t[element.dataset.i18n]; });
+        document.querySelectorAll('[data-i18n-html]').forEach((element) => { if (t[element.dataset.i18nHtml] !== undefined) element.innerHTML = t[element.dataset.i18nHtml]; });
+        document.querySelectorAll('[data-i18n-aria]').forEach((element) => { if (t[element.dataset.i18nAria] !== undefined) element.setAttribute('aria-label', t[element.dataset.i18nAria]); });
+        document.querySelectorAll('[data-i18n-alt]').forEach((element) => { if (t[element.dataset.i18nAlt] !== undefined) element.alt = t[element.dataset.i18nAlt]; });
+        languageSelect.value = selected;
+        localStorage.setItem('chunithm-language', selected);
+        setTheme(root.dataset.theme || 'dark');
+      }
+
+      document.querySelectorAll('[data-carousel]').forEach((carousel) => {
+        const slides = [...carousel.querySelectorAll('.carousel-slide')];
+        const dots = carousel.querySelector('.carousel-dots');
+        let index = 0;
+        const show = (next) => {
+          index = (next + slides.length) % slides.length;
+          slides.forEach((slide, i) => slide.classList.toggle('is-active', i === index));
+          dots?.querySelectorAll('.carousel-dot').forEach((dot, i) => dot.classList.toggle('is-active', i === index));
+        };
+        slides.forEach((_, i) => {
+          const dot = document.createElement('button');
+          dot.className = 'carousel-dot' + (i === 0 ? ' is-active' : '');
+          dot.type = 'button'; dot.setAttribute('aria-label', `显示第 ${i + 1} 张截图`);
+          dot.addEventListener('click', () => show(i)); dots?.appendChild(dot);
+        });
+        carousel.querySelector('.carousel-prev')?.addEventListener('click', () => show(index - 1));
+        carousel.querySelector('.carousel-next')?.addEventListener('click', () => show(index + 1));
+        let timer = window.setInterval(() => show(index + 1), 5000);
+        carousel.addEventListener('mouseenter', () => window.clearInterval(timer));
+        carousel.addEventListener('mouseleave', () => { timer = window.setInterval(() => show(index + 1), 5000); });
+      });
+
+      const savedLanguage = localStorage.getItem('chunithm-language');
+      const browserLanguage = (navigator.languages || [navigator.language || 'zh-CN']).map((value) => value.toLowerCase()).find((value) => value.startsWith('zh-tw') || value.startsWith('zh-hant') || value.startsWith('ja') || value.startsWith('en') || value.startsWith('zh')) || 'zh-cn';
+      const detectedLanguage = browserLanguage.startsWith('zh-tw') || browserLanguage.startsWith('zh-hant') ? 'zh-TW' : browserLanguage.startsWith('ja') ? 'ja' : browserLanguage.startsWith('en') ? 'en' : 'zh-CN';
+      const savedTheme = localStorage.getItem('chunithm-theme');
+      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setLanguage(savedLanguage || detectedLanguage);
+      setTheme(savedTheme || (systemDark ? 'dark' : 'light'));
+
+      languageSelect.addEventListener('change', (event) => setLanguage(event.target.value));
+      themeToggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+      menuToggle.addEventListener('click', () => {
+        const open = mobileNav.classList.toggle('open');
+        menuToggle.setAttribute('aria-expanded', String(open));
+      });
+      mobileNav.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
+        mobileNav.classList.remove('open');
+        menuToggle.setAttribute('aria-expanded', 'false');
+      }));
+    })();
+  </script>
+</body>
+</html>
