@@ -192,7 +192,7 @@ namespace ChunithmMobile.Runtime
             ButtonText("‹", browser, new Vector2(.02f, .91f), new Vector2(.07f, .985f), surfaceRaised,
                 BackToMultiplayerLoginV2);
             Label("大厅", browser, 32, TextAnchor.MiddleLeft, new Vector2(.09f, .91f), new Vector2(.24f, .985f), Color.white);
-            multiplayerBrowserSearchInput = Input("搜索房间名、房主或六位房间号", browser,
+            multiplayerBrowserSearchInput = Input("搜索房间名、房主或三位/六位房间号", browser,
                 new Vector2(.25f, .91f), new Vector2(.48f, .985f));
             multiplayerBrowserSearchInput.onEndEdit.AddListener(_ => RequestMultiplayerRoomsV2());
             multiplayerBrowserFilterButton = ButtonText("筛选", browser, new Vector2(.49f, .91f), new Vector2(.57f, .985f), surfaceRaised,
@@ -612,6 +612,19 @@ namespace ChunithmMobile.Runtime
             RequestMultiplayerRoomsV2();
         }
 
+        private static string PersistentLibraryLabelV2(MultiplayerLibrarySelectionDto selection)
+        {
+            if (selection == null || string.IsNullOrEmpty(selection.mode) || selection.mode == "all") return "曲库：全部";
+            if (selection.mode == "songs") return "曲库：指定歌曲 " + string.Join("、", selection.songIds ?? Array.Empty<string>());
+            if (selection.mode == "levels") return "曲库：指定等级 " + string.Join("、", selection.levels ?? Array.Empty<string>());
+            if (selection.mode == "random")
+            {
+                string levels = selection.levels == null || selection.levels.Length == 0 ? "全部等级" : string.Join("、", selection.levels);
+                return selection.randomCount == 0 ? "曲库：随机循环 " + levels : "曲库：随机 " + levels + " ×" + selection.randomCount;
+            }
+            return "曲库：全部";
+        }
+
         private void BuildRoomListContentV2(MultiplayerRoomDto[] rooms)
         {
             if (multiplayerBrowserRoomContent == null) return;
@@ -664,7 +677,9 @@ namespace ChunithmMobile.Runtime
                     SelectMultiplayerRoomV2(latest ?? room);
                 });
                 visual.Label.text = room.roomName + "  " + room.roomId + "\n" + room.memberCount + "/" + room.maxPlayers +
-                    "  " + state + "  " + (room.hasPassword ? "🔒" : "") + "\n" + song + " · " +
+                    "  " + state + "  " + (room.hasPassword ? "🔒" : "") + "\n" +
+                    (room.persistent ? PersistentLibraryLabelV2(room.librarySelection) : song + " · " +
+                    (room.selectionMode == "loop" ? "循环轮流" : "房主专选")) + " · " +
                     (room.mode == "normal" ? "普通" : "休闲") + " · " + (room.persistent ? "常驻" : "个人");
                 visual.Label.fontSize = 15;
                 visual.Label.alignment = TextAnchor.MiddleLeft;
@@ -707,6 +722,9 @@ namespace ChunithmMobile.Runtime
                     .Append(room.memberCount).Append('|').Append(room.maxPlayers).Append('|')
                     .Append(room.state).Append('|').Append(room.hasPassword).Append('|')
                     .Append(room.mode).Append('|').Append(room.persistent).Append('|').Append(room.clientVersion).Append('|');
+                if (room.librarySelection != null)
+                    builder.Append(room.librarySelection.mode).Append('|').Append(room.librarySelection.randomCount).Append('|')
+                        .Append(string.Join(",", room.librarySelection.levels ?? Array.Empty<string>())).Append('|');
                 if (room.song != null)
                     builder.Append(room.song.songId).Append('|').Append(room.song.songName).Append('|')
                         .Append(room.song.difficulty).Append('|');
@@ -733,11 +751,11 @@ namespace ChunithmMobile.Runtime
             bool active = room.state == "loading" || room.state == "countdown" || room.state == "playing" ||
                           room.state == "personalResults" || room.state == "groupResults";
             multiplayerBrowserDetails.text = "房间：" + room.roomName + "  " + room.roomId +
-                "\n创建者：" + room.ownerName + "\n当前房主：" + room.hostName +
+                (room.persistent ? "" : "\n创建者：" + room.ownerName + "\n当前房主：" + room.hostName) +
                 "\n人数：" + room.memberCount + "/" + room.maxPlayers + "\n模式：" + (room.mode == "normal" ? "普通" : "休闲") +
                 "\n类型：" + (room.persistent ? "常驻房间" : "个人房间") +
-                "\n选歌：" + (room.selectionMode == "loop" ? "循环轮流" : "房主专选") +
-                "\nMOD：" + mods + "\n歌曲：" + song + "\n状态：" + MultiplayerStateLabelV2(room.state) +
+                (room.persistent ? "\n" + PersistentLibraryLabelV2(room.librarySelection) : "\n选歌：" + (room.selectionMode == "loop" ? "循环轮流" : "房主专选")) +
+                "\nMOD：" + mods + (room.persistent ? "" : "\n歌曲：" + song) + "\n状态：" + MultiplayerStateLabelV2(room.state) +
                 (active ? "\n正在游玩或结算，暂时禁止加入" : "") + "\n" + version;
             multiplayerBrowserJoinButton.interactable = room.clientVersion == Application.version &&
                 !active && room.memberCount < room.maxPlayers;
@@ -1168,11 +1186,16 @@ namespace ChunithmMobile.Runtime
             if (currentPage != AppPage.MultiplayerRoom && currentPage != AppPage.MultiplayerGroupResults) return;
             string mode = room.mode == "normal" ? "普通模式" : "休闲模式";
             string selection = room.selectionMode == "loop" ? "循环轮流选歌" : "房主专选";
+            bool persistent = room.persistent;
             multiplayerRoomHeader.text = room.roomName + "  #" + room.roomId + "  " + room.memberCount + "/" + room.maxPlayers;
             multiplayerRoomStatus.text = MultiplayerStateLabelV2(room.state);
             SetButtonLabel(multiplayerRoomModeButton, "模式：" + mode);
             SetButtonLabel(multiplayerRoomModsButton, "MOD：" + CurrentMultiplayerModSummaryV2(room.mods));
-            SetButtonLabel(multiplayerRoomSelectionButton, "选歌方式：" + selection);
+            if (multiplayerRoomSelectionButton != null)
+            {
+                multiplayerRoomSelectionButton.gameObject.SetActive(!persistent);
+                if (!persistent) SetButtonLabel(multiplayerRoomSelectionButton, "选歌方式：" + selection);
+            }
             MultiplayerSongChangeVoteDto vote = room.songChangeVote;
             if (multiplayerRoomVoteButton != null)
             {
@@ -1183,9 +1206,9 @@ namespace ChunithmMobile.Runtime
                 }
                 else SetButtonLabel(multiplayerRoomVoteButton, "投票换歌（" + (vote == null ? 50 : Mathf.RoundToInt(vote.requiredRatio * 100f)) + "%）");
             }
-            multiplayerRoomSongLabel.text = room.song == null ? "房主尚未选择歌曲" :
+            multiplayerRoomSongLabel.text = persistent ? PersistentLibraryLabelV2(room.librarySelection) + (room.song == null ? "\n等待服务端选择歌曲" : "\n当前：" + (room.song.songName ?? room.song.songId)) : (room.song == null ? "房主尚未选择歌曲" :
                 (room.song.songName ?? room.song.songId) + "\n" + room.song.difficulty + "  Lv." + room.song.level +
-                "\n" + MultiplayerSongTransferStatusV2(room.song);
+                "\n" + MultiplayerSongTransferStatusV2(room.song));
             RefreshMultiplayerSongProgressV2(room.song);
             PlayMultiplayerRoomAudioV2(room);
             foreach (Transform child in multiplayerRoomMemberContent) Destroy(child.gameObject);

@@ -44,9 +44,9 @@ namespace ChunithmMobile.Editor
             PlayerSettings.companyName = "HMQYHM";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS,
                 AppleBundleIdentifier);
-            PlayerSettings.bundleVersion = "0.3.3";
-            // Increment the iOS build number for the 0.3.3 release.
-            PlayerSettings.iOS.buildNumber = "223";
+            PlayerSettings.bundleVersion = "0.3.4";
+            // Increment the iOS build number for the 0.3.4 release.
+            PlayerSettings.iOS.buildNumber = "224";
             // Current Xcode SDKs no longer accept deployment targets below iOS 15.
             // Keep Unity and both generated Xcode targets aligned so Xcode does not
             // report a version mismatch between Unity-iPhone and UnityFramework.

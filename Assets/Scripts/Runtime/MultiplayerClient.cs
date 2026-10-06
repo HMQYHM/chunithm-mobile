@@ -248,6 +248,7 @@ namespace ChunithmMobile.Runtime
         public bool listed;
         public bool hasPassword;
         public bool persistent;
+        public MultiplayerLibrarySelectionDto librarySelection;
         public MultiplayerSongChangeVoteDto songChangeVote;
         public MultiplayerModsMessage mods;
         public MultiplayerRoomMemberDto[] members;
@@ -255,6 +256,15 @@ namespace ChunithmMobile.Runtime
         public string roundId;
         public long startAt;
         public MultiplayerLeaderboardEntryDto[] leaderboard;
+    }
+
+    [Serializable]
+    public sealed class MultiplayerLibrarySelectionDto
+    {
+        public string mode;
+        public string[] songIds;
+        public string[] levels;
+        public int randomCount;
     }
 
     [Serializable]
