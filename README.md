@@ -1,4 +1,6 @@
 <!-- Languages: [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md) -->
+
+皮肤制作器完整说明：[字段与数值规范](docs/SKIN-STUDIO-COMPLETE.md) · [制作器工作流](docs/SKIN-STUDIO.md)
 # CHUNITHM Mobile — Unity migration
 
 This is the new, independent Unity implementation. The current release is **0.3.3**. The existing Android/Kotlin app is deliberately untouched.

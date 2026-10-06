@@ -39,6 +39,14 @@ namespace ChunithmMobile.Editor
                     (string)labelMethod.Invoke(null, new object[] { SongAchievement.AJ }) == "AJ" &&
                     (string)labelMethod.Invoke(null, new object[] { SongAchievement.FC }) == "FC",
                 "achievement labels were changed");
+            ResultViewModel result = new ResultViewModel {
+                JusticeCritical = 100, Justice = 0, Attack = 0, Miss = 0
+            };
+            Require(result.Achievement == SongAchievement.ACJ, "result model did not expose ACJ");
+            result.JusticeCritical = 99; result.Justice = 1;
+            Require(result.Achievement == SongAchievement.AJ, "result model did not expose AJ");
+            result.Justice = 0; result.Attack = 1;
+            Require(result.Achievement == SongAchievement.FC, "result model did not expose FC");
             Color acjColor = (Color)colorMethod.Invoke(null, new object[] { SongAchievement.ACJ });
             Color ajColor = (Color)colorMethod.Invoke(null, new object[] { SongAchievement.AJ });
             Color fcColor = (Color)colorMethod.Invoke(null, new object[] { SongAchievement.FC });

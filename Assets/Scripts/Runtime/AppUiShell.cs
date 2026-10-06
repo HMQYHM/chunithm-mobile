@@ -235,6 +235,7 @@ namespace ChunithmMobile.Runtime
         private Text resultSong;
         private Text resultScore;
         private Text resultRank;
+        private Text resultAchievement;
         private Text resultJudgements;
         private Text resultPreviousScore;
         private Text resultNewBadge;
@@ -3690,15 +3691,19 @@ namespace ChunithmMobile.Runtime
             resultCoverPlaceholder = Label("♪", cover, 120, TextAnchor.MiddleCenter,
                 new Vector2(.025f, .025f), new Vector2(.975f, .975f), Color.white).gameObject;
             resultSong = Label("歌曲", page, 32, TextAnchor.UpperLeft, new Vector2(.07f, .17f), new Vector2(.40f, .34f), Color.white);
-            resultRank = Label("SSS+", page, 108, TextAnchor.MiddleCenter, new Vector2(.40f, .58f), new Vector2(.65f, .84f), cyan);
-            resultScore = Label("1,009,000", page, 68, TextAnchor.MiddleCenter, new Vector2(.38f, .42f), new Vector2(.68f, .61f), Color.white);
+            resultRank = Label("SSS+", page, 108, TextAnchor.MiddleCenter, new Vector2(.40f, .65f), new Vector2(.68f, .86f), cyan);
+            resultAchievement = Label("ACJ", page, 32, TextAnchor.MiddleCenter,
+                new Vector2(.46f, .54f), new Vector2(.62f, .65f), new Color(1f, .82f, .10f, 1f), true);
+            resultAchievement.fontStyle = FontStyle.Bold;
+            resultAchievement.gameObject.SetActive(false);
+            resultScore = Label("1,009,000", page, 68, TextAnchor.MiddleCenter, new Vector2(.38f, .38f), new Vector2(.70f, .54f), Color.white);
             resultPreviousScore = Label("最好分数  0", page, 20, TextAnchor.MiddleCenter,
-                new Vector2(.38f, .35f), new Vector2(.68f, .43f), muted);
+                new Vector2(.38f, .31f), new Vector2(.70f, .38f), muted);
             resultNewBadge = Label("NEW!!!", page, 32, TextAnchor.MiddleCenter,
                 new Vector2(.61f, .72f), new Vector2(.72f, .82f), new Color(1f, .82f, .12f, 1f));
             resultNewBadge.rectTransform.localRotation = Quaternion.Euler(0, 0, -45f);
             resultNewBadge.gameObject.SetActive(false);
-            resultJudgements = Label("JC 0   J 0   ATTACK 0   MISS 0", page, 25, TextAnchor.UpperLeft, new Vector2(.70f, .38f), new Vector2(.95f, .80f), Color.white);
+            resultJudgements = Label("JC 0   J 0   ATTACK 0   MISS 0", page, 25, TextAnchor.UpperLeft, new Vector2(.73f, .38f), new Vector2(.95f, .84f), Color.white);
             resultReplayButton = ButtonText("重新游玩", page, new Vector2(.43f, .09f), new Vector2(.64f, .20f), surfaceRaised, PrepareGameplay);
             resultContinueButton = ButtonText("返回选曲", page, new Vector2(.68f, .09f), new Vector2(.91f, .20f), cyan, ReturnToSongSelectFromResults);
         }
@@ -6247,6 +6252,7 @@ namespace ChunithmMobile.Runtime
             if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (resultScore != null) resultScore.color = gameplaySkin.ScoreColor;
             if (resultRank != null) resultRank.color = gameplaySkin.RankColor;
+            if (resultAchievement != null) resultAchievement.fontStyle = FontStyle.Bold;
             if (resultJudgements != null) resultJudgements.color = gameplaySkin.JudgementColor;
             ApplyGameplayElementLayout(settings);
             // App settings establish the baseline sizes first; the skin's
@@ -6586,6 +6592,13 @@ namespace ChunithmMobile.Runtime
                 DifficultyColor(playedChart.Difficulty), .36f);
             result = model; resultSong.text = model.SongName + "\n" + model.Artist + "\n" + model.Difficulty + "  Lv." + model.Level;
             resultRank.text = model.Rank; resultScore.text = model.Score.ToString("N0");
+            SongAchievement achievement = model.Achievement;
+            bool showAchievement = recordsScore && achievement != SongAchievement.None;
+            if (resultAchievement != null)
+            {
+                ConfigureSongAchievement(resultAchievement, achievement);
+                resultAchievement.gameObject.SetActive(showAchievement);
+            }
             bool hadPreviousRecord = previousBest > 0 || previousLast > 0;
             bool improvedLast = recordsScore && hadPreviousRecord && previousLast > 0 && model.Score > previousLast;
             bool showNew = recordsScore && model.Score > 0 && (!hadPreviousRecord || improvedLast);

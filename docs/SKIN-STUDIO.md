@@ -1,5 +1,8 @@
 # 游玩皮肤可视化制作器
 
+完整字段、数值范围、音频限制、Live2D 参数和 AI 设计模板见
+[`SKIN-STUDIO-COMPLETE.md`](SKIN-STUDIO-COMPLETE.md)。
+
 制作器位于 `Tools/SkinStudio/index.html`，不依赖 Unity 或服务器。Windows 可以双击
 `open-studio.bat`，macOS/Linux 可以直接用浏览器打开 `index.html`。
 

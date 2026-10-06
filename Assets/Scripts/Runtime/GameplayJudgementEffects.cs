@@ -14,6 +14,7 @@ namespace ChunithmMobile.Runtime
     {
         private enum EffectStyle { Ground, AirDirectional, AirHold, AirAction, Miss }
         private readonly List<GameObject> activeEffects = new List<GameObject>();
+        private readonly Stack<GameObject> pooledEffects = new Stack<GameObject>();
         private GameplaySkinStyle skin = GameplaySkinStyle.Original();
 
         public void ConfigureSkin(GameplaySkinStyle value)
@@ -24,9 +25,12 @@ namespace ChunithmMobile.Runtime
         public void Play(ChartNote note, JudgementResult judgement, float judgementY, int pointIndex = 0)
         {
             if (note == null) return;
-            activeEffects.RemoveAll(item => item == null);
+            activeEffects.RemoveAll(item => item == null || !item.activeSelf);
             while (activeEffects.Count >= 24) {
-                Destroy(activeEffects[0]);
+                // Let the short animation finish off-screen. Reusing the root
+                // avoids creating a CanvasGroup/GameObject for every judgement
+                // while keeping the visible effect cap deterministic.
+                RecycleEffect(activeEffects[0]);
                 activeEffects.RemoveAt(0);
             }
 
@@ -44,8 +48,7 @@ namespace ChunithmMobile.Runtime
             float x = Mathf.Clamp01((note.Lane + Mathf.Max(1, note.Width) * .5f) / ChartSpace.Lanes);
             float normalizedWidth = Mathf.Clamp(Mathf.Max(1, note.Width) / (float)ChartSpace.Lanes, .04f, .52f);
             float width = Mathf.Clamp(Screen.width * normalizedWidth, 72f, air ? 250f : 310f);
-            var effect = new GameObject(air ? "AIR compact judgement" : "Ground compact judgement",
-                typeof(RectTransform), typeof(CanvasGroup));
+            GameObject effect = AcquireEffect(air ? "AIR compact judgement" : "Ground compact judgement");
             effect.transform.SetParent(transform, false);
             RectTransform root = (RectTransform)effect.transform;
             root.anchorMin = root.anchorMax = new Vector2(x, Mathf.Clamp(judgementY, .04f, .92f));
@@ -68,9 +71,51 @@ namespace ChunithmMobile.Runtime
 
         public void Clear()
         {
-            foreach (GameObject effect in activeEffects)
-                if (effect != null) Destroy(effect);
+            StopAllCoroutines();
+            foreach (GameObject effect in activeEffects) RecycleEffect(effect);
             activeEffects.Clear();
+        }
+
+        private GameObject AcquireEffect(string name)
+        {
+            GameObject effect = null;
+            while (pooledEffects.Count > 0 && effect == null) effect = pooledEffects.Pop();
+            if (effect == null)
+                effect = new GameObject(name, typeof(RectTransform), typeof(CanvasGroup));
+            effect.name = name;
+            effect.SetActive(true);
+            effect.transform.localScale = Vector3.one;
+            CanvasGroup group = effect.GetComponent<CanvasGroup>();
+            if (group != null) group.alpha = 1f;
+            DeactivateChildren(effect.transform);
+            return effect;
+        }
+
+        private void RecycleEffect(GameObject effect)
+        {
+            if (effect == null) return;
+            DeactivateChildren(effect.transform);
+            effect.SetActive(false);
+            if (!pooledEffects.Contains(effect)) pooledEffects.Push(effect);
+        }
+
+        private static void DeactivateChildren(Transform parent)
+        {
+            for (int index = 0; index < parent.childCount; index++)
+                parent.GetChild(index).gameObject.SetActive(false);
+        }
+
+        private static Transform ReusableChild(Transform parent, string name, bool image)
+        {
+            for (int index = 0; index < parent.childCount; index++)
+            {
+                Transform child = parent.GetChild(index);
+                if (child.gameObject.activeSelf || !string.Equals(child.name, name, System.StringComparison.Ordinal)) continue;
+                bool hasImage = child.GetComponent<Image>() != null || child.GetComponent<RawImage>() != null;
+                if ((image && hasImage) || (!image && !hasImage))
+                    return child;
+            }
+            return null;
         }
 
         private static void AddPackageEffect(RectTransform root, ChartNote note,
@@ -112,9 +157,12 @@ namespace ChunithmMobile.Runtime
             }
 
             if (texture == null) return;
-            var objectWithImage = new GameObject("Package effect image",
-                typeof(RectTransform), typeof(RawImage));
+            Transform existing = ReusableChild(root, "Package effect image", true);
+            GameObject objectWithImage = existing != null
+                ? existing.gameObject
+                : new GameObject("Package effect image", typeof(RectTransform), typeof(RawImage));
             objectWithImage.transform.SetParent(root, false);
+            objectWithImage.SetActive(true);
             RectTransform rect = (RectTransform)objectWithImage.transform;
             rect.anchorMin = rect.anchorMax = new Vector2(.5f, .5f);
             rect.pivot = new Vector2(.5f, .5f);
@@ -215,13 +263,15 @@ namespace ChunithmMobile.Runtime
                 yield return null;
             }
             activeEffects.Remove(effect);
-            if (effect != null) Destroy(effect);
+            RecycleEffect(effect);
         }
 
         private static RectTransform Container(Transform parent, string name, Vector2 anchor, Vector2 size, float rotation)
         {
-            var child = new GameObject(name, typeof(RectTransform));
+            Transform existing = ReusableChild(parent, name, false);
+            GameObject child = existing != null ? existing.gameObject : new GameObject(name, typeof(RectTransform));
             child.transform.SetParent(parent, false);
+            child.SetActive(true);
             RectTransform rect = (RectTransform)child.transform;
             rect.anchorMin = rect.anchorMax = anchor;
             rect.pivot = new Vector2(.5f, .5f);
@@ -234,8 +284,11 @@ namespace ChunithmMobile.Runtime
         private static Image AbsoluteImage(Transform parent, string name, Color color, Vector2 anchor,
             Vector2 size, float rotation = 0f, Vector2? pivot = null)
         {
-            var child = new GameObject(name, typeof(RectTransform), typeof(Image));
+            Transform existing = ReusableChild(parent, name, true);
+            GameObject child = existing != null ? existing.gameObject :
+                new GameObject(name, typeof(RectTransform), typeof(Image));
             child.transform.SetParent(parent, false);
+            child.SetActive(true);
             RectTransform rect = (RectTransform)child.transform;
             rect.anchorMin = rect.anchorMax = anchor;
             rect.pivot = pivot ?? new Vector2(.5f, .5f);

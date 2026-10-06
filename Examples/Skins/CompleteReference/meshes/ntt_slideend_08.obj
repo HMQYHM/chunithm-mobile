@@ -1,0 +1,12 @@
+# ntt_slideend_08.svo | exact original VBO __HndToSvo__notes__notes__ntt_slideend_08__ntt_slideend_08__sle_08__ntt_slideend_08__PNCT_0000.VBO
+o ntt_slideend_08
+v -15.6799984 0.0199992955 5.60464191
+v -15.6799984 0.020000618 -4.48371553
+v 15.6799984 0.0199992955 5.60464191
+v 15.6799984 0.020000618 -4.48371553
+vt 0 0
+vt 0 1
+vt 1 0
+vt 1 1
+f 1/1 3/3 2/2
+f 2/2 3/3 4/4

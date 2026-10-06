@@ -1960,19 +1960,36 @@ namespace ChunithmMobile.Runtime
                 Color color = entry.placement == 1 ? new Color(.76f, .56f, .12f, .98f) :
                     entry.placement == 2 ? new Color(.48f, .55f, .62f, .98f) :
                     entry.placement == 3 ? new Color(.56f, .31f, .16f, .98f) : surfaceRaised;
-                string label = (entry.placement == 0 ? "退出" : "#" + entry.placement) + "  " + entry.name +
-                    "\n" + entry.score.ToString("N0") + "  " + entry.rank + "   JC " + entry.justiceCritical + "  J " + entry.justice +
-                    "  AT " + entry.attack + "  MISS " + entry.miss;
-                Button row = ButtonText(label, multiplayerGroupContent, Vector2.zero, Vector2.one, color, null);
+                Button row = ButtonText("", multiplayerGroupContent, Vector2.zero, Vector2.one, color, null);
                 RectTransform rect = (RectTransform)row.transform;
                 rect.anchorMin = new Vector2(0, 1); rect.anchorMax = new Vector2(1, 1); rect.pivot = new Vector2(.5f, 1);
-                float top = count * 78f + 4f;
-                rect.offsetMin = new Vector2(6, -top - 72f); rect.offsetMax = new Vector2(-6, -top);
-                Text text = row.GetComponentInChildren<Text>();
-                if (text != null) { text.fontSize = 17; text.alignment = TextAnchor.MiddleLeft; text.rectTransform.offsetMin = new Vector2(18, 0); }
+                float top = count * 92f + 4f;
+                rect.offsetMin = new Vector2(6, -top - 86f); rect.offsetMax = new Vector2(-6, -top);
+                Text buttonText = row.GetComponentInChildren<Text>();
+                if (buttonText != null) buttonText.gameObject.SetActive(false);
+                Text place = Label(entry.placement == 0 ? "退出" : "#" + entry.placement, row.transform,
+                    20, TextAnchor.MiddleCenter, new Vector2(.02f, .25f), new Vector2(.12f, .78f), Color.white, true);
+                place.fontStyle = FontStyle.Bold;
+                Text name = Label(entry.name ?? "玩家", row.transform, 19, TextAnchor.UpperLeft,
+                    new Vector2(.14f, .48f), new Vector2(.41f, .88f), Color.white, true);
+                FitModText(name, 19);
+                Label("JC " + entry.justiceCritical + "  J " + entry.justice + "  AT " + entry.attack + "  MISS " + entry.miss,
+                    row.transform, 13, TextAnchor.LowerLeft, new Vector2(.14f, .10f), new Vector2(.43f, .46f), muted, true);
+                Text score = Label(entry.score.ToString("N0"), row.transform, 19, TextAnchor.MiddleRight,
+                    new Vector2(.43f, .24f), new Vector2(.62f, .78f), Color.white, true);
+                FitModText(score, 19);
+                Text rank = Label(entry.rank ?? "-", row.transform, 22, TextAnchor.MiddleCenter,
+                    new Vector2(.64f, .20f), new Vector2(.77f, .80f), Color.white, true);
+                rank.fontStyle = FontStyle.Bold;
+                SongAchievement achievement = SongAchievementRules.FromCounts(entry.justiceCritical, entry.justice,
+                    entry.attack, entry.miss);
+                Text achievementLabel = Label("", row.transform, 21, TextAnchor.MiddleCenter,
+                    new Vector2(.79f, .20f), new Vector2(.97f, .80f), Color.white, true);
+                ConfigureSongAchievement(achievementLabel, achievement);
+                achievementLabel.gameObject.SetActive(!entry.exited && achievement != SongAchievement.None);
                 count++;
             }
-            multiplayerGroupContent.sizeDelta = new Vector2(0, count * 78f + 8f);
+            multiplayerGroupContent.sizeDelta = new Vector2(0, count * 92f + 8f);
         }
 
         private void ConfirmMultiplayerGroupResultsV2()

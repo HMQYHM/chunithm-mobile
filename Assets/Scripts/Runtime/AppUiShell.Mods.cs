@@ -28,6 +28,7 @@ namespace ChunithmMobile.Runtime
             public bool PreviousEnabled;
             public string Name;
             public string Section;
+            public Text StateLabel;
         }
 
         private sealed class ModDialogView
@@ -195,16 +196,20 @@ namespace ChunithmMobile.Runtime
             Text label = button.GetComponentInChildren<Text>();
             label.alignment = TextAnchor.MiddleLeft;
             label.rectTransform.offsetMin = new Vector2(16, 2);
-            label.rectTransform.offsetMax = new Vector2(-50, -2);
+            label.rectTransform.offsetMax = new Vector2(-124, -2);
             label.raycastTarget = false;
             FitModText(label, 20);
+            Text state = Label("未开启", button.transform, 13, TextAnchor.MiddleRight,
+                new Vector2(.66f, .12f), new Vector2(.88f, .88f), ModMutedTextColor, true);
+            state.raycastTarget = false;
+            FitModText(state, 13);
             RectTransform dot = Panel("Status dot", button.transform, new Color(.42f, .45f, .48f), Vector2.one * .5f, Vector2.one * .5f);
             dot.pivot = new Vector2(1, .5f);
             dot.sizeDelta = new Vector2(15, 15);
             dot.anchoredPosition = new Vector2(-17, 0);
             dot.GetComponent<Image>().raycastTarget = false;
             ModOptionView option = new ModOptionView {
-                Button = button, Toggle = action, Scoring = scoring, Section = section
+                Button = button, Toggle = action, Scoring = scoring, Section = section, StateLabel = state
             };
             view.Options[button] = option;
             button.onClick.AddListener(() => SelectModOption(view, option));
@@ -245,6 +250,12 @@ namespace ChunithmMobile.Runtime
             option.Name = name;
             option.Selected = selected;
             option.Disabled = disabled;
+            if (option.StateLabel != null)
+            {
+                option.StateLabel.text = disabled ? UiLocalization.Translate("当前模式不可用") :
+                    selected ? UiLocalization.Translate("已开启") : UiLocalization.Translate("未开启");
+                option.StateLabel.color = disabled ? ModDisabledTextColor : selected ? ModAccent(option.Scoring) : ModMutedTextColor;
+            }
             Color accent = ModAccent(option.Scoring);
             Color idle = HighContrastUi ? new Color(.92f, .94f, .96f) : new Color(.15f, .16f, .175f);
             Color background = disabled ? (HighContrastUi ? new Color(.84f, .86f, .88f) : new Color(.10f, .12f, .14f))

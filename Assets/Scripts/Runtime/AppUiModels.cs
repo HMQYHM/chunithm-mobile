@@ -509,6 +509,11 @@ namespace ChunithmMobile.Runtime
         public double TotalAverageMs = 1.8;
         public string ModLabel = "NORMAL";
 
+        public SongAchievement Achievement
+        {
+            get { return SongAchievementRules.FromCounts(JusticeCritical, Justice, Attack, Miss); }
+        }
+
         public string Rank
         {
             get { return RankForScore(Score); }
