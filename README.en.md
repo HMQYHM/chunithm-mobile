@@ -1,30 +1,53 @@
 # CHUNITHM Mobile
 
-An independent Unity mobile project containing the game client, a focused multiplayer core server, and the complete open-source Skin Studio editor.
+[Project guide](https://hmqyhm.github.io/chunithm-mobile/) · [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases)
 
-## Components
+CHUNITHM Mobile is an independent Unity mobile project. This repository publishes the project guide, a multiplayer core source archive, and a Skin Studio source archive.
 
-- `CHUNITHM-Mobile-Unity/`: game client, multiplayer client, Live2D runtime, and sample skins.
-- `CHUNITHM-Mobile-Multiplayer-Server/`: WebSocket/HTTP rooms, synchronization, song transfer, and smoke tests only.
-- `CHUNITHM-Mobile-Unity/tools/SkinStudio/`: full browser and Electron editor source, including rule blocks, scene tracks, PNG digits, and Live2D configuration.
+## Public contents
 
-QQ Bot code, bot tests, bot credentials, extended admin pages, and runtime data are excluded. The multiplayer core does not depend on a bot.
-
-## Quick start
-
-Open `CHUNITHM-Mobile-Unity/tools/SkinStudio/index.html` for the browser editor. For the desktop editor, run `npm install` and `npm start` in that directory; run `npm test` for unit tests.
-
-For the server, use Node.js 18+, copy `config.example.json` to `config.json`, then run `node start-server.js` and `node smoke-test.js`.
-
-Download APK and IPA builds from [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases). The IPA is unsigned and must be re-signed with your own Apple developer account.
-
-Original code is released under the MIT License. Third-party content remains under its own licenses; see `THIRD-PARTY-LICENSES.md`.
+- **Multiplayer core source**: a Node.js server archive with rooms, synchronization, song transfer, and protocol smoke tests.
+- **Skin Studio**: browser and Electron desktop skin editor source for gameplay layout, assets, rules, scenes, and Live2D configuration.
+- **Project guide**: available in Simplified Chinese, Traditional Chinese, Japanese, and English, with Android, iOS, and HarmonyOS platform notes.
+- **Release entry**: use [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) for the actual APK and IPA files.
 
 ## Source archives
 
-- [Complete Skin Studio source ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip): browser editor, Electron desktop editor, rule blocks, scene tracks, PNG digits, and Live2D configuration.
-- [Multiplayer core source ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip): WebSocket/HTTP rooms, synchronization, song transfer, and smoke tests.
+- [Multiplayer core source ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip)
+- [Skin Studio source ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip)
 
-Neither archive contains QQ Bot code, bot tests, bot credentials, extended admin pages, or runtime data.
+### Multiplayer core
+
+After extracting the archive, install Node.js 18 or later and run:
+
+```text
+node start-server.js
+node smoke-test.js
+```
+
+See the archive `README.md` and `config.example.json` for the default port and configuration.
+
+### Skin Studio
+
+After extracting the archive:
+
+- Browser version: open `index.html`.
+- Desktop version: run `npm install`, then `npm start` in the archive directory.
+- Tests: run `npm test`.
+
+The editor can import an existing skin, adjust gameplay element positions, sizes, colors, and assets, and export a skin package that the game can read. See the archive documentation for supported fields and resource limits.
+
+## Community and support
+
+- [Discord](https://discord.gg/uuVWNBBhXR)
+- [QQ group](https://qm.qq.com/q/LOzdadEsy6)
+- [Bilibili](https://space.bilibili.com/351963496)
+- [Support the project](https://afdian.com/a/HMQYHM)
+
+## License
+
+Original code is released under the [MIT License](LICENSE). Third-party content remains under its own licenses; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md). Songs, charts, characters, trademarks, and music are not licensed by this project.
+
+## Languages
 
 - [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md)

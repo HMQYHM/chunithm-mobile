@@ -1,53 +1,52 @@
 # CHUNITHM Mobile
 
-独立 Unity 实现的 CHUNITHM 风格移动端项目，包含游戏客户端、多人联机核心服务端和完整开源 Skin Studio 皮肤编辑器。
+[项目说明网站](https://hmqyhm.github.io/chunithm-mobile/) · [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases)
 
-- 当前版本：**0.3.3**
-- Unity：2022.3.62f3c1
-- Android：Android 7.0+，ARM64，Vulkan / OpenGL ES 3
-- iOS：iOS 15+，需要自己的 Apple 签名
+CHUNITHM Mobile 是一个独立的 Unity 移动端项目，仓库提供项目说明页、联机核心源码归档和 Skin Studio 皮肤制作器源码归档。
 
-## 组件
+## 当前公开内容
 
-- **Unity 客户端**：`CHUNITHM-Mobile-Unity/`，包含游戏、联机客户端、Live2D 运行时和示例皮肤。
-- **多人联机核心**：`CHUNITHM-Mobile-Multiplayer-Server/`，只包含 WebSocket/HTTP 房间、同步、歌曲传输和烟测。
-- **Skin Studio**：`CHUNITHM-Mobile-Unity/tools/SkinStudio/`，浏览器版与 Electron 桌面版共用的完整开源皮肤制作器，含规则积木、场景轨道、数字 PNG 和 Live2D 配置。
+- **联机核心源码**：Node.js 服务端归档，包含房间、同步、歌曲传输和协议烟测。
+- **Skin Studio**：浏览器版与 Electron 桌面版皮肤制作器，支持游玩界面布局、资源、规则、场景和 Live2D 配置编辑。
+- **项目说明网站**：提供简体中文、繁体中文、日本語和 English 四种语言，并包含 Android、iOS 与 HarmonyOS 的平台说明。
+- **发布页入口**：APK 和 IPA 构建以 [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) 中的实际文件为准。
 
-QQ Bot、机器人测试、机器人凭据、管理后台扩展和运行时 `data/` 不在公开仓库中。联机核心不依赖 Bot。
+## 源码归档
 
-## 快速开始
+- [联机核心源码 ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip)
+- [Skin Studio 源码 ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip)
 
-### Skin Studio
+### 联机核心
 
-直接打开 `CHUNITHM-Mobile-Unity/tools/SkinStudio/index.html` 使用浏览器版；桌面版在该目录运行 `npm install` 后使用 `npm start`。测试：`npm test`。
-
-皮肤编辑器文档：[`tools/SkinStudio/README.md`](CHUNITHM-Mobile-Unity/tools/SkinStudio/README.md)；游戏皮肤格式和 Live2D 说明：[`docs/SKIN-STUDIO.md`](CHUNITHM-Mobile-Unity/docs/SKIN-STUDIO.md)。
-
-### 联机核心服务端
+解压源码归档后，需要 Node.js 18 或更高版本：
 
 ```text
-cd CHUNITHM-Mobile-Multiplayer-Server
-copy config.example.json config.json
 node start-server.js
 node smoke-test.js
 ```
 
-服务端默认监听 `27960`，需要 Node.js 18+。公网部署前必须配置长随机 `authToken` 和 TLS/WSS。
+默认端口和配置方式请查看归档内的 `README.md` 与 `config.example.json`。
 
-## 下载
+### Skin Studio
 
-请从 [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) 下载 APK 和 IPA。IPA 为未签名构建，需要使用自己的 Apple 开发者账号重新签名。
+解压源码归档后：
 
-## 开源与第三方内容
+- 浏览器版：直接打开 `index.html`。
+- 桌面版：在归档目录运行 `npm install`，再运行 `npm start`。
+- 测试：运行 `npm test`。
 
-原创代码按 MIT License 发布。Live2D Cubism、Twemoji、vgmstream、BongoCat 和其他第三方内容遵守各自许可证，详见 `THIRD-PARTY-LICENSES.md`。歌曲、谱面、角色、商标和音乐不随本项目授权。本项目是独立的同人/致敬实现，不是官方产品。
+制作器可以导入已有皮肤，调整游玩界面的元素位置、尺寸、颜色和资源，并导出游戏可读取的皮肤包。具体字段和资源限制以归档内的文档为准。
 
-## 源码归档
+## 社区与支持
 
-- [完整 Skin Studio 源码 ZIP](CHUNITHM-Mobile-SkinStudio-0.1.0-source.zip)：浏览器版、Electron 桌面版、规则积木、场景轨道、PNG 数字和 Live2D 配置。
-- [多人联机核心源码 ZIP](CHUNITHM-Mobile-Multiplayer-Core-0.2.6-source.zip)：WebSocket/HTTP 房间、同步、歌曲传输和烟测。
+- [Discord](https://discord.gg/uuVWNBBhXR)
+- [QQ群](https://qm.qq.com/q/LOzdadEsy6)
+- [Bilibili](https://space.bilibili.com/351963496)
+- [支持项目运营](https://afdian.com/a/HMQYHM)
 
-这两个压缩包均不包含 QQ Bot、Bot 测试、Bot 凭据、管理后台扩展或运行时数据。
+## 许可证
+
+原创代码使用 [MIT License](LICENSE)。第三方内容遵循各自许可证，详见 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)。歌曲、谱面、角色、商标和音乐不随本项目授权。
 
 ## 多语言
 
