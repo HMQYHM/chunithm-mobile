@@ -1,12 +1,15 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Threading.Tasks;
 using ChunithmMobile.Runtime;
 using UnityEngine;
 using UnityEngine.Networking;
 
 namespace ChunithmMobile.Rendering
 {
+    // 游玩背景渲染器：负责歌曲封面模糊背景和中心封面等非谱面画面。
+    // 游玩时应服从背景亮度/关闭设置，不能覆盖 AIR、地面音符或判定反馈。
     public sealed class GameplayBackdropRenderer : MonoBehaviour
     {
         private MeshRenderer blurredRenderer;
@@ -82,7 +85,15 @@ namespace ChunithmMobile.Rendering
         {
             Texture2D source = null;
             if (Path.GetExtension(path).Equals(".dds", StringComparison.OrdinalIgnoreCase))
-                source = LocalDdsTexture.LoadDxt1(path);
+            {
+                Task<DdsTextureData> decode = Task.Run(() => DdsTextureDecoder.DecodeFile(path));
+                while (!decode.IsCompleted) yield return null;
+                if (!decode.IsFaulted && !decode.IsCanceled)
+                    source = DdsTextureDecoder.CreateTexture(decode.Result, Path.GetFileNameWithoutExtension(path));
+                else
+                    Debug.LogWarning("Gameplay DDS jacket load failed: " +
+                        decode.Exception?.GetBaseException().Message);
+            }
             else {
                 using UnityWebRequest request = UnityWebRequestTexture.GetTexture(new Uri(path).AbsoluteUri, false);
                 yield return request.SendWebRequest();
@@ -258,27 +269,4 @@ namespace ChunithmMobile.Rendering
         }
     }
 
-    internal static class LocalDdsTexture
-    {
-        public static Texture2D LoadDxt1(string path)
-        {
-            try {
-                byte[] bytes = File.ReadAllBytes(path);
-                if (bytes.Length <= 128 || bytes[0] != 'D' || bytes[1] != 'D' || bytes[2] != 'S') return null;
-                int height = BitConverter.ToInt32(bytes, 12), width = BitConverter.ToInt32(bytes, 16);
-                if (width <= 0 || height <= 0 || System.Text.Encoding.ASCII.GetString(bytes, 84, 4) != "DXT1") return null;
-                byte[] payload = new byte[bytes.Length - 128];
-                Buffer.BlockCopy(bytes, 128, payload, 0, payload.Length);
-                var texture = new Texture2D(width, height, TextureFormat.DXT1, false) {
-                    name = Path.GetFileNameWithoutExtension(path), filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp
-                };
-                texture.LoadRawTextureData(payload); texture.Apply(false, false);
-                return texture;
-            }
-            catch (Exception exception) {
-                Debug.LogWarning("Gameplay DDS jacket load failed: " + exception.Message);
-                return null;
-            }
-        }
-    }
 }

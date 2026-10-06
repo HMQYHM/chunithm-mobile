@@ -4,6 +4,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // UI 主题管理：应用高对比/低对比配色，并在启动时恢复上次选择。
+    // 主题只作用于菜单和暂停界面；游玩谱面颜色和 MOD 状态颜色由各自系统控制。
     // Only dirty UI labels are checked. No per-frame traversal of the UI tree.
     public sealed class UiThemeContrast : MonoBehaviour
     {

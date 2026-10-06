@@ -11,6 +11,7 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Editor
 {
+    // 暂停回归测试：验证切出应用、失去焦点和恢复时 DSP 时钟/输入状态的一致性。
     public static class GameplayPauseSelfTest
     {
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -18,6 +19,7 @@ namespace ChunithmMobile.Editor
 
         public static void Run()
         {
+            VerifyBluetoothDspInterpolation();
             const string settingsKey = "chunithm_mobile_settings_v1";
             bool hadSettings = PlayerPrefs.HasKey(settingsKey);
             string savedSettings = PlayerPrefs.GetString(settingsKey);
@@ -108,7 +110,46 @@ namespace ChunithmMobile.Editor
                 else PlayerPrefs.DeleteKey(settingsKey);
                 PlayerPrefs.Save();
             }
-            Debug.Log("Gameplay pause regression passed: focus/pause ordering, frozen clock, manual resume, preparation, deferred loading, pause menu and countdown clearing.");
+            Debug.Log("Gameplay pause regression passed: Bluetooth DSP interpolation, route rebuild, focus/pause ordering, frozen clock, manual resume, preparation, deferred loading, pause menu and countdown clearing.");
+        }
+
+        private static void VerifyBluetoothDspInterpolation()
+        {
+            var interpolator = new AudioDspClockInterpolator();
+            double raw = 100;
+            double host = 200;
+            double previous = interpolator.Sample(raw, host);
+
+            // Simulate an A2DP backend publishing dspTime once every three
+            // display frames. The chart clock must still advance each frame
+            // and must remain close to the authoritative DSP sample.
+            for (int frame = 1; frame <= 12; frame++) {
+                host += 1.0 / 120.0;
+                if (frame % 3 == 0) raw += 3.0 / 120.0;
+                double current = interpolator.Sample(raw, host);
+                Require(current > previous, "Bluetooth DSP interpolation froze between mixer callbacks");
+                Require(current >= raw && current - raw <= .075001,
+                    "Bluetooth DSP interpolation escaped its bounded audio window");
+                previous = current;
+            }
+
+            // A suspended app/debugger gap must not advance from host time
+            // alone. It can only adopt a newer audio-domain sample.
+            host += 2;
+            double beforeGap = previous;
+            double afterGap = interpolator.Sample(raw, host);
+            Require(Math.Abs(afterGap - beforeGap) < .000001,
+                "host suspension advanced the chart while DSP was stopped");
+
+            // Android can restart the raw DSP epoch when Bluetooth is attached
+            // or removed. The translated public clock must stay monotonic.
+            host += .01;
+            raw = 1;
+            double afterRouteChange = interpolator.Sample(raw, host);
+            Require(afterRouteChange >= afterGap,
+                "audio route rebuild moved the gameplay clock backwards");
+            Require(interpolator.RawDomainOffset > 0,
+                "audio route rebuild did not translate the restarted DSP epoch");
         }
 
         private static object Get(object target, string name) => target.GetType().GetField(name, Private).GetValue(target);

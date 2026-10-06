@@ -8,6 +8,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 判定反馈效果：把判定结果转成 JC、Attack、Miss、AIR 和长条反馈动画。
+    // 该类只消费判定事件，不自行决定判定等级；皮肤资源缺失时回退到默认效果。
     public sealed class GameplayJudgementEffects : MonoBehaviour
     {
         private enum EffectStyle { Ground, AirDirectional, AirHold, AirAction, Miss }

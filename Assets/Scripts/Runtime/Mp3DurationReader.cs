@@ -3,6 +3,7 @@ using System.IO;
 
 namespace ChunithmMobile.Runtime
 {
+    // MP3 时长读取工具：只解析文件头/帧信息，用于导入进度和歌曲索引，不负责播放。
     /// <summary>Small allocation-free MP3 duration reader for the song catalog.</summary>
     internal static class Mp3DurationReader
     {

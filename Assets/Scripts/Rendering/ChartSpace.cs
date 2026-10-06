@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Rendering
 {
+    // 轨道坐标转换：集中定义 16 lane、AIR 高度、判定线和屏幕空间之间的几何关系。
+    // 改动轨道尺寸时应优先修改这里或统一布局参数，避免各渲染器各自计算造成错位。
     /// <summary>Single source of truth shared by track, notes, effects and hit tests.</summary>
     public static class ChartSpace
     {

@@ -8,6 +8,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 联机日志门面：统一记录连接、房间、权限、同步、上传下载和错误信息。
+    // 日志用于诊断时序问题，但不应输出令牌、密码或不必要的设备敏感标识。
     /// <summary>
     /// Small persistent log for multiplayer diagnostics. Wire messages are summarized from
     /// typed fields so credentials never need to be written to disk.

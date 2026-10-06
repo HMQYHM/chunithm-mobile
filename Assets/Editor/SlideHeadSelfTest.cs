@@ -12,6 +12,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // Slide 头尾回归测试：验证有位移长条的头部、节点和尾部资源独立渲染。
     public static class SlideHeadSelfTest
     {
         private const BindingFlags PrivateInstance = BindingFlags.NonPublic | BindingFlags.Instance;

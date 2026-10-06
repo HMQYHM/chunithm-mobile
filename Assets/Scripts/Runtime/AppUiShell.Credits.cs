@@ -9,6 +9,7 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 制作与感谢页面：只负责滚动名单、文本展示和页面交互，不参与游戏数据或成绩逻辑。
     public sealed partial class AppUiShell
     {
         private RectTransform creditsLayer;
@@ -33,7 +34,7 @@ namespace ChunithmMobile.Runtime
                 creditsReadRoutine = null;
             }
 
-            creditsLayer = Panel("Credits layer", canvas.transform, new Color(0, 0, 0, .92f),
+            creditsLayer = Panel("Credits layer", UiRootTransform, new Color(0, 0, 0, .92f),
                 Vector2.zero, Vector2.one);
             creditsLayer.offsetMin = Vector2.zero;
             creditsLayer.offsetMax = Vector2.zero;

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace ChunithmMobile.Runtime
 {
-    // 多语言资源入口：根据用户设置或系统语言返回简体、繁体和英文文本。
+    // 多语言资源入口：根据用户设置或系统语言返回简体、繁体、英文和日文文本。
     // 缺少翻译时使用英文回退，不能返回 null 让 UI 产生空按钮或布局塌陷。
     /// <summary>Small runtime dictionary for the shell's built-in interface strings.</summary>
     public static class UiLocalization
@@ -11,6 +11,10 @@ namespace ChunithmMobile.Runtime
         public static AppLanguage Current { get; private set; } = AppLanguage.SimplifiedChinese;
 
         private static readonly Dictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.3 更新日志", "Version 0.3.3 update log" },
+            { "0.3.3 1. 增加日文界面翻译", "1. Added Japanese interface translation" },
+            { "0.3.3 2. 增加 GitHub 项目主页入口", "2. Added a GitHub project link" },
+            { "0.3.3 3. 发布 Android 与 iOS 构建", "3. Published Android and iOS builds" },
             { "0.3.2 更新版本说明", "Version 0.3.2 update notes" },
             { "0.3.2 更新日志", "Version 0.3.2 update log" },
             { "0.3.2 1. 增加多种分数与 combo 显示模式", "1. Added multiple score and combo display modes" },
@@ -48,7 +52,7 @@ namespace ChunithmMobile.Runtime
             { "背景设置", "Background settings" }, { "主页、设置和结算界面的拖尾背景", "Trail backgrounds for home, settings and results" },
             { "游玩皮肤设置", "Gameplay skin settings" }, { "音符、轨道、特效、界面和音频", "Notes, track, effects, UI and audio" },
             { "导入游玩皮肤", "Import gameplay skin" }, { "选择 .cmgameplay 资源包", "Choose a .cmgameplay package" },
-            { "当前皮肤资源", "Current skin resources" }, { "内置原版资源", "Built-in original resources" },
+            { "当前皮肤资源", "Current skin resources" }, { "内置基础资源", "Built-in base resources" },
             { "资源完整", "Resources complete" }, { "管理游玩皮肤", "Manage gameplay skins" },
             { "背景皮肤", "Background skin" }, { "音符拖尾背景", "Note trail background" },
             { "Emoji 拖尾背景", "Emoji trail background" }, { "图片拖尾背景", "Image trail background" },
@@ -59,7 +63,6 @@ namespace ChunithmMobile.Runtime
             { "选择 1 至 50 张图片", "Choose 1 to 50 images" }, { "暂无图片", "No images" },
             { "删除已导入图片", "Delete imported images" },
             { "背景图片导入完成", "Background image import complete" },
-            { "AIR 拖尾颜色", "AIR trail color" }, { "彩虹色", "Rainbow" }, { "原版绿色", "Original green" },
             { "默认背景", "Default background" },
             { "暂未开放", "Not available yet" },
             { "音频", "Audio" }, { "关于", "More" }, { "更多", "More" }, { "开始游戏", "Play" },
@@ -69,12 +72,12 @@ namespace ChunithmMobile.Runtime
             { "删除皮肤", "Delete skin" }, { "选择项目后操作", "Select an item first" },
             { "搜索皮肤名称、作者或 ID", "Search skin name, author or ID" },
             { "点击皮肤包查看详情、预览资源和缺失回退项", "Select a skin to view details, previews and fallback items" },
-            { "联机模式", "Multiplayer" }, { "远程房间与多人游玩", "Remote rooms and multiplayer" },
+            { "联机模式", "Multiplayer" }, { "在线模式", "Online mode" }, { "远程房间与多人游玩", "Remote rooms and multiplayer" }, { "在线房间与多人游玩", "Online rooms and multiplayer" },
             { "客户端连接", "Client connection" }, { "先填写连接信息，后续可连接 Windows 服务端。", "Enter connection details to connect to a Windows server later." },
             { "服务器地址", "Server address" }, { "例如 192.168.1.10:27960", "For example, 192.168.1.10:27960" }, { "例如 hmqyhm.net 或 192.168.1.10:27960", "For example, hmqyhm.net or 192.168.1.10:27960" },
             { "玩家名称", "Player name" }, { "最多 6 个中文或英文字符", "Up to 6 Chinese or English characters" },
             { "房间名称", "Room name" }, { "创建房间时使用，最多 6 个字符", "Used when creating a room, up to 6 characters" },
-            { "创建房间", "Create room" }, { "加入房间", "Join room" }, { "联机大厅", "Multiplayer lobby" },
+            { "创建房间", "Create room" }, { "加入房间", "Join room" }, { "联机大厅", "Multiplayer lobby" }, { "大厅", "Lobby" },
             { "版本一致 · 次数由服务器统一管理", "Matching versions · quotas are managed by the server" },
             { "房间号", "Room ID" }, { "加入时填写 6 位房间号", "Enter a 6-digit room ID to join" },
             { "密码（可选）", "Password (optional)" }, { "刷新房间", "Refresh rooms" },
@@ -83,8 +86,8 @@ namespace ChunithmMobile.Runtime
             { "结束本局", "End round" }, { "离开房间", "Leave room" }, { "点击踢出", "Tap to kick" },
             { "选择一个房间查看详情。", "Select a room to view its details." },
             { "尚未连接服务器\n\n房间与成员列表将在连接后显示。\n\n当前先完成游戏端入口。", "Not connected to a server yet\n\nRooms and members will appear after connecting.\n\nThe client entry is ready first." },
-            { "最多 8 人 · 房主统一 MOD · 支持准备状态同步", "Up to 8 players · host-controlled MODs · ready state sync" },
-            { "联机通信模块尚未连接。\n\n服务器地址和玩家信息已保存，待 Windows 服务端模块接入后即可创建或加入房间。\n\n当前不会伪造连接状态。", "The multiplayer transport is not connected yet.\n\nServer and player details are saved. Room creation and joining will be enabled with the Windows server module.\n\nThe client will not fake a connection state." },
+            { "最多 8 人 · 个人房间 · 常驻房间由服务端后台创建", "Up to 8 players · personal rooms · persistent rooms are created by the server admin" },
+            { "联机通信模块尚未连接。\n\n服务器地址和玩家信息已保存，待 Windows 服务端模块接入后即可创建或加入房间。\n\n当前不会伪造连接状态。", "The online transport is ready for the configured server.\n\nRefresh the lobby, create a room, or join a room after connecting. The server validates versions, permissions, and MOD rules." },
             { "歌曲列表", "Song list" }, { "排序：分类", "Sort: Category" }, { "排序：等级", "Sort: Level" },
             { "分类", "Category" }, { "等级", "Level" }, { "导入", "Import" }, { "删除", "Delete" },
             { "刷新数据", "Refresh data" }, { "进入选曲", "Song select" }, { "开始！", "Start" },
@@ -273,6 +276,69 @@ namespace ChunithmMobile.Runtime
             { "关于设置", "More settings" }
         };
 
+        private static readonly Dictionary<string, string> Japanese = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.3 更新日志", "バージョン 0.3.3 更新履歴" },
+            { "0.3.3 1. 增加日文界面翻译", "1. 日本語インターフェースを追加" },
+            { "0.3.3 2. 增加 GitHub 项目主页入口", "2. GitHub プロジェクトページへのリンクを追加" },
+            { "0.3.3 3. 发布 Android 与 iOS 构建", "3. Android / iOS ビルドを公開" },
+            { "设置", "設定" }, { "设置分类", "設定" }, { "延迟", "遅延" }, { "画面", "画面" },
+            { "皮肤", "スキン" }, { "音频", "オーディオ" }, { "更多", "その他" }, { "关于", "その他" },
+            { "语言", "言語" }, { "简体中文", "簡体字中国語" }, { "繁体中文", "繁体字中国語" },
+            { "English", "English" }, { "日本語", "日本語" },
+            { "跟随系统（简体中文）", "システム（簡体字中国語）" },
+            { "跟随系统（繁体中文）", "システム（繁体字中国語）" },
+            { "跟随系统（English）", "システム（English）" }, { "系统（日本語）", "システム（日本語）" },
+            { "调整与校准", "調整とキャリブレーション" }, { "进入延迟自测", "遅延セルフテスト" },
+            { "开始测试", "テスト開始" }, { "音乐延迟", "音楽遅延" }, { "判定延迟", "判定遅延" },
+            { "判定时间显示", "判定時間表示" }, { "显示 JC 时间", "JC 時間を表示" }, { "J / AT 时间", "J / AT 時間" },
+            { "开启", "オン" }, { "关闭", "オフ" }, { "轨道、触摸区域与游玩界面", "レーン、タッチ領域、プレイ画面" },
+            { "可视化布局调整", "レイアウト調整" }, { "背景亮度", "背景の明るさ" }, { "显示帧数", "FPS を表示" },
+            { "左下角显示实际渲染帧率", "左下に実際の描画 FPS を表示" }, { "画面与背景", "画面と背景" },
+            { "轨道", "レーン" }, { "轨道整体上下位置", "レーンの上下位置" }, { "轨道宽度", "レーン幅" },
+            { "轨道上端宽度", "レーン上端の幅" }, { "轨道顶部遮罩", "レーン上部マスク" },
+            { "遮罩高度", "マスクの高さ" }, { "遮罩不透明度", "マスクの不透明度" }, { "谱面流速", "譜面速度" },
+            { "触控与 AIR", "タッチと AIR" }, { "触控板 / AIR 分界", "タッチパッド / AIR 境界" },
+            { "触控板横向宽度", "タッチパッドの横幅" }, { "触控板透明度", "タッチパッドの透明度" },
+            { "触控特效透明度", "タッチエフェクトの透明度" }, { "手指触控范围", "指のタッチ範囲" },
+            { "AIR 区域上边界", "AIR 領域の上端" }, { "AIR 平均高度线", "AIR 平均高さライン" },
+            { "触摸反馈", "タッチフィードバック" }, { "暂停按钮需连续点击两次", "一時停止ボタンを 2 回タップ" },
+            { "游玩歌曲信息", "プレイ中の曲情報" }, { "分数大小", "スコアサイズ" }, { "COMBO 大小", "COMBO サイズ" },
+            { "当前判定大小", "判定サイズ" }, { "歌曲信息大小", "曲情報サイズ" }, { "皮肤设置", "スキン設定" },
+            { "背景拖尾", "背景トレイル" }, { "背景设置", "背景設定" }, { "音符拖尾背景", "ノートトレイル背景" },
+            { "Emoji 拖尾背景", "絵文字トレイル背景" }, { "图片拖尾背景", "画像トレイル背景" },
+            { "导入背景图片", "背景画像をインポート" }, { "清除自定义背景", "カスタム背景を削除" },
+            { "游玩皮肤设置", "プレイスキン設定" }, { "游玩皮肤", "プレイスキン" },
+            { "导入游玩皮肤", "プレイスキンをインポート" }, { "管理游玩皮肤", "プレイスキンを管理" },
+            { "当前皮肤资源", "現在のスキンリソース" }, { "内置基础资源", "内蔵基本リソース" },
+            { "资源完整", "リソース完備" }, { "音频、画面与判定", "オーディオ、画面、判定" },
+            { "音乐、按键音与正解音", "音楽、キー音、正解音" }, { "音乐音量", "音楽音量" },
+            { "背景 BGM 音量", "背景 BGM 音量" }, { "按键音", "キー音" }, { "按键音音量", "キー音量" },
+            { "试听按键音", "キー音を試聴" }, { "正解音", "正解音" }, { "正解音音量", "正解音量" },
+            { "试听正解音", "正解音を試聴" }, { "DSP 缓冲", "DSP バッファ" }, { "数据、日志与许可", "データ、ログ、ライセンス" },
+            { "制作与感谢", "クレジットと謝辞" }, { "查看制作与感谢", "クレジットと謝辞を見る" },
+            { "导出最近日志", "最近のログをエクスポート" }, { "打开数据管理", "データ管理を開く" },
+            { "导入、删除与批量编辑", "インポート、削除、一括編集" }, { "强制重建歌曲索引", "曲インデックスを再構築" },
+            { "重新扫描歌曲数据", "曲データを再スキャン" }, { "索引状态", "インデックス状態" },
+            { "关于与许可", "概要とライセンス" }, { "恢复全部默认设置", "すべての設定を初期化" },
+            { "需要确认", "確認が必要" }, { "GitHub 项目主页", "GitHub プロジェクトページ" }, { "打开 GitHub", "GitHub を開く" },
+            { "歌曲列表", "曲リスト" }, { "进入歌曲列表", "曲リストを開く" }, { "开始游戏", "プレイ" },
+            { "开始！", "スタート！" }, { "播放", "プレイ" }, { "重新游玩", "もう一度プレイ" },
+            { "返回选曲", "曲選択に戻る" }, { "歌曲", "曲" }, { "确定", "決定" }, { "取消", "キャンセル" },
+            { "暂停", "一時停止" }, { "继续游玩", "プレイを続ける" }, { "保存布局", "レイアウトを保存" },
+            { "保存外观", "外観を保存" }, { "取消并返回", "キャンセルして戻る" }, { "更多设置", "その他の設定" },
+            { "联机模式", "マルチプレイ" }, { "在线模式", "オンラインモード" }, { "远程房间与多人游玩", "オンラインルームとマルチプレイ" }, { "在线房间与多人游玩", "オンラインルームとマルチプレイ" },
+            { "服务器地址", "サーバーアドレス" }, { "玩家名称", "プレイヤー名" }, { "房间名称", "ルーム名" },
+            { "创建房间", "ルームを作成" }, { "加入房间", "ルームに参加" }, { "联机大厅", "マルチプレイロビー" }, { "大厅", "ロビー" },
+            { "最多 8 人 · 个人房间 · 常驻房间由服务端后台创建", "最大 8 人 · 個人ルーム · 常駐ルームはサーバー管理画面で作成" },
+            { "房间号", "ルーム ID" }, { "密码（可选）", "パスワード（任意）" }, { "刷新房间", "ルームを更新" },
+            { "搜索房间", "ルームを検索" }, { "准备", "準備完了" }, { "取消准备", "準備を解除" },
+            { "开始", "開始" }, { "结束本局", "ラウンドを終了" }, { "离开房间", "ルームを退出" },
+            { "导入", "インポート" }, { "删除", "削除" }, { "刷新数据", "データを更新" },
+            { "进入选曲", "曲選択へ" }, { "没有歌曲", "曲がありません" }, { "请导入歌曲", "曲をインポートしてください" },
+            { "开启后成绩仍会保存", "オンでもスコアを保存します" }, { "开启后本局不记录成绩", "オンにするとスコアを記録しません" },
+            { "请稍候 2 秒", "2 秒お待ちください" }, { "我知道了", "了解" }, { "下一项  ", "次へ  " }
+        };
+
         private static readonly Dictionary<string, string> Traditional = new Dictionary<string, string>(StringComparer.Ordinal) {
             { "0.3.2 更新版本说明", "0.3.2 更新版本說明" },
             { "0.3.2 更新日志", "0.3.2 更新記錄" },
@@ -311,7 +377,7 @@ namespace ChunithmMobile.Runtime
             { "背景设置", "背景設定" }, { "主页、设置和结算界面的拖尾背景", "主頁、設定和結算介面的拖尾背景" },
             { "游玩皮肤设置", "遊玩皮膚設定" }, { "音符、轨道、特效、界面和音频", "音符、軌道、特效、介面和音訊" },
             { "导入游玩皮肤", "匯入遊玩皮膚" }, { "选择 .cmgameplay 资源包", "選擇 .cmgameplay 資源包" },
-            { "当前皮肤资源", "目前皮膚資源" }, { "内置原版资源", "內建原版資源" },
+            { "当前皮肤资源", "目前皮膚資源" }, { "内置基础资源", "內建基礎資源" },
             { "资源完整", "資源完整" }, { "管理游玩皮肤", "管理遊玩皮膚" },
             { "背景皮肤", "背景皮膚" }, { "音符拖尾背景", "音符拖尾背景" },
             { "Emoji 拖尾背景", "Emoji 拖尾背景" }, { "图片拖尾背景", "圖片拖尾背景" },
@@ -322,7 +388,6 @@ namespace ChunithmMobile.Runtime
             { "选择 1 至 50 张图片", "選擇 1 至 50 張圖片" }, { "暂无图片", "暫無圖片" },
             { "删除已导入图片", "刪除已匯入圖片" },
             { "背景图片导入完成", "背景圖片匯入完成" },
-            { "AIR 拖尾颜色", "AIR 拖尾顏色" }, { "彩虹色", "彩虹色" }, { "原版绿色", "原版綠色" },
             { "默认背景", "預設背景" },
             { "暂未开放", "暫未開放" },
             { "音频", "音訊" }, { "关于", "更多" }, { "更多", "更多" }, { "开始游戏", "開始遊戲" },
@@ -332,12 +397,12 @@ namespace ChunithmMobile.Runtime
             { "删除皮肤", "刪除皮膚" }, { "选择项目后操作", "選擇項目後操作" },
             { "搜索皮肤名称、作者或 ID", "搜尋皮膚名稱、作者或 ID" },
             { "点击皮肤包查看详情、预览资源和缺失回退项", "點擊皮膚包查看詳情、預覽資源和缺失回退項" },
-            { "联机模式", "聯機模式" }, { "远程房间与多人游玩", "遠端房間與多人遊玩" },
+            { "联机模式", "聯機模式" }, { "在线模式", "線上模式" }, { "远程房间与多人游玩", "遠端房間與多人遊玩" }, { "在线房间与多人游玩", "線上房間與多人遊玩" },
             { "客户端连接", "用戶端連線" }, { "先填写连接信息，后续可连接 Windows 服务端。", "先填寫連線資訊，之後可連線到 Windows 伺服器。" },
             { "服务器地址", "伺服器位址" }, { "例如 192.168.1.10:27960", "例如 192.168.1.10:27960" }, { "例如 hmqyhm.net 或 192.168.1.10:27960", "例如 hmqyhm.net 或 192.168.1.10:27960" },
             { "玩家名称", "玩家名稱" }, { "最多 6 个中文或英文字符", "最多 6 個中文或英文字符" },
             { "房间名称", "房間名稱" }, { "创建房间时使用，最多 6 个字符", "建立房間時使用，最多 6 個字元" },
-            { "创建房间", "建立房間" }, { "加入房间", "加入房間" }, { "联机大厅", "聯機大廳" },
+            { "创建房间", "建立房間" }, { "加入房间", "加入房間" }, { "联机大厅", "聯機大廳" }, { "大厅", "大廳" },
             { "版本一致 · 次数由服务器统一管理", "版本一致 · 次數由伺服器統一管理" },
             { "房间号", "房間號" }, { "加入时填写 6 位房间号", "加入時填寫 6 位房間號" },
             { "密码（可选）", "密碼（可選）" }, { "刷新房间", "重新整理房間" },
@@ -346,8 +411,8 @@ namespace ChunithmMobile.Runtime
             { "结束本局", "結束本局" }, { "离开房间", "離開房間" }, { "点击踢出", "點擊踢出" },
             { "选择一个房间查看详情。", "選擇一個房間查看詳情。" },
             { "尚未连接服务器\n\n房间与成员列表将在连接后显示。\n\n当前先完成游戏端入口。", "尚未連線伺服器\n\n房間與成員列表會在連線後顯示。\n\n目前先完成遊戲端入口。" },
-            { "最多 8 人 · 房主统一 MOD · 支持准备状态同步", "最多 8 人 · 房主統一 MOD · 支援準備狀態同步" },
-            { "联机通信模块尚未连接。\n\n服务器地址和玩家信息已保存，待 Windows 服务端模块接入后即可创建或加入房间。\n\n当前不会伪造连接状态。", "聯機通訊模組尚未連線。\n\n伺服器位址與玩家資訊已儲存，待 Windows 伺服器模組接入後即可建立或加入房間。\n\n目前不會偽造連線狀態。" },
+            { "最多 8 人 · 个人房间 · 常驻房间由服务端后台创建", "最多 8 人 · 個人房間 · 常駐房間由伺服器後台建立" },
+            { "联机通信模块尚未连接。\n\n服务器地址和玩家信息已保存，待 Windows 服务端模块接入后即可创建或加入房间。\n\n当前不会伪造连接状态。", "線上通訊已可連接設定的伺服器。\n\n連線後可重新整理大廳、建立房間或加入房間；伺服器會驗證版本、權限與 MOD 規則。" },
             { "排序：分类", "排序：分類" }, { "排序：等级", "排序：等級" }, { "分类", "分類" },
             { "等级", "等級" }, { "导入", "匯入" }, { "删除", "刪除" }, { "刷新数据", "重新整理資料" },
             { "进入选曲", "進入選曲" }, { "开始！", "開始！" }, { "没有歌曲", "沒有歌曲" },
@@ -528,7 +593,8 @@ namespace ChunithmMobile.Runtime
         {
             if (string.IsNullOrEmpty(value)) return value;
             if (Current == AppLanguage.SimplifiedChinese) return value;
-            Dictionary<string, string> table = Current == AppLanguage.English ? English : Traditional;
+            Dictionary<string, string> table = Current == AppLanguage.English ? English
+                : Current == AppLanguage.Japanese ? Japanese : Traditional;
             if (table.TryGetValue(value, out string translated)) return translated;
             if (Current == AppLanguage.English && value.StartsWith("下一项  ", StringComparison.Ordinal))
                 return "Next  " + Translate(value.Substring(5));

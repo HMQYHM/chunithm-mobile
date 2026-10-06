@@ -3,6 +3,8 @@ using ChunithmMobile.Chart;
 
 namespace ChunithmMobile.Judgement
 {
+    // 纯判定算法：输入音符类型、谱面时间和输入时间，输出判定与时间差。
+    // 本类不依赖 Unity 帧循环；所有窗口应使用毫秒/参考帧换算，不能使用实际渲染帧数。
     public struct JudgementResult
     {
         public Chart.Judgement Grade;
@@ -24,11 +26,15 @@ namespace ChunithmMobile.Judgement
         // Mobile FLICK uses the fresh half-lane gesture time, independent of
         // the initial touch. Expand the former simple window by 20ms per side.
         public const double FlickWindowMs = ReferenceFrameMs * 5.0 + 20.0;
+        public const double FlickLateWindowMs = FlickWindowMs + 10.0;
         public const double SlideAreaFrames = 3.0;
         public const double SlideTriggerFrames = 9.0;
         public const double KeepCriticalFrames = 3.0;
         public const double KeepJusticeFrames = 6.0;
         public const double KeepAttackFrames = 9.0;
+        // Long-note continuation protection is audio-time based. These values
+        // are milliseconds, so display refresh rate cannot change judgement.
+        public const double KeepAttackMs = 150.0;
         // KEEP is evaluated half a reference frame before its authored tick in
         // the original checker. This is separate from the visible head time.
         public const double KeepOffsetFrames = -.5;
@@ -60,7 +66,7 @@ namespace ChunithmMobile.Judgement
                     Frames(hard ? ExTapHardFrames : ExTapEasyFrames))
                     ? Chart.Judgement.JusticeCritical : Chart.Judgement.Miss;
             else if (kind == NoteKind.Flick)
-                grade = InWindow(delta, -FlickWindowMs, FlickWindowMs)
+                grade = InWindow(delta, -FlickWindowMs, FlickLateWindowMs)
                     ? Chart.Judgement.JusticeCritical : Chart.Judgement.Miss;
             else if (!longHead && kind is (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide))
                 grade = InWindow(delta, -Frames(SlideTriggerFrames), Frames(SlideTriggerFrames))
@@ -120,10 +126,9 @@ namespace ChunithmMobile.Judgement
         public static double MissWindowMs(NoteKind kind, bool airDown = false, bool airFlick = false,
             bool hard = true)
         {
-            if (kind == NoteKind.Flick) return FlickWindowMs;
+            if (kind == NoteKind.Flick) return FlickLateWindowMs;
             if (kind == NoteKind.AirHold) return AirHoldAttackMs;
             if (kind == NoteKind.AirAction) return Frames(16.0);
-            if (kind == NoteKind.AirLadder) return Frames(16.0);
             if (kind == NoteKind.Air)
                 return Frames(airFlick ? (airDown ? 19.0 : 22.0) : (airDown ? 16.0 : 19.0));
             if (kind == NoteKind.ExTap) return Frames(hard ? ExTapHardFrames : ExTapEasyFrames);
@@ -144,6 +149,21 @@ namespace ChunithmMobile.Judgement
             return JudgeGround(NoteKind.Flick, slashTimeMs, noteTimeMs, playbackRate);
         }
 
+        /// <summary>
+        /// A normal press on a FLICK is not a successful FLICK gesture. The
+        /// original game reports that input as ATTACK when it lands inside the
+        /// ordinary hard TAP timing window. Keeping this separate from
+        /// JudgeFlick prevents a tap from accidentally becoming JC.
+        /// </summary>
+        public static JudgementResult JudgeFlickTap(double tapTimeMs,
+            double noteTimeMs, double playbackRate = 1.0)
+        {
+            JudgementResult timing = JudgeGround(NoteKind.Tap, tapTimeMs, noteTimeMs,
+                playbackRate, hard: true);
+            if (timing.Grade == Chart.Judgement.Miss) return timing;
+            return new JudgementResult(Chart.Judgement.Attack, timing.DeltaMs);
+        }
+
         public static bool IsMineTouchWindow(double deltaMs) =>
             deltaMs >= MineInMs && deltaMs <= MineOutMs;
 
@@ -160,8 +180,7 @@ namespace ChunithmMobile.Judgement
         public static Chart.Judgement JudgeCheckpoint(bool covered, double distanceMs)
         {
             if (!covered) return Chart.Judgement.Miss;
-            double frames = Math.Abs(distanceMs) / ReferenceFrameMs;
-            return frames <= KeepAttackFrames ? Chart.Judgement.JusticeCritical
+            return Math.Abs(distanceMs) <= KeepAttackMs ? Chart.Judgement.JusticeCritical
                 : Chart.Judgement.Miss;
         }
 

@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Rendering
 {
+    // 渲染资源工厂：创建共享材质、透明材质和基础 Mesh。
+    // 资源所有权要明确：共享资源不应由单个 NoteVisual 随意销毁，动态资源才由池/渲染器释放。
     public static class MeshFactory
     {
         public static Mesh Quad(Vector3 nearLeft, Vector3 nearRight, Vector3 farRight, Vector3 farLeft)

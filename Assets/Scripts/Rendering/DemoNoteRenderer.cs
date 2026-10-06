@@ -2,6 +2,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Rendering
 {
+    // 预览音符渲染器：只用于菜单/测试中的轻量展示，不参与正式游玩判定。
     /// <summary>Temporary Vulkan-safe geometry proving every object uses ChartSpace.</summary>
     public sealed class DemoNoteRenderer : MonoBehaviour
     {

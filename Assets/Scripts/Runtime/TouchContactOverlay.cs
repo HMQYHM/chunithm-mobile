@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 触控反馈覆盖层：显示手指圆点、覆盖范围和反馈亮度，仅用于可视化调试。
+    // 该层不能改变 ArcadeTouchInput 的分区或判定结果。
     [RequireComponent(typeof(CanvasRenderer))]
     public sealed class TouchContactOverlay : MaskableGraphic
     {
@@ -11,6 +13,14 @@ namespace ChunithmMobile.Runtime
         private float airBoundary = .17f;
         private float opacity = 1f;
         private int previousTouchCount = -1;
+        private bool inputSuppressed;
+
+        public void SetInputSuppressed(bool suppressed)
+        {
+            inputSuppressed = suppressed;
+            previousTouchCount = -1;
+            SetVerticesDirty();
+        }
 
         public void Configure(bool show, float boundary, float effectOpacity = 1f)
         {
@@ -29,7 +39,7 @@ namespace ChunithmMobile.Runtime
 
         private void Update()
         {
-            int count = visible ? UnityEngine.Input.touchCount : 0;
+            int count = visible && !inputSuppressed ? UnityEngine.Input.touchCount : 0;
             if (count > 0 || count != previousTouchCount) SetVerticesDirty();
             previousTouchCount = count;
         }
@@ -37,7 +47,7 @@ namespace ChunithmMobile.Runtime
         protected override void OnPopulateMesh(VertexHelper vertices)
         {
             vertices.Clear();
-            if (!visible || Screen.width <= 0 || Screen.height <= 0) return;
+            if (!visible || inputSuppressed || Screen.width <= 0 || Screen.height <= 0) return;
             Rect bounds = rectTransform.rect;
             for (int index = 0; index < UnityEngine.Input.touchCount; index++)
             {

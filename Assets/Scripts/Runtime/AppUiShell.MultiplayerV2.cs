@@ -53,16 +53,20 @@ namespace ChunithmMobile.Runtime
         private Button multiplayerFilterNotFullButton;
         private Button multiplayerFilterUnencryptedButton;
         private Button multiplayerFilterModeButton;
+        private Button multiplayerFilterRoomTypeButton;
         private bool multiplayerFilterIdleOnly;
         private bool multiplayerFilterNotFullOnly;
         private bool multiplayerFilterUnencryptedOnly;
         private string multiplayerFilterMode = "";
+        private string multiplayerFilterRoomType = "";
 
         private RectTransform multiplayerCreateLayer;
         private InputField multiplayerCreateRoomNameInput;
         private InputField multiplayerCreatePasswordInput;
         private Text multiplayerCreateRoomIdLabel;
         private Text multiplayerCreateModeLabel;
+        private Text multiplayerCreateRoomTypeLabel;
+        private Text multiplayerCreateStatus;
         private Text multiplayerCreatePlayersLabel;
         private Text multiplayerCreateSelectionLabel;
         private Text multiplayerCreateModsLabel;
@@ -71,6 +75,7 @@ namespace ChunithmMobile.Runtime
         private Button multiplayerCreatePlayersPlusButton;
         private int multiplayerCreateMaxPlayers = 2;
         private string multiplayerCreateMode = "normal";
+        private string multiplayerCreateRoomType = "personal";
         private string multiplayerCreateSelection = "host";
         private bool multiplayerCreateListed = true;
         private string multiplayerReservedRoomId;
@@ -96,6 +101,7 @@ namespace ChunithmMobile.Runtime
         private Button multiplayerRoomModeButton;
         private Button multiplayerRoomModsButton;
         private Button multiplayerRoomSelectionButton;
+        private Button multiplayerRoomVoteButton;
         private Button multiplayerRoomReadyButton;
         private Button multiplayerRoomLeaveButton;
         private Button multiplayerRoomExitRoundButton;
@@ -157,7 +163,7 @@ namespace ChunithmMobile.Runtime
             AddMeteorBackground(login, MeteorBackgroundProfile.Quiet);
             ButtonText("‹", login, new Vector2(.02f, .90f), new Vector2(.08f, .98f), surfaceRaised,
                 LeaveMultiplayerModeV2);
-            Label("联机登录", login, 38, TextAnchor.MiddleLeft, new Vector2(.10f, .88f), new Vector2(.42f, .98f), Color.white);
+            Label("在线登录", login, 38, TextAnchor.MiddleLeft, new Vector2(.10f, .88f), new Vector2(.42f, .98f), Color.white);
             RectTransform card = Panel("Server login", login, surface, new Vector2(.18f, .18f), new Vector2(.82f, .84f));
             Label("连接服务器", card, 30, TextAnchor.MiddleLeft, new Vector2(.09f, .84f), new Vector2(.91f, .95f), cyan);
             Label("客户端版本必须与房间一致", card, 17, TextAnchor.MiddleLeft, new Vector2(.09f, .76f), new Vector2(.91f, .84f), muted);
@@ -176,7 +182,7 @@ namespace ChunithmMobile.Runtime
             multiplayerLoginDeviceLabel = Label("设备 ID：读取中", card, 16, TextAnchor.MiddleLeft,
                 new Vector2(.09f, .24f), new Vector2(.91f, .30f), muted);
             multiplayerLoginDeviceLabel.text = "设备 ID：" + MultiplayerClient.GetStableDeviceId();
-            multiplayerLoginButton = ButtonText("进入联机大厅", card, new Vector2(.09f, .12f), new Vector2(.91f, .21f), cyan,
+            multiplayerLoginButton = ButtonText("进入在线大厅", card, new Vector2(.09f, .12f), new Vector2(.91f, .21f), cyan,
                 ConnectMultiplayerV2);
             multiplayerLoginStatus = Label("输入地址和名称后进入服务器。", card, 17, TextAnchor.MiddleCenter,
                 new Vector2(.09f, .03f), new Vector2(.91f, .11f), muted);
@@ -185,7 +191,7 @@ namespace ChunithmMobile.Runtime
             AddMeteorBackground(browser, MeteorBackgroundProfile.Quiet);
             ButtonText("‹", browser, new Vector2(.02f, .91f), new Vector2(.07f, .985f), surfaceRaised,
                 BackToMultiplayerLoginV2);
-            Label("联机大厅", browser, 32, TextAnchor.MiddleLeft, new Vector2(.09f, .91f), new Vector2(.24f, .985f), Color.white);
+            Label("大厅", browser, 32, TextAnchor.MiddleLeft, new Vector2(.09f, .91f), new Vector2(.24f, .985f), Color.white);
             multiplayerBrowserSearchInput = Input("搜索房间名、房主或六位房间号", browser,
                 new Vector2(.25f, .91f), new Vector2(.48f, .985f));
             multiplayerBrowserSearchInput.onEndEdit.AddListener(_ => RequestMultiplayerRoomsV2());
@@ -258,7 +264,9 @@ namespace ChunithmMobile.Runtime
                 ToggleMultiplayerRoomModsV2);
             multiplayerRoomSelectionButton = ButtonText("选歌方式", actions, new Vector2(.08f, .47f), new Vector2(.92f, .58f), surfaceRaised,
                 ToggleMultiplayerRoomSelectionV2);
-            multiplayerRoomReadyButton = ButtonText("准备", actions, new Vector2(.08f, .25f), new Vector2(.92f, .41f), new Color(.12f, .58f, .32f),
+            multiplayerRoomVoteButton = ButtonText("投票换歌", actions, new Vector2(.08f, .34f), new Vector2(.92f, .45f), surfaceRaised,
+                ToggleMultiplayerSongChangeVoteV2);
+            multiplayerRoomReadyButton = ButtonText("准备", actions, new Vector2(.08f, .21f), new Vector2(.92f, .32f), new Color(.12f, .58f, .32f),
                 ToggleMultiplayerReadyV2);
             multiplayerRoomLeaveButton = ButtonText("退出房间", actions, new Vector2(.08f, .06f), new Vector2(.48f, .18f), surfaceRaised,
                 LeaveMultiplayerRoomV2);
@@ -313,16 +321,20 @@ namespace ChunithmMobile.Runtime
                 () => ChangeMultiplayerCreatePlayersV2(1));
             multiplayerCreateModeLabel = ButtonText("模式：普通", multiplayerCreateLayer, new Vector2(.47f, .47f), new Vector2(.92f, .56f), surfaceRaised,
                 CycleMultiplayerCreateModeV2).GetComponentInChildren<Text>();
-            multiplayerCreateSelectionLabel = ButtonText("选歌：房主专选", multiplayerCreateLayer, new Vector2(.08f, .36f), new Vector2(.50f, .45f), surfaceRaised,
+            multiplayerCreateRoomTypeLabel = ButtonText("房间：个人（常驻房间由服务端后台创建）", multiplayerCreateLayer, new Vector2(.08f, .36f), new Vector2(.50f, .45f), surfaceRaised,
+                null).GetComponentInChildren<Text>();
+            multiplayerCreateSelectionLabel = ButtonText("选歌：房主专选", multiplayerCreateLayer, new Vector2(.54f, .36f), new Vector2(.92f, .45f), surfaceRaised,
                 CycleMultiplayerCreateSelectionV2).GetComponentInChildren<Text>();
-            multiplayerCreateListedLabel = ButtonText("显示在大厅：是", multiplayerCreateLayer, new Vector2(.54f, .36f), new Vector2(.92f, .45f), surfaceRaised,
+            multiplayerCreateListedLabel = ButtonText("显示在大厅：是", multiplayerCreateLayer, new Vector2(.08f, .25f), new Vector2(.50f, .34f), surfaceRaised,
                 ToggleMultiplayerCreateListedV2).GetComponentInChildren<Text>();
-            multiplayerCreateModsLabel = ButtonText("MOD：使用当前设置", multiplayerCreateLayer, new Vector2(.08f, .25f), new Vector2(.92f, .34f), surfaceRaised,
+            multiplayerCreateModsLabel = ButtonText("MOD：使用当前设置", multiplayerCreateLayer, new Vector2(.54f, .25f), new Vector2(.92f, .34f), surfaceRaised,
                 ToggleMultiplayerCreateModsV2).GetComponentInChildren<Text>();
             ButtonText("取消", multiplayerCreateLayer, new Vector2(.08f, .08f), new Vector2(.45f, .19f), surfaceRaised,
                 CancelCreateMultiplayerRoomV2);
             ButtonText("创建房间", multiplayerCreateLayer, new Vector2(.55f, .08f), new Vector2(.92f, .19f), cyan,
                 SubmitCreateMultiplayerRoomV2);
+            multiplayerCreateStatus = Label("", multiplayerCreateLayer, 14, TextAnchor.MiddleCenter,
+                new Vector2(.08f, .01f), new Vector2(.92f, .07f), muted);
             multiplayerCreateLayer.gameObject.SetActive(false);
         }
 
@@ -340,9 +352,11 @@ namespace ChunithmMobile.Runtime
                 new Vector2(.08f, .47f), new Vector2(.44f, .59f), surfaceRaised, ToggleMultiplayerFilterUnencryptedV2);
             multiplayerFilterModeButton = ButtonText("", multiplayerBrowserFilterLayer,
                 new Vector2(.56f, .47f), new Vector2(.92f, .59f), surfaceRaised, CycleMultiplayerFilterModeV2);
-            ButtonText("清除限制", multiplayerBrowserFilterLayer, new Vector2(.08f, .19f), new Vector2(.44f, .34f), surfaceRaised,
+            multiplayerFilterRoomTypeButton = ButtonText("", multiplayerBrowserFilterLayer,
+                new Vector2(.08f, .32f), new Vector2(.44f, .44f), surfaceRaised, CycleMultiplayerFilterRoomTypeV2);
+            ButtonText("清除限制", multiplayerBrowserFilterLayer, new Vector2(.08f, .18f), new Vector2(.44f, .30f), surfaceRaised,
                 ClearMultiplayerFiltersV2);
-            ButtonText("应用", multiplayerBrowserFilterLayer, new Vector2(.56f, .19f), new Vector2(.92f, .34f), cyan,
+            ButtonText("应用", multiplayerBrowserFilterLayer, new Vector2(.56f, .18f), new Vector2(.92f, .30f), cyan,
                 ApplyMultiplayerFiltersV2);
             Label("限制只影响大厅显示；正在游玩的房间仍由服务器禁止加入。", multiplayerBrowserFilterLayer, 15,
                 TextAnchor.UpperLeft, new Vector2(.08f, .06f), new Vector2(.92f, .16f), muted);
@@ -535,10 +549,12 @@ namespace ChunithmMobile.Runtime
             SetButtonLabel(multiplayerFilterNotFullButton, multiplayerFilterNotFullOnly ? "未满人：是" : "未满人：不限");
             SetButtonLabel(multiplayerFilterUnencryptedButton, multiplayerFilterUnencryptedOnly ? "未加密：是" : "未加密：不限");
             SetButtonLabel(multiplayerFilterModeButton, multiplayerFilterMode == "casual" ? "模式：休闲" : multiplayerFilterMode == "normal" ? "模式：普通" : "模式：不限");
+            SetButtonLabel(multiplayerFilterRoomTypeButton, multiplayerFilterRoomType == "personal" ? "房间：个人" : multiplayerFilterRoomType == "persistent" ? "房间：常驻" : "房间：全部");
             SetFilterButtonColorV2(multiplayerFilterIdleButton, multiplayerFilterIdleOnly);
             SetFilterButtonColorV2(multiplayerFilterNotFullButton, multiplayerFilterNotFullOnly);
             SetFilterButtonColorV2(multiplayerFilterUnencryptedButton, multiplayerFilterUnencryptedOnly);
             SetFilterButtonColorV2(multiplayerFilterModeButton, !string.IsNullOrEmpty(multiplayerFilterMode));
+            SetFilterButtonColorV2(multiplayerFilterRoomTypeButton, !string.IsNullOrEmpty(multiplayerFilterRoomType));
         }
 
         private void SetFilterButtonColorV2(Button button, bool selected)
@@ -574,12 +590,18 @@ namespace ChunithmMobile.Runtime
             MultiplayerLog.Info("room-filter-changed", "mode=" + (string.IsNullOrEmpty(multiplayerFilterMode) ? "any" : multiplayerFilterMode));
             RefreshMultiplayerFiltersV2();
         }
+        private void CycleMultiplayerFilterRoomTypeV2()
+        {
+            multiplayerFilterRoomType = multiplayerFilterRoomType == "" ? "personal" : multiplayerFilterRoomType == "personal" ? "persistent" : "";
+            RefreshMultiplayerFiltersV2();
+        }
         private void ClearMultiplayerFiltersV2()
         {
             multiplayerFilterIdleOnly = false;
             multiplayerFilterNotFullOnly = false;
             multiplayerFilterUnencryptedOnly = false;
             multiplayerFilterMode = "";
+            multiplayerFilterRoomType = "";
             MultiplayerLog.Info("room-filter-cleared");
             RefreshMultiplayerFiltersV2();
         }
@@ -643,7 +665,7 @@ namespace ChunithmMobile.Runtime
                 });
                 visual.Label.text = room.roomName + "  " + room.roomId + "\n" + room.memberCount + "/" + room.maxPlayers +
                     "  " + state + "  " + (room.hasPassword ? "🔒" : "") + "\n" + song + " · " +
-                    (room.mode == "normal" ? "普通" : "休闲");
+                    (room.mode == "normal" ? "普通" : "休闲") + " · " + (room.persistent ? "常驻" : "个人");
                 visual.Label.fontSize = 15;
                 visual.Label.alignment = TextAnchor.MiddleLeft;
                 visual.Label.rectTransform.offsetMin = new Vector2(18, 0);
@@ -684,7 +706,7 @@ namespace ChunithmMobile.Runtime
                     .Append(room.roomName).Append('|')
                     .Append(room.memberCount).Append('|').Append(room.maxPlayers).Append('|')
                     .Append(room.state).Append('|').Append(room.hasPassword).Append('|')
-                    .Append(room.mode).Append('|').Append(room.clientVersion).Append('|');
+                    .Append(room.mode).Append('|').Append(room.persistent).Append('|').Append(room.clientVersion).Append('|');
                 if (room.song != null)
                     builder.Append(room.song.songId).Append('|').Append(room.song.songName).Append('|')
                         .Append(room.song.difficulty).Append('|');
@@ -713,6 +735,7 @@ namespace ChunithmMobile.Runtime
             multiplayerBrowserDetails.text = "房间：" + room.roomName + "  " + room.roomId +
                 "\n创建者：" + room.ownerName + "\n当前房主：" + room.hostName +
                 "\n人数：" + room.memberCount + "/" + room.maxPlayers + "\n模式：" + (room.mode == "normal" ? "普通" : "休闲") +
+                "\n类型：" + (room.persistent ? "常驻房间" : "个人房间") +
                 "\n选歌：" + (room.selectionMode == "loop" ? "循环轮流" : "房主专选") +
                 "\nMOD：" + mods + "\n歌曲：" + song + "\n状态：" + MultiplayerStateLabelV2(room.state) +
                 (active ? "\n正在游玩或结算，暂时禁止加入" : "") + "\n" + version;
@@ -754,7 +777,7 @@ namespace ChunithmMobile.Runtime
         {
             multiplayerSelectingSong = multiplayer;
             MultiplayerLog.Info("song-select-context", multiplayer ? "multiplayer" : "singleplayer");
-            if (songSelectTitle != null) songSelectTitle.text = UiLocalization.Translate(multiplayer ? "联机选曲" : "SONG SELECT");
+            if (songSelectTitle != null) songSelectTitle.text = UiLocalization.Translate(multiplayer ? "在线选曲" : "SONG SELECT");
             if (songSelectPrimaryButton != null)
             {
                 SetButtonLabel(songSelectPrimaryButton, multiplayer ? "选择歌曲" : "开始！");
@@ -777,7 +800,7 @@ namespace ChunithmMobile.Runtime
             if (reentrySeconds > 0)
             {
                 MultiplayerLog.Warn("login-blocked", "reentryCooldownSeconds=" + reentrySeconds);
-                SetMultiplayerLoginStatusV2("退出联机大厅后请等待 " + reentrySeconds + " 秒。", true);
+                SetMultiplayerLoginStatusV2("退出在线大厅后请等待 " + reentrySeconds + " 秒。", true);
                 return;
             }
             if (multiplayerServerInput == null || string.IsNullOrWhiteSpace(multiplayerServerInput.text))
@@ -897,6 +920,27 @@ namespace ChunithmMobile.Runtime
                     ApplyPendingMultiplayerTransferV2(message.song);
                     RenderMultiplayerRoomV2();
                     StartPreparingMultiplayerSongV2(message.song);
+                    break;
+                case "songChangeVoteUpdated":
+                    if (activeMultiplayerRoom != null)
+                    {
+                        activeMultiplayerRoom.songChangeVote = new MultiplayerSongChangeVoteDto {
+                            active = message.active,
+                            requiredRatio = message.requiredRatio,
+                            threshold = message.threshold,
+                            count = message.voteCount,
+                            eligible = message.eligibleCount
+                        };
+                        if (currentPage == AppPage.MultiplayerRoom) RenderMultiplayerRoomV2();
+                    }
+                    break;
+                case "songChangeVotePassed":
+                    if (activeMultiplayerRoom != null && activeMultiplayerRoom.songChangeVote != null)
+                    {
+                        activeMultiplayerRoom.songChangeVote.active = false;
+                        activeMultiplayerRoom.songChangeVote.count = 0;
+                    }
+                    SetMultiplayerRoomStatusV2("投票已通过，房间已返回选曲。", false);
                     break;
                 case "transferReady":
                     MultiplayerLog.Info("transfer-ready", "packageHash=" + (message.packageHash ?? "-") +
@@ -1086,7 +1130,13 @@ namespace ChunithmMobile.Runtime
                         PlayerPrefs.Save();
                         detail = "\n请等待 " + seconds + " 秒后重新进入。";
                     }
-                    SetMultiplayerLoginStatusV2((message.message ?? "服务器拒绝了操作。") + detail, true);
+                    string errorText = (message.message ?? "服务器拒绝了操作。") + detail +
+                        (string.IsNullOrWhiteSpace(message.code) ? "" : "\n错误代码：" + message.code);
+                    if (currentPage == AppPage.MultiplayerRoom || currentPage == AppPage.MultiplayerGroupResults)
+                        SetMultiplayerRoomStatusV2(errorText, true);
+                    else if (currentPage == AppPage.MultiplayerBrowser)
+                        SetMultiplayerBrowserStatusV2(errorText, true);
+                    else SetMultiplayerLoginStatusV2(errorText, true);
                     break;
             }
         }
@@ -1123,6 +1173,16 @@ namespace ChunithmMobile.Runtime
             SetButtonLabel(multiplayerRoomModeButton, "模式：" + mode);
             SetButtonLabel(multiplayerRoomModsButton, "MOD：" + CurrentMultiplayerModSummaryV2(room.mods));
             SetButtonLabel(multiplayerRoomSelectionButton, "选歌方式：" + selection);
+            MultiplayerSongChangeVoteDto vote = room.songChangeVote;
+            if (multiplayerRoomVoteButton != null)
+            {
+                if (vote != null && vote.active)
+                {
+                    int percent = Mathf.RoundToInt(Mathf.Clamp01(vote.requiredRatio) * 100f);
+                    SetButtonLabel(multiplayerRoomVoteButton, "投票换歌 " + vote.count + "/" + vote.threshold + "（" + percent + "%）");
+                }
+                else SetButtonLabel(multiplayerRoomVoteButton, "投票换歌（" + (vote == null ? 50 : Mathf.RoundToInt(vote.requiredRatio * 100f)) + "%）");
+            }
             multiplayerRoomSongLabel.text = room.song == null ? "房主尚未选择歌曲" :
                 (room.song.songName ?? room.song.songId) + "\n" + room.song.difficulty + "  Lv." + room.song.level +
                 "\n" + MultiplayerSongTransferStatusV2(room.song);
@@ -1185,6 +1245,7 @@ namespace ChunithmMobile.Runtime
             multiplayerRoomModeButton.interactable = !active && host;
             multiplayerRoomModsButton.interactable = !active && host;
             multiplayerRoomSelectionButton.interactable = !active && host;
+            multiplayerRoomVoteButton.interactable = !active && hasSong && self != null;
             multiplayerRoomReadyButton.interactable = !active && room.song != null && self != null && self.songReady;
             SetButtonLabel(multiplayerRoomReadyButton, self != null && self.ready ? "取消准备" : "准备");
             multiplayerRoomExitRoundButton.gameObject.SetActive(active);
@@ -1315,7 +1376,7 @@ namespace ChunithmMobile.Runtime
             string search = multiplayerBrowserSearchInput == null ? "" : multiplayerBrowserSearchInput.text.Trim();
             string exactId = RegexLikeRoomId(search) ? search : "";
             multiplayerClient.RequestRoomList(exactId.Length == 0 ? search : "", exactId,
-                multiplayerFilterIdleOnly, multiplayerFilterNotFullOnly, multiplayerFilterUnencryptedOnly, multiplayerFilterMode);
+                multiplayerFilterIdleOnly, multiplayerFilterNotFullOnly, multiplayerFilterUnencryptedOnly, multiplayerFilterMode, multiplayerFilterRoomType);
             SetMultiplayerBrowserStatusV2("正在刷新房间列表…", false);
         }
 
@@ -1323,12 +1384,12 @@ namespace ChunithmMobile.Runtime
         {
             if (multiplayerClient == null || !multiplayerClient.IsConnected)
             {
-                SetMultiplayerBrowserStatusV2("尚未连接服务器，请重新进入联机大厅。", true);
+                SetMultiplayerBrowserStatusV2("尚未连接服务器，请重新进入在线大厅。", true);
                 return;
             }
             if (!multiplayerAuthenticatedV2)
             {
-                SetMultiplayerBrowserStatusV2("登录状态已失效，请返回后重新进入联机大厅。", true);
+                SetMultiplayerBrowserStatusV2("登录状态已失效，请返回后重新进入在线大厅。", true);
                 return;
             }
             if (multiplayerQuota != null && multiplayerQuota.createRoomRemaining == 0)
@@ -1378,6 +1439,7 @@ namespace ChunithmMobile.Runtime
                 reservedRoomId = multiplayerReservedRoomId,
                 roomName = name,
                 roomMode = multiplayerCreateMode,
+                roomType = multiplayerCreateRoomType,
                 maxPlayers = multiplayerCreateMaxPlayers,
                 selectionMode = multiplayerCreateSelection,
                 listed = multiplayerCreateListed,
@@ -1425,6 +1487,7 @@ namespace ChunithmMobile.Runtime
         {
             if (multiplayerCreatePlayersLabel != null) multiplayerCreatePlayersLabel.text = "人数：" + multiplayerCreateMaxPlayers;
             if (multiplayerCreateModeLabel != null) multiplayerCreateModeLabel.text = "模式：" + (multiplayerCreateMode == "normal" ? "普通" : "休闲");
+            if (multiplayerCreateRoomTypeLabel != null) multiplayerCreateRoomTypeLabel.text = "房间：个人（常驻房间由服务端后台创建）";
             if (multiplayerCreateSelectionLabel != null) multiplayerCreateSelectionLabel.text = "选歌：" + (multiplayerCreateSelection == "host" ? "房主专选" : "循环轮流");
             if (multiplayerCreateListedLabel != null) multiplayerCreateListedLabel.text = "显示在大厅：" + (multiplayerCreateListed ? "是" : "否");
             if (multiplayerCreateModsLabel != null) multiplayerCreateModsLabel.text = "MOD：" + CurrentMultiplayerModSummaryV2(multiplayerCreateMods);
@@ -1489,12 +1552,30 @@ namespace ChunithmMobile.Runtime
                 yield break;
             }
             multiplayerPreparedPackage = task.Result;
+            string coverPath = "";
+            string coverHash = "";
+            long coverSize = 0;
+            if (selectedSong != null && !string.IsNullOrWhiteSpace(selectedSong.JacketPath) &&
+                File.Exists(selectedSong.JacketPath) && !string.IsNullOrWhiteSpace(selectedSong.Root))
+            {
+                string root = selectedSong.Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (selectedSong.JacketPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                    coverPath = selectedSong.JacketPath.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
+                if (!string.IsNullOrWhiteSpace(coverPath))
+                {
+                    coverSize = new FileInfo(selectedSong.JacketPath).Length;
+                    Task<string> coverHashTask = MultiplayerSongTransfer.ComputeSha256Async(selectedSong.JacketPath);
+                    while (!coverHashTask.IsCompleted) yield return null;
+                    if (!coverHashTask.IsFaulted) coverHash = coverHashTask.Result;
+                }
+            }
             multiplayerClient.SelectSong(new MultiplayerSelectSongMessage {
                 songId = selectedSong.Id, songName = selectedSong.Name, artist = selectedSong.Artist,
                 chartPath = Path.GetFileName(selectedChart.Path).Replace('\\', '/'), difficulty = selectedChart.Difficulty,
                 level = selectedChart.Level, designer = selectedChart.Designer, bpm = selectedSong.Bpm,
                 durationText = selectedSong.DurationText, chartHash = multiplayerPreparedPackage.ChartHash,
-                packageHash = multiplayerPreparedPackage.PackageHash, packageSize = multiplayerPreparedPackage.Size
+                packageHash = multiplayerPreparedPackage.PackageHash, packageSize = multiplayerPreparedPackage.Size,
+                coverPath = coverPath, coverHash = coverHash, coverSize = coverSize
             });
             SetMultiplayerRoomStatusV2("选曲已提交，正在通知成员下载。", false);
         }
@@ -1949,6 +2030,15 @@ namespace ChunithmMobile.Runtime
             if (self != null) multiplayerClient.SetReady(!self.ready);
         }
 
+        private void ToggleMultiplayerSongChangeVoteV2()
+        {
+            if (activeMultiplayerRoom == null || multiplayerClient == null) return;
+            MultiplayerSongChangeVoteDto vote = activeMultiplayerRoom.songChangeVote;
+            if (vote != null && vote.active) multiplayerClient.CastSongChangeVote();
+            else multiplayerClient.RequestSongChangeVote();
+            SetMultiplayerRoomStatusV2("已提交换歌投票，等待其他成员。", false);
+        }
+
         private void ToggleMultiplayerRoomModeV2()
         {
             if (!IsLocalMultiplayerHostV2() || activeMultiplayerRoom == null) return;
@@ -2149,6 +2239,11 @@ namespace ChunithmMobile.Runtime
         private void SetMultiplayerBrowserStatusV2(string value, bool error)
         {
             if (multiplayerBrowserStatus != null) { multiplayerBrowserStatus.text = UiLocalization.Translate(value); multiplayerBrowserStatus.color = error ? (HighContrastUi ? UiThemeContrast.Danger : new Color(1f, .32f, .35f)) : muted; }
+            if (multiplayerCreateStatus != null && multiplayerCreateLayer != null && multiplayerCreateLayer.gameObject.activeSelf)
+            {
+                multiplayerCreateStatus.text = UiLocalization.Translate(value);
+                multiplayerCreateStatus.color = error ? (HighContrastUi ? UiThemeContrast.Danger : new Color(1f, .32f, .35f)) : muted;
+            }
         }
 
         private void SetMultiplayerRoomStatusV2(string value, bool error)
@@ -2274,7 +2369,7 @@ namespace ChunithmMobile.Runtime
                 ? "服务器没有返回具体错误。"
                 : multiplayerLastConnectionError;
             SwitchTo(AppPage.Home, () => ShowModal("网络错误",
-                "网络错误，已重试 3 次，已退出联机模式。\n\n最后一次错误：" + detail,
+                "网络错误，已重试 3 次，已退出在线模式。\n\n最后一次错误：" + detail,
                 null, false));
         }
 
@@ -2321,8 +2416,8 @@ namespace ChunithmMobile.Runtime
             if (multiplayerLoginButton != null) multiplayerLoginButton.interactable = seconds <= 0;
             if (seconds == multiplayerLastReentrySeconds) return;
             multiplayerLastReentrySeconds = seconds;
-            SetMultiplayerLoginStatusV2(seconds > 0
-                ? "退出联机大厅后请等待 " + seconds + " 秒后重新进入。"
+                SetMultiplayerLoginStatusV2(seconds > 0
+                ? "退出在线大厅后请等待 " + seconds + " 秒后重新进入。"
                 : "输入地址和名称后进入服务器。", seconds > 0);
         }
 

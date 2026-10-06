@@ -3,12 +3,15 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 封面异步加载器：从本地歌曲目录读取图片，按 UI 需求分批应用，避免歌曲列表首帧卡顿。
+    // 目标对象销毁或歌曲选择改变后，待处理结果必须丢弃而不能写回旧卡片。
     public static class LocalCoverLoader
     {
         private const int MaxCachedCovers = 48;
@@ -68,7 +71,18 @@ namespace ChunithmMobile.Runtime
         {
             if (Path.GetExtension(path).Equals(".dds", StringComparison.OrdinalIgnoreCase))
             {
-                Sprite ddsSprite = LoadDxt1Dds(path);
+                Task<DdsTextureData> decode = Task.Run(() => DdsTextureDecoder.DecodeFile(path));
+                while (!decode.IsCompleted) yield return null;
+                if (decode.IsFaulted || decode.IsCanceled)
+                {
+                    Debug.LogWarning($"DDS jacket load failed: {path} | {decode.Exception?.GetBaseException().Message}");
+                    CompleteLoad(path, null);
+                    yield break;
+                }
+                Texture2D texture = DdsTextureDecoder.CreateTexture(decode.Result,
+                    Path.GetFileNameWithoutExtension(path));
+                Sprite ddsSprite = texture == null ? null : Sprite.Create(texture,
+                    new Rect(0, 0, texture.width, texture.height), new Vector2(.5f, .5f), 100);
                 CompleteLoad(path, ddsSprite);
                 yield break;
             }
@@ -104,38 +118,6 @@ namespace ChunithmMobile.Runtime
             Sprite sprite = Store(path, loaded);
             foreach (PendingTarget request in waiting)
                 ApplyIfExpected(request.Target, path, sprite, request.PreserveAspect);
-        }
-
-        private static Sprite LoadDxt1Dds(string path)
-        {
-            try
-            {
-                byte[] bytes = File.ReadAllBytes(path);
-                if (bytes.Length <= 128 || bytes[0] != (byte)'D' || bytes[1] != (byte)'D' || bytes[2] != (byte)'S' || bytes[3] != (byte)' ')
-                    return null;
-                int height = BitConverter.ToInt32(bytes, 12);
-                int width = BitConverter.ToInt32(bytes, 16);
-                string fourCc = System.Text.Encoding.ASCII.GetString(bytes, 84, 4);
-                if (width <= 0 || height <= 0 || !fourCc.Equals("DXT1", StringComparison.OrdinalIgnoreCase))
-                    return null;
-                int payloadLength = bytes.Length - 128;
-                var payload = new byte[payloadLength];
-                Buffer.BlockCopy(bytes, 128, payload, 0, payloadLength);
-                var texture = new Texture2D(width, height, TextureFormat.DXT1, false)
-                {
-                    name = Path.GetFileNameWithoutExtension(path),
-                    wrapMode = TextureWrapMode.Clamp,
-                    filterMode = FilterMode.Bilinear
-                };
-                texture.LoadRawTextureData(payload);
-                texture.Apply(false, false);
-                return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(.5f, .5f), 100);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"DDS jacket load failed: {path} | {exception.Message}");
-                return null;
-            }
         }
 
         private static void Apply(Image target, Sprite sprite, bool preserveAspect)

@@ -2,6 +2,8 @@ using System;
 
 namespace ChunithmMobile.Chart
 {
+    // 镜像变换层：只变换轨道空间中的位置/方向，保留时间、音符类型和判定点。
+    // 这样镜像 MOD 不会改变谱面时序，也不会污染原始歌曲数据。
     /// <summary>
     /// Mirrors authored chart geometry for the score-counting MIRROR MOD.
     /// The source C2S remains untouched; a freshly parsed runtime chart is

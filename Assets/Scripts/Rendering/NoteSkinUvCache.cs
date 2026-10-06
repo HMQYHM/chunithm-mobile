@@ -3,6 +3,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Rendering
 {
+    // 皮肤 UV 缓存：为不同宽度音符保存外部皮肤主体的适配结果，减少每帧重复计算。
+    // 缓存必须在皮肤切换或 Mesh 替换时清空，否则旧贴图会沿用旧 UV。
     // Only rectangular ground-note mappings are adjusted. Geometry, vertical
     // UVs and complex authored mesh mappings remain unchanged.
     public sealed class NoteSkinUvCache

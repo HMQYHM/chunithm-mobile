@@ -2,11 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using ChunithmMobile.Platform;
 using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 跨平台存储路径：集中生成歌曲、联机歌曲、皮肤、背景、日志和索引目录。
+    // 目录创建和路径规范化必须集中处理，避免不同功能把数据写到互不兼容的位置。
     /// <summary>
     /// Keeps platform storage APIs out of chart, timing, judgement and rendering code.
     /// The HarmonyOS NEXT port only needs a new provider for its app sandbox or picker.
@@ -61,8 +64,10 @@ namespace ChunithmMobile.Runtime
 #if UNITY_ANDROID && !UNITY_EDITOR
             using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.ImportPickerActivity");
             bridge.CallStatic("openPicker");
+#elif UNITY_IOS && !UNITY_EDITOR
+            ChunithmOpenDocumentPicker("zip");
 #else
-            throw new PlatformNotSupportedException("当前平台没有 Android 文件选择器");
+            throw new PlatformNotSupportedException("当前平台没有文件选择器");
 #endif
         }
 
@@ -71,8 +76,10 @@ namespace ChunithmMobile.Runtime
 #if UNITY_ANDROID && !UNITY_EDITOR
             using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.ImportPickerActivity");
             bridge.CallStatic("openBackgroundImagePicker");
+#elif UNITY_IOS && !UNITY_EDITOR
+            ChunithmOpenDocumentPicker("images");
 #else
-            throw new PlatformNotSupportedException("当前平台没有 Android 图片选择器");
+            throw new PlatformNotSupportedException("当前平台没有图片选择器");
 #endif
         }
 
@@ -81,10 +88,60 @@ namespace ChunithmMobile.Runtime
 #if UNITY_ANDROID && !UNITY_EDITOR
             using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.ImportPickerActivity");
             bridge.CallStatic("openGameplaySkinPicker");
+#elif UNITY_IOS && !UNITY_EDITOR
+            ChunithmOpenDocumentPicker("skin");
 #else
-            throw new PlatformNotSupportedException("当前平台没有 Android 文件选择器");
+            throw new PlatformNotSupportedException("当前平台没有文件选择器");
 #endif
         }
+
+        public static bool TryShareFile(string path)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.LogExportActivity");
+            bridge.CallStatic("exportFile", path);
+            return true;
+#elif UNITY_IOS && !UNITY_EDITOR
+            ChunithmShareFile(path);
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        /// <summary>
+        /// Returns free bytes on the volume containing <paramref name="path"/>.
+        /// DriveInfo is not reliable inside the iOS app container, so Apple
+        /// builds query NSFileManager through the native document bridge.
+        /// </summary>
+        public static long GetAvailableDiskSpace(string path)
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            try { return ChunithmGetAvailableDiskSpace(path); }
+            catch (Exception exception) {
+                Debug.LogWarning("Unable to query iOS free disk space: " + exception.Message);
+                return -1;
+            }
+#else
+            try
+            {
+                string root = Path.GetPathRoot(Path.GetFullPath(path));
+                return string.IsNullOrWhiteSpace(root) ? -1 : new DriveInfo(root).AvailableFreeSpace;
+            }
+            catch { return -1; }
+#endif
+        }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        [DllImport("__Internal")]
+        private static extern void ChunithmOpenDocumentPicker(string mode);
+
+        [DllImport("__Internal")]
+        private static extern void ChunithmShareFile(string path);
+
+        [DllImport("__Internal")]
+        private static extern long ChunithmGetAvailableDiskSpace(string path);
+#endif
 
         public static IReadOnlyList<string> GetMultiplayerSongRoots()
         {

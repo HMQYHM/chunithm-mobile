@@ -7,6 +7,9 @@ using ChunithmMobile.Judgement;
 
 namespace ChunithmMobile.Runtime
 {
+    // 应用启动入口：在首场景创建跨场景运行时根节点和基础服务。
+    // 创建顺序很重要：音频、加载遮罩、输入、轨道和 UI 互相查找组件；此处只负责装配，
+    // 具体歌曲加载、页面刷新和判定生命周期分别由对应模块负责。
     public sealed class AppBootstrap : MonoBehaviour
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -59,6 +62,14 @@ namespace ChunithmMobile.Runtime
 
         private void Awake()
         {
+            // Keep the launch orientation stable while Unity builds the UI and
+            // scans the library. Autorotation is enabled only after the loading
+            // page has completed, avoiding a configuration change in startup.
+            Screen.orientation = ResolveLaunchOrientation();
+            Screen.autorotateToPortrait = false;
+            Screen.autorotateToPortraitUpsideDown = false;
+            Screen.autorotateToLandscapeLeft = false;
+            Screen.autorotateToLandscapeRight = false;
             try
             {
                 PlatformStoragePaths.EnsureAppDirectories();
@@ -78,6 +89,25 @@ namespace ChunithmMobile.Runtime
                       $"safeArea={platform.SafeAreaPixels}");
         }
 
+        private static ScreenOrientation ResolveLaunchOrientation()
+        {
+            // Android has already selected the current landscape side from the
+            // manifest before Unity starts. Preserve that side when available;
+            // otherwise use the standard landscape orientation.
+            if (Screen.orientation == ScreenOrientation.LandscapeRight)
+                return ScreenOrientation.LandscapeRight;
+            return ScreenOrientation.LandscapeLeft;
+        }
+
+        public static void EnableLandscapeSensorRotation()
+        {
+            Screen.autorotateToPortrait = false;
+            Screen.autorotateToPortraitUpsideDown = false;
+            Screen.autorotateToLandscapeLeft = true;
+            Screen.autorotateToLandscapeRight = true;
+            Screen.orientation = ScreenOrientation.AutoRotation;
+        }
+
         private void OnApplicationPause(bool paused)
         {
             // Suspend menu audio too. Gameplay keeps its own explicit pause
@@ -86,3 +116,9 @@ namespace ChunithmMobile.Runtime
         }
     }
 }
+/*
+ * 模块说明：应用启动入口。
+ * 生命周期：由 Unity 创建后执行 Awake/Start，准备平台服务、存储目录和全局 UI。
+ * 边界：这里只负责启动编排，不承载歌曲解析、判定或页面业务；这样重启和测试时可以独立替换启动依赖。
+ * 维护提示：新增全局服务时，应说明创建顺序、是否跨场景存活以及失败后的回退行为。
+ */

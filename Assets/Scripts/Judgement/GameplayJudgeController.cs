@@ -85,6 +85,7 @@ namespace ChunithmMobile.Judgement
         private bool mineImmunity;
         private bool flickAllTap;
         private int judgementOffsetMs;
+        private bool judgementSuppressed;
 
         private readonly struct GroundFrameCandidate
         {
@@ -152,6 +153,7 @@ namespace ChunithmMobile.Judgement
             nonMissJusticeCritical = enableNonMissJusticeCritical;
             mineImmunity = enableMineImmunity;
             flickAllTap = enableFlickAllTap;
+            judgementSuppressed = false;
             judgementOffsetMs = Mathf.Clamp(offsetMs, -500, 500);
             Debug.Log($"Runtime judgement bound: {scoringPointCount} scoring judge points, " +
                 $"{points.Count - scoringPointCount} runtime hazard points");
@@ -160,7 +162,7 @@ namespace ChunithmMobile.Judgement
         // 每帧只消费已排序判定点和输入快照；时间来自 DSP 时钟而不是渲染帧计数。
         private void Update()
         {
-            if (chart == null || clock == null || input == null || points == null || !clock.Playing || clock.Preparing) return;
+            if (judgementSuppressed || chart == null || clock == null || input == null || points == null || !clock.Playing || clock.Preparing) return;
             double chartOffset = judgementOffsetMs * clock.Rate;
             double now = clock.TimeMs - chartOffset;
             AirState air = input.Ground.Current.Air;
@@ -270,6 +272,12 @@ namespace ChunithmMobile.Judgement
             }
 
             while (nextPoint < resolved.Length && resolved[nextPoint]) nextPoint++;
+        }
+
+        public void SetJudgementSuppressed(bool suppressed)
+        {
+            judgementSuppressed = suppressed;
+            if (suppressed) groundCandidatesByPoint.Clear();
         }
 
         private void BuildGroundCandidates()

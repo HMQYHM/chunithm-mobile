@@ -15,6 +15,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 预备/长条头回归测试：验证两秒预备、长条头判定点和音频起点的统一时序。
     public static class PreparationAndLongHeadSelfTest
     {
         private sealed class TestTime : IAudioTimeSource { public double Seconds { get; set; } }

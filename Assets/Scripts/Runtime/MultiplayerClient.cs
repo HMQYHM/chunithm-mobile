@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -9,6 +10,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 联机传输层：维护连接、消息队列、心跳、重试和 DTO 编解码。
+    // 网络线程只入队事件，Unity 对象和 UI 状态必须在主线程消费；服务端数据始终视为不可信。
     [Serializable]
     public sealed class MultiplayerHelloMessage
     {
@@ -18,7 +21,6 @@ namespace ChunithmMobile.Runtime
         public string playerName;
         public string deviceId;
         public string legacyDeviceId;
-        public string authToken;
     }
 
     [Serializable]
@@ -28,10 +30,12 @@ namespace ChunithmMobile.Runtime
         public bool airAreaAuto;
         public bool directionalAirAuto;
         public bool airLongNoMotion;
-        // Legacy wire field for deployed servers; never enables a gameplay MOD.
-        public bool flickSimpleMode;
         public bool mineImmunity;
         public bool mirrorChart;
+        public bool flickAllTap;
+        public bool fullscreenTouchpad;
+        public bool nonMissJusticeCritical;
+        public bool uniformSpeed;
         public float musicRate = 1f;
     }
 
@@ -41,7 +45,8 @@ namespace ChunithmMobile.Runtime
         public string type = "createRoom";
         public string roomName;
         public string roomMode;
-        public int maxPlayers = 8;
+        public string roomType = "personal";
+        public int maxPlayers = 20;
         public string selectionMode = "host";
         public bool listed = true;
         public string password = "";
@@ -67,6 +72,7 @@ namespace ChunithmMobile.Runtime
         public bool notFullOnly;
         public bool unencryptedOnly;
         public string mode = "";
+        public string roomType = "";
     }
 
     [Serializable]
@@ -74,6 +80,12 @@ namespace ChunithmMobile.Runtime
     {
         public string type;
         public bool ready;
+    }
+
+    [Serializable]
+    public sealed class MultiplayerVoteMessage
+    {
+        public string type;
     }
 
     [Serializable]
@@ -92,6 +104,9 @@ namespace ChunithmMobile.Runtime
         public string durationText;
         public string packageHash;
         public long packageSize;
+        public string coverPath;
+        public string coverHash;
+        public long coverSize;
     }
 
     [Serializable]
@@ -129,6 +144,7 @@ namespace ChunithmMobile.Runtime
     public sealed class MultiplayerPongMessage
     {
         public string type;
+        public long clientTime;
         public long serverTime;
     }
 
@@ -162,6 +178,12 @@ namespace ChunithmMobile.Runtime
         public long expiresAt;
         public long packageSize;
         public float progress;
+        public float requiredRatio;
+        public bool active;
+        public int threshold;
+        public int voteCount;
+        public int eligibleCount;
+        public string previousSongId;
         public MultiplayerQuotaDto quota;
         public MultiplayerErrorDetailsDto details;
         public MultiplayerRoomDto room;
@@ -180,6 +202,7 @@ namespace ChunithmMobile.Runtime
         public bool notFullOnly;
         public bool unencryptedOnly;
         public string mode;
+        public string roomType;
     }
 
     [Serializable]
@@ -217,18 +240,32 @@ namespace ChunithmMobile.Runtime
         public string ownerName;
         public string clientVersion;
         public string mode;
+        public string roomType;
         public string selectionMode;
         public string state;
         public int maxPlayers;
         public int memberCount;
         public bool listed;
         public bool hasPassword;
+        public bool persistent;
+        public MultiplayerSongChangeVoteDto songChangeVote;
         public MultiplayerModsMessage mods;
         public MultiplayerRoomMemberDto[] members;
         public MultiplayerSongDto song;
         public string roundId;
         public long startAt;
         public MultiplayerLeaderboardEntryDto[] leaderboard;
+    }
+
+    [Serializable]
+    public sealed class MultiplayerSongChangeVoteDto
+    {
+        public bool active;
+        public float requiredRatio;
+        public int threshold;
+        public int count;
+        public int eligible;
+        public string[] voters;
     }
 
     [Serializable]
@@ -268,6 +305,9 @@ namespace ChunithmMobile.Runtime
         public string durationText;
         public string packageHash;
         public long packageSize;
+        public string coverPath;
+        public string coverHash;
+        public long coverSize;
         public bool transferReady;
         public float transferProgress;
         public string transferDirection;
@@ -371,15 +411,30 @@ namespace ChunithmMobile.Runtime
         private float heartbeatDeadline;
         private bool heartbeatAwaiting;
         private bool destroying;
+        private bool hasServerClockSample;
+        private double serverMinusLocalMilliseconds;
+        private double bestClockRoundTripMilliseconds = double.PositiveInfinity;
+#if UNITY_IOS && !UNITY_EDITOR
+        private bool iosNativeSocketOpen;
+        private string iosPendingPlayerName = "";
+        private string iosPendingDeviceId = "";
+        private string iosPendingLegacyDeviceId = "";
+        private string iosPendingClientVersion = "";
+#endif
 
         public bool IsConnected { get; private set; }
         public string ConnectedAddress { get; private set; }
+        public bool HasServerClockSample => hasServerClockSample;
+        public double ServerClockOffsetMilliseconds => serverMinusLocalMilliseconds;
+        public double ServerClockRoundTripMilliseconds => bestClockRoundTripMilliseconds;
         public event Action Connected;
         public event Action<string> MessageReceived;
         public event Action<string> ConnectionError;
         public event Action Disconnected;
         public event Action HeartbeatTimeout;
 
+        // 主线程事件泵：网络接收任务只入队，Unity 对象和 UI 回调在这里消费。
+        // 这条边界避免后台线程直接访问 GameObject，也让断线事件按顺序进入 UI。
         private void Update()
         {
             while (events.TryDequeue(out QueuedEvent queued))
@@ -388,14 +443,18 @@ namespace ChunithmMobile.Runtime
                 {
                     case EventKind.Connected:
                         IsConnected = true;
-                        nextPingAt = Time.unscaledTime + 5f;
+                        // Calibrate before a room can start. Waiting five
+                        // seconds for the first ping made devices with an
+                        // inaccurate wall clock schedule different start times.
+                        nextPingAt = Time.unscaledTime;
                         heartbeatAwaiting = false;
                         MultiplayerLog.Info("transport-connected", "server=" + ConnectedAddress);
                         Connected?.Invoke();
                         break;
                     case EventKind.Message:
-                        if (IsPong(queued.Value))
+                        if (TryReadPong(queued.Value, out MultiplayerPongMessage pong))
                         {
+                            ObserveServerClock(pong, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                             heartbeatAwaiting = false;
                             heartbeatDeadline = 0f;
                             nextPingAt = Time.unscaledTime + 5f;
@@ -436,7 +495,64 @@ namespace ChunithmMobile.Runtime
             }
         }
 
-        public void Connect(string address, string playerName, string deviceId, string clientVersion, string authToken = "")
+        /// <summary>
+        /// Converts a server deadline to this device's Unix clock. Before the
+        /// first NTP-style pong, use the deadline's distance from serverTime so
+        /// a badly configured device clock cannot create a multi-second error.
+        /// </summary>
+        public long ServerDeadlineToLocalUnixMilliseconds(long serverDeadline, long observedServerTime)
+        {
+            if (hasServerClockSample)
+                return (long)Math.Round(serverDeadline - serverMinusLocalMilliseconds,
+                    MidpointRounding.AwayFromZero);
+            long localNow = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            return observedServerTime > 0
+                ? localNow + Math.Max(0, serverDeadline - observedServerTime)
+                : serverDeadline;
+        }
+
+        /// <summary>
+        /// Returns the remaining real time until a server deadline. Callers
+        /// should add this once to their monotonic DSP clock; using wall-clock
+        /// timestamps again when playback starts would reintroduce drift when
+        /// Android adjusts its system clock in the meantime.
+        /// </summary>
+        public double ServerDeadlineDelayMilliseconds(long serverDeadline, long observedServerTime,
+            long localNowUnixMilliseconds)
+        {
+            double estimatedServerNow = hasServerClockSample
+                ? localNowUnixMilliseconds + serverMinusLocalMilliseconds
+                : observedServerTime > 0 ? observedServerTime : localNowUnixMilliseconds;
+            return Math.Max(0, serverDeadline - estimatedServerNow);
+        }
+
+        private void ObserveServerClock(MultiplayerPongMessage pong, long receivedLocalMilliseconds)
+        {
+            if (pong == null || pong.clientTime <= 0 || pong.serverTime <= 0) return;
+            double roundTrip = receivedLocalMilliseconds - pong.clientTime;
+            if (roundTrip < 0 || roundTrip > 10_000) return;
+            double midpoint = pong.clientTime + roundTrip * .5;
+            double sample = pong.serverTime - midpoint;
+
+            // Prefer the least-delayed samples. Blend near-best samples to
+            // smooth millisecond jitter without following congested packets.
+            if (!hasServerClockSample) {
+                serverMinusLocalMilliseconds = sample;
+                bestClockRoundTripMilliseconds = roundTrip;
+                hasServerClockSample = true;
+            } else if (roundTrip <= bestClockRoundTripMilliseconds + 12.0) {
+                serverMinusLocalMilliseconds = serverMinusLocalMilliseconds * .75 + sample * .25;
+                bestClockRoundTripMilliseconds = Math.Min(bestClockRoundTripMilliseconds, roundTrip);
+            }
+            MultiplayerLog.Info("clock-sync", $"offset={serverMinusLocalMilliseconds:F2}ms " +
+                $"rtt={roundTrip:F2}ms bestRtt={bestClockRoundTripMilliseconds:F2}ms");
+        }
+
+        /// <summary>
+        /// 发起异步 WebSocket 连接并发送 hello。连接结果通过 Connected/ConnectionError/Disconnected
+        /// 事件回传，本方法不会阻塞当前帧，也不会保证服务器已经接受登录。
+        /// </summary>
+        public void Connect(string address, string playerName, string deviceId, string clientVersion)
         {
             MultiplayerLog.Info("connect-request", "server=" + (address ?? "") + " player=" + (playerName ?? "") +
                 " device=" + MultiplayerLog.ShortId(deviceId) + " version=" + (clientVersion ?? ""));
@@ -449,12 +565,35 @@ namespace ChunithmMobile.Runtime
             }
             cancellation = new CancellationTokenSource();
             ConnectedAddress = address == null ? "" : address.Trim();
-            _ = ConnectAndReceive(uri, playerName, deviceId, GetLegacyDeviceId(), clientVersion, authToken, cancellation.Token);
+#if UNITY_IOS && !UNITY_EDITOR
+            iosPendingPlayerName = playerName ?? "";
+            iosPendingDeviceId = deviceId ?? "";
+            iosPendingLegacyDeviceId = GetLegacyDeviceId();
+            iosPendingClientVersion = clientVersion ?? "";
+            MultiplayerLog.Info("connect-target", uri.GetLeftPart(UriPartial.Path) + " transport=NSURLSessionWebSocketTask");
+            ChunithmWebSocketConnect(uri.AbsoluteUri);
+#else
+            MultiplayerLog.Info("connect-target", uri.GetLeftPart(UriPartial.Path) + " transport=ClientWebSocket");
+            _ = ConnectAndReceive(uri, playerName, deviceId, GetLegacyDeviceId(), clientVersion, cancellation.Token);
+#endif
         }
 
+        /// <summary>
+        /// 发送一条 JSON 消息。调用方只能认为消息已交给传输层，房间权限和参数合法性仍由服务端决定。
+        /// </summary>
         public void Send(string json)
         {
             if (string.IsNullOrWhiteSpace(json)) return;
+#if UNITY_IOS && !UNITY_EDITOR
+            if (!iosNativeSocketOpen)
+            {
+                MultiplayerLog.Warn("network-send-skipped", MultiplayerLog.SummarizeJson(json));
+                return;
+            }
+            MultiplayerLog.Info("network-send", MultiplayerLog.SummarizeJson(json));
+            ChunithmWebSocketSend(json);
+            return;
+#else
             ClientWebSocket connection = socket;
             if (connection == null || connection.State != WebSocketState.Open)
             {
@@ -464,10 +603,12 @@ namespace ChunithmMobile.Runtime
             MultiplayerLog.Info("network-send", MultiplayerLog.SummarizeJson(json));
             CancellationToken token = cancellation == null ? CancellationToken.None : cancellation.Token;
             _ = SendText(connection, json, token);
+#endif
         }
 
+        /// <summary>请求大厅列表；过滤参数只用于缩小查询范围，不提供绕过服务端规则的能力。</summary>
         public void RequestRoomList(string search = "", string roomId = "", bool idleOnly = false,
-            bool notFullOnly = false, bool unencryptedOnly = false, string mode = "")
+            bool notFullOnly = false, bool unencryptedOnly = false, string mode = "", string roomType = "")
         {
             Send(JsonUtility.ToJson(new MultiplayerListRoomsMessage {
                 search = search ?? "",
@@ -475,10 +616,12 @@ namespace ChunithmMobile.Runtime
                 idleOnly = idleOnly,
                 notFullOnly = notFullOnly,
                 unencryptedOnly = unencryptedOnly,
-                mode = mode ?? ""
+                mode = mode ?? "",
+                roomType = roomType ?? ""
             }));
         }
 
+        /// <summary>上报本玩家准备状态；房间当前阶段是否允许修改由服务端最终判断。</summary>
         public void SetReady(bool ready)
         {
             Send(JsonUtility.ToJson(new MultiplayerRoomActionMessage { type = "setReady", ready = ready }));
@@ -506,11 +649,16 @@ namespace ChunithmMobile.Runtime
             Send("{\"type\":\"leaveRoom\"}");
         }
 
+        public void RequestSongChangeVote() => Send(JsonUtility.ToJson(new MultiplayerVoteMessage { type = "requestSongChangeVote" }));
+        public void CastSongChangeVote() => Send(JsonUtility.ToJson(new MultiplayerVoteMessage { type = "castSongChangeVote" }));
+
+        /// <summary>提交选歌结果；房主专选模式下只有房主提交才应被服务器接受。</summary>
         public void SelectSong(MultiplayerSelectSongMessage song)
         {
             if (song != null) Send(JsonUtility.ToJson(song));
         }
 
+        /// <summary>请求开始回合；服务端应检查版本、歌曲同步、准备状态、房主权限和 MOD 合法性。</summary>
         public void StartRound()
         {
             Send("{\"type\":\"startRound\"}");
@@ -554,6 +702,7 @@ namespace ChunithmMobile.Runtime
             }));
         }
 
+        /// <summary>主动取消接收任务并关闭连接；关闭后旧消息不能再改变当前房间状态。</summary>
         public void Disconnect()
         {
             if (IsConnected || socket != null || !string.IsNullOrWhiteSpace(ConnectedAddress))
@@ -561,6 +710,13 @@ namespace ChunithmMobile.Runtime
             IsConnected = false;
             heartbeatAwaiting = false;
             heartbeatDeadline = 0f;
+            hasServerClockSample = false;
+            serverMinusLocalMilliseconds = 0;
+            bestClockRoundTripMilliseconds = double.PositiveInfinity;
+#if UNITY_IOS && !UNITY_EDITOR
+            iosNativeSocketOpen = false;
+            try { ChunithmWebSocketClose(); } catch { }
+#endif
             try { cancellation?.Cancel(); } catch { }
             try { socket?.Abort(); } catch { }
             try { socket?.Dispose(); } catch { }
@@ -569,21 +725,79 @@ namespace ChunithmMobile.Runtime
             ConnectedAddress = "";
         }
 
-        private static bool IsPong(string json)
+#if UNITY_IOS && !UNITY_EDITOR
+        // Called by ChunithmWebSocket.mm through UnitySendMessage. These methods
+        // execute on Unity's main thread and only enqueue the same transport
+        // events used by the managed implementation, keeping room/UI behavior
+        // identical across Android and iOS.
+        public void OnIosWebSocketConnected(string unused)
         {
+            iosNativeSocketOpen = true;
+            events.Enqueue(new QueuedEvent { Kind = EventKind.Connected });
+            var hello = new MultiplayerHelloMessage {
+                playerName = iosPendingPlayerName,
+                deviceId = iosPendingDeviceId,
+                legacyDeviceId = iosPendingLegacyDeviceId,
+                clientVersion = iosPendingClientVersion
+            };
+            string helloJson = JsonUtility.ToJson(hello);
+            MultiplayerLog.Info("network-send", MultiplayerLog.SummarizeJson(helloJson));
+            ChunithmWebSocketSend(helloJson);
+        }
+
+        public void OnIosWebSocketMessage(string json)
+        {
+            if (!iosNativeSocketOpen || string.IsNullOrWhiteSpace(json)) return;
+            events.Enqueue(new QueuedEvent { Kind = EventKind.Message, Value = json });
+        }
+
+        public void OnIosWebSocketError(string error)
+        {
+            if (!iosNativeSocketOpen && string.IsNullOrWhiteSpace(ConnectedAddress)) return;
+            iosNativeSocketOpen = false;
+            events.Enqueue(new QueuedEvent {
+                Kind = EventKind.Error,
+                Value = string.IsNullOrWhiteSpace(error) ? "iOS WebSocket 连接失败" : error
+            });
+        }
+
+        public void OnIosWebSocketClosed(string detail)
+        {
+            if (!iosNativeSocketOpen && string.IsNullOrWhiteSpace(ConnectedAddress)) return;
+            iosNativeSocketOpen = false;
+            if (!string.IsNullOrWhiteSpace(detail))
+                MultiplayerLog.Warn("transport-close", detail);
+            events.Enqueue(new QueuedEvent { Kind = EventKind.Disconnected });
+        }
+
+        [DllImport("__Internal")]
+        private static extern void ChunithmWebSocketConnect(string url);
+
+        [DllImport("__Internal")]
+        private static extern void ChunithmWebSocketSend(string message);
+
+        [DllImport("__Internal")]
+        private static extern void ChunithmWebSocketClose();
+#endif
+
+        private static bool TryReadPong(string json, out MultiplayerPongMessage pong)
+        {
+            pong = null;
             if (string.IsNullOrWhiteSpace(json)) return false;
             try
             {
-                MultiplayerPongMessage pong = JsonUtility.FromJson<MultiplayerPongMessage>(json);
+                pong = JsonUtility.FromJson<MultiplayerPongMessage>(json);
                 return pong != null && pong.type == "pong";
             }
-            catch { return false; }
+            catch { pong = null; return false; }
         }
 
         public void LeaveLobby() => Send("{\"type\":\"leaveLobby\"}");
 
+        // WebSocket 的后台生命周期集中在此方法。异常必须转成队列事件，不能从 async void 入口直接抛出，
+        // 否则联机加载页可能收不到失败通知而永久等待。
         private async Task ConnectAndReceive(Uri uri, string playerName, string deviceId, string legacyDeviceId, string clientVersion,
-            string authToken, CancellationToken token)
+            CancellationToken token)
         {
             ClientWebSocket connection = new ClientWebSocket();
             socket = connection;
@@ -596,11 +810,10 @@ namespace ChunithmMobile.Runtime
                     playerName = playerName,
                     deviceId = deviceId,
                     legacyDeviceId = legacyDeviceId,
-                    clientVersion = clientVersion,
-                    authToken = authToken
+                    clientVersion = clientVersion
                 };
                 string helloJson = JsonUtility.ToJson(hello);
-                MultiplayerLog.Info("network-send", MultiplayerLog.SummarizeJson(helloJson) + " authToken=<redacted>");
+                MultiplayerLog.Info("network-send", MultiplayerLog.SummarizeJson(helloJson));
                 await SendText(connection, helloJson, token).ConfigureAwait(false);
                 byte[] buffer = new byte[65536];
                 while (!token.IsCancellationRequested && connection.State == WebSocketState.Open)
@@ -623,8 +836,9 @@ namespace ChunithmMobile.Runtime
             {
                 if (!token.IsCancellationRequested)
                 {
-                    MultiplayerLog.Error("transport-exception", exception.Message);
-                    events.Enqueue(new QueuedEvent { Kind = EventKind.Error, Value = exception.Message });
+                    string description = DescribeTransportException(exception);
+                    MultiplayerLog.Error("transport-exception", description);
+                    events.Enqueue(new QueuedEvent { Kind = EventKind.Error, Value = description });
                 }
             }
             finally
@@ -634,6 +848,18 @@ namespace ChunithmMobile.Runtime
                 try { connection.Dispose(); } catch { }
                 if (ReferenceEquals(socket, connection)) socket = null;
             }
+        }
+
+        private static string DescribeTransportException(Exception exception)
+        {
+            if (exception == null) return "未知网络错误";
+            var builder = new StringBuilder();
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                if (builder.Length > 0) builder.Append(" <- ");
+                builder.Append(current.GetType().Name).Append(": ").Append(current.Message);
+            }
+            return builder.ToString();
         }
 
         private async Task SendText(ClientWebSocket connection, string json, CancellationToken token)
@@ -668,12 +894,26 @@ namespace ChunithmMobile.Runtime
             if (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) value = "ws://" + value.Substring(7);
             else if (value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) value = "wss://" + value.Substring(8);
             else if (!value.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) && !value.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
-                value = "ws://" + value;
+            {
+                // A bare public domain uses secure WebSocket by default, so a
+                // player only needs to enter e.g. hmqyhm.net. Explicit ports,
+                // localhost and numeric IP addresses remain suitable for LAN
+                // development and use plain WS unless the scheme says otherwise.
+                string authority = value.Split('/')[0];
+                bool hasExplicitPort = authority.LastIndexOf(':') > 0;
+                string host = hasExplicitPort ? authority.Substring(0, authority.LastIndexOf(':')) : authority;
+                bool localHost = host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                                 host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                                 host.Equals("::1", StringComparison.OrdinalIgnoreCase);
+                bool numericIp = Uri.CheckHostName(host) == UriHostNameType.IPv4 ||
+                                 Uri.CheckHostName(host) == UriHostNameType.IPv6;
+                value = (!hasExplicitPort && !localHost && !numericIp ? "wss://" : "ws://") + value;
+            }
             if (value.IndexOf("/ws", StringComparison.OrdinalIgnoreCase) < 0) value = value.TrimEnd('/') + "/ws";
             if (!Uri.TryCreate(value, UriKind.Absolute, out uri) || (uri.Scheme != "ws" && uri.Scheme != "wss"))
             {
                 uri = null;
-                error = "服务器地址格式无效，请填写 IP:端口 或 ws:// 地址。";
+                error = "服务器地址格式无效，请填写域名、IP:端口或完整的 ws:// / wss:// 地址。";
                 return false;
             }
             error = null;

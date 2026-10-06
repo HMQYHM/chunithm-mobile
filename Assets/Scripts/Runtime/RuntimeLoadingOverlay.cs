@@ -4,6 +4,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 运行时加载遮罩：显示阶段文本、进度和失败状态。
+    // 遮罩只是 UI，不应拥有或启动音频/谱面；它的关闭必须由真正的初始化完成状态驱动。
     /// <summary>Temporary runtime loading surface; final UI will replace its styling.</summary>
     public sealed class RuntimeLoadingOverlay : MonoBehaviour
     {
@@ -33,13 +35,19 @@ namespace ChunithmMobile.Runtime
             background.raycastTarget = true;
             Stretch(background.rectTransform, 0, 0, 1, 1);
 
-            track = CreateImage("Progress Track", surface.transform, new Color(.10f, .16f, .22f));
+            var safeObject = new GameObject("Safe loading content", typeof(RectTransform),
+                typeof(SafeAreaCanvasFitter));
+            safeObject.transform.SetParent(surface.transform, false);
+            RectTransform safeRoot = (RectTransform)safeObject.transform;
+            Stretch(safeRoot, 0, 0, 1, 1);
+
+            track = CreateImage("Progress Track", safeRoot, new Color(.10f, .16f, .22f));
             Stretch(track.rectTransform, .06f, .055f, .94f, .075f);
             fill = CreateImage("Progress Fill", track.transform, new Color(.10f, .88f, 1f));
             Stretch(fill.rectTransform, 0, 0, 0, 1);
 
             var textObject = new GameObject("Loading Status");
-            textObject.transform.SetParent(surface.transform, false);
+            textObject.transform.SetParent(safeRoot, false);
             label = textObject.AddComponent<Text>();
             label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             label.fontSize = 34;

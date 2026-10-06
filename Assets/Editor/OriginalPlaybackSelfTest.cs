@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using ChunithmMobile.Chart;
+using ChunithmMobile.Rendering;
 using ChunithmMobile.Timing;
 using ChunithmMobile.Judgement;
 using ChunithmMobile.Input;
@@ -13,6 +15,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 原版播放映射综合测试：覆盖滚速、判定时间、长条采样、AIR 和高密度保护边界。
     /// <summary>Small deterministic checks for the original C2S scroll semantics.</summary>
     public static class OriginalPlaybackSelfTest
     {
@@ -59,7 +62,11 @@ namespace ChunithmMobile.Editor
             VerifyAirJudgementModel();
             VerifyAirSensorHeightMapping();
             VerifyAirSensorEdges();
+            VerifyAirDirectionVisualMapping();
+            VerifyStandaloneAirVisualOwnership();
+            VerifyMultiplayerClockCalibration();
             VerifyLongPointDistributionUsesElapsedTime();
+            VerifyDeclaredJudgeMismatchUsesScheduledTotal();
             VerifySlideChainHeadVisibility();
             VerifyExHoldStyleAndVisualOwnership();
             VerifyExHoldKeepCandidateIsolation();
@@ -67,53 +74,52 @@ namespace ChunithmMobile.Editor
             VerifyAirHoldBodyOwnership();
             VerifyOutOfOrderContinuationOwnership();
             VerifyDenseAirPairTimingPlane();
-            VerifyAirLadderComposite();
-            VerifyVisualSpeedScale();
-            VerifyIndependentLongHeadVisibility();
+                VerifyVisualSpeedScale();
+                VerifyVisibleNoteSpeedRange();
+                VerifyIndependentLongHeadVisibility();
 
             Debug.Log("Original playback self-test passed: global reverse and local SLA/SLP are independent.");
             ValidateExternalChartIfRequested();
         }
 
-        private static void VerifyAirLadderComposite()
+        private static void VerifyStandaloneAirVisualOwnership()
         {
+            // This is the arcade composition shown as a ground press followed
+            // by a lift into the AIR area. All three records deliberately share
+            // one timing plane and lane range: the TAP, directional AIR arrow,
+            // and AIR-HOLD body must survive parsing as independent visuals.
             const string source =
                 "RESOLUTION\t384\n" +
                 "BPM_DEF\t120\n" +
                 "BPM\t0\t0\t120\n" +
-                "ALD\t1\t0\t0\t1\t0\t1.0\t96\t0\t1\t5.0\tDEF\n" +
-                "ALD\t2\t0\t2\t2\t48\t1.0\t96\t4\t2\t3.0\tDEF\n" +
-                "ALD\t2\t96\t4\t2\t48\t3.0\t96\t6\t2\t5.0\tDEF\n";
-
+                "T_JUDGE_TAP\t1\n" +
+                "T_JUDGE_AIR\t2\n" +
+                "TAP\t1\t0\t4\t4\n" +
+                "AIR\t1\t0\t4\t4\tTAP\n" +
+                "AHD\t1\t0\t4\t4\tTAP\t96\n";
             ParsedChart chart;
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
                 chart = C2sParser.Parse(stream);
 
-            ChartNote decoration = chart.Notes.Find(note => note.Kind == NoteKind.AirLine);
-            Require(decoration != null && decoration.JudgePointCount == 0,
-                "zero-interval ALD was not preserved as a non-scoring decoration");
+            ChartNote tap = chart.Notes.Single(note => note.Kind == NoteKind.Tap);
+            ChartNote air = chart.Notes.Single(note => note.Kind == NoteKind.Air);
+            ChartNote hold = chart.Notes.Single(note => note.Kind == NoteKind.AirHold);
+            Require(tap.HasVisualHead && air.HasVisualHead && hold.HasVisualHead,
+                "same-time TAP/AIR/AIR-HOLD composition lost a visual head");
+            Require(air.VisibleHead && air.JudgePointCount == 1,
+                "standalone AIR arrow lost its independent judgement ownership");
 
-            var ladders = chart.Notes.FindAll(note => note.Kind == NoteKind.AirLadder);
-            Require(ladders.Count == 2 && ladders[0].JudgePointCount == 5 &&
-                    ladders[1].JudgePointCount == 0,
-                "connected AIR-LADDER geometry did not allocate one chain-wide checkpoint grid");
-
-            var scheduled = JudgePointScheduler.Build(chart);
-            Require(scheduled.Count == 5,
-                "AIR-LADDER checkpoint grid was not scheduled for judgement");
-            for (int index = 0; index < scheduled.Count; index++) {
-                Require(chart.Notes[scheduled[index].NoteIndex].Kind == NoteKind.AirLadder,
-                    "decorative AIR line entered the scoring schedule");
-                Require(Math.Abs(scheduled[index].TimeMs - (4000 + index * 250)) < .001,
-                    "connected AIR-LADDER segments restarted their sampling grid");
-            }
-            Require(JudgementEngine.JudgeAirActionCheckpoint(true, JudgementEngine.Frames(16)).Equals(
-                        Chart.Judgement.JusticeCritical) &&
-                    JudgementEngine.JudgeAirActionCheckpoint(true, JudgementEngine.Frames(16) + .01).Equals(
-                        Chart.Judgement.Miss) &&
-                    Math.Abs(JudgementEngine.MissWindowMs(NoteKind.AirLadder) -
-                        JudgementEngine.Frames(16)) < .001,
-                "AIR-LADDER did not use its original JC/MISS 16-frame window");
+            const string touchingIndependentHolds =
+                "RESOLUTION\t384\n" +
+                "BPM_DEF\t120\n" +
+                "BPM\t0\t0\t120\n" +
+                "T_JUDGE_AIR\t2\n" +
+                "AHD\t1\t0\t4\t4\tTAP\t96\n" +
+                "AHD\t1\t96\t4\t4\tTAP\t96\n";
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(touchingIndependentHolds)))
+                chart = C2sParser.Parse(stream);
+            Require(chart.Notes.All(note => note.Kind == NoteKind.AirHold && note.HasVisualHead),
+                "touching independent AIR-HOLD starts were merged by geometry alone");
         }
 
         private static void VerifyDenseGroundProtection()
@@ -210,7 +216,7 @@ namespace ChunithmMobile.Editor
             // direction-agnostic. Protect the asymmetric original windows and
             // their fixed real-time duration at a changed playback rate.
             JudgementResult upOnTime = JudgementEngine.JudgeAir(0, 0, false, false, 1.0);
-            JudgementResult upEarly = JudgementEngine.JudgeAir(-70, 0, false, false, 1.0);
+            JudgementResult upEarly = JudgementEngine.JudgeAir(-201, 0, false, false, 1.0);
             JudgementResult downOnTime = JudgementEngine.JudgeAir(0, 0, true, false, 1.0);
             JudgementResult downEarly = JudgementEngine.JudgeAir(-201, 0, true, false, 1.0);
             JudgementResult fastRate = JudgementEngine.JudgeAir(-150, 0, false, false, 1.5);
@@ -234,22 +240,22 @@ namespace ChunithmMobile.Editor
             Require(upOnTime.Grade == Chart.Judgement.JusticeCritical &&
                     downOnTime.Grade == Chart.Judgement.JusticeCritical,
                 "AIR on-time input was not critical");
-            Require(upEarly.Grade == Chart.Judgement.Justice &&
-                    downEarly.Grade == Chart.Judgement.Attack,
-                "AIR up/down timing profiles are not asymmetric");
+            Require(upEarly.Grade == Chart.Judgement.Miss &&
+                    downEarly.Grade == Chart.Judgement.JusticeCritical,
+                "AIR up/down JC-or-MISS windows are not asymmetric");
             Require(fastRate.Grade == normalRate.Grade && Math.Abs(fastRate.DeltaMs + 100) < .001,
                 "AIR playback rate changed the real-time judgement delta");
-            Require(flickDownLate.Grade == Chart.Judgement.Justice,
+            Require(flickDownLate.Grade == Chart.Judgement.JusticeCritical,
                 "AIR FLICKDOWN incorrectly used the ordinary AIRDOWN late window");
-            Require(actionEarlyAttack.Grade == Chart.Judgement.Attack &&
-                    actionEarlyJustice.Grade == Chart.Judgement.Justice &&
+            Require(actionEarlyAttack.Grade == Chart.Judgement.JusticeCritical &&
+                    actionEarlyJustice.Grade == Chart.Judgement.JusticeCritical &&
                     actionLateMiss.Grade == Chart.Judgement.Miss &&
                     Math.Abs(JudgementEngine.MissWindowMs(NoteKind.AirAction) -
                         JudgementEngine.Frames(16)) < .001,
                 "AIR ACTION did not use its independent symmetric timing profile");
             Require(holdCritical == Chart.Judgement.JusticeCritical &&
-                    holdJustice == Chart.Judgement.Justice &&
-                    holdAttack == Chart.Judgement.Attack &&
+                    holdJustice == Chart.Judgement.JusticeCritical &&
+                    holdAttack == Chart.Judgement.JusticeCritical &&
                     holdMiss == Chart.Judgement.Miss,
                 "AIR-HOLD continuation windows do not match the original profile");
             Require(JudgementEngine.AirContactGraceFrames < JudgementEngine.KeepAttackFrames,
@@ -274,7 +280,7 @@ namespace ChunithmMobile.Editor
 
             JudgementResult flickCritical = JudgementEngine.JudgeFlick(JudgementEngine.Frames(4), 0);
             JudgementResult flickJustice = JudgementEngine.JudgeFlick(95, 0);
-            JudgementResult flickMiss = JudgementEngine.JudgeFlick(JudgementEngine.FlickWindowMs + .01, 0);
+            JudgementResult flickMiss = JudgementEngine.JudgeFlick(JudgementEngine.FlickLateWindowMs + .01, 0);
             Require(flickCritical.Grade == Chart.Judgement.JusticeCritical &&
                     flickJustice.Grade == Chart.Judgement.JusticeCritical &&
                     flickMiss.Grade == Chart.Judgement.Miss,
@@ -351,8 +357,23 @@ namespace ChunithmMobile.Editor
 
         private static void VerifyVisualSpeedScale()
         {
-            Require(Math.Abs(OriginalNoteSpeed.VisualMultiplier(OriginalNoteSpeed.DefaultOption) - 1.2f) < .0001,
-                "the requested global 20 percent visual speed multiplier is missing");
+            Require(Math.Abs(OriginalNoteSpeed.VisualMultiplier(OriginalNoteSpeed.DefaultOption) - 2.4f) < .0001,
+                "the global 2x visual speed multiplier is missing");
+            Require(Math.Abs(OriginalNoteSpeed.VisualMultiplier(96) -
+                OriginalNoteSpeed.VisualMultiplier(48) * 2f) < .0001,
+                "note speed multiplier did not scale linearly after the 2x boost");
+        }
+
+        private static void VerifyVisibleNoteSpeedRange()
+        {
+            Require(Math.Abs(OriginalNoteSpeed.MaximumParameter - 17f) < .0001f,
+                "visible note speed maximum must be 17.0");
+            Require(OriginalNoteSpeed.Count == 171,
+                "visible note speed must expose 0.1 steps from 0.0 through 17.0");
+            Require(OriginalNoteSpeed.Label(OriginalNoteSpeed.Count - 1) == "17.0",
+                "visible note speed last label is not 17.0");
+            Require(OriginalNoteSpeed.ClampOption(9999) == OriginalNoteSpeed.Count - 1,
+                "note speed clamp exceeds the visible maximum");
         }
 
         private static void VerifySlideChainHeadVisibility()
@@ -374,7 +395,128 @@ namespace ChunithmMobile.Editor
             Require(chart.Notes[0].VisibleHead, "the first SLD segment lost its slide head");
             Require(!chart.Notes[1].VisibleHead && !chart.Notes[2].VisibleHead,
                 "continuous slide segments incorrectly rendered duplicate heads");
-            Require(chart.Notes[2].VisibleTail, "the final slide segment lost its tail");
+            Require(!chart.Notes[2].VisibleTail,
+                "an SLC curve-control endpoint incorrectly gained a slide tail cap");
+
+            const string cappedSource =
+                "RESOLUTION\t384\n" +
+                "BPM_DEF\t120\n" +
+                "SLD\t0\t0\t0\t4\t24\t4\t4\n" +
+                "SLC\t0\t24\t4\t4\t24\t8\t4\n" +
+                "SLD\t0\t48\t8\t4\t48\t8\t4\n";
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(cappedSource)))
+                chart = C2sParser.Parse(stream);
+            Require(chart.Notes[2].VisibleTail,
+                "a terminal SLD record lost its authored slide tail cap");
+        }
+
+        private static void VerifyDeclaredJudgeMismatchUsesScheduledTotal()
+        {
+            const string source =
+                "RESOLUTION\t384\n" +
+                "BPM_DEF\t120\n" +
+                "T_JUDGE_TAP\t1\n" +
+                "T_JUDGE_HLD\t0\n" +
+                "T_JUDGE_SLD\t0\n" +
+                "T_JUDGE_AIR\t0\n" +
+                "T_JUDGE_FLK\t0\n" +
+                "T_JUDGE_ALL\t99\n" +
+                "TAP\t0\t0\t4\t4\n";
+            ParsedChart chart;
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
+                chart = C2sParser.Parse(stream);
+            int scheduled = JudgePointScheduler.Build(chart).Count(point => point.IsScoring);
+            Require(chart.DeclaredJudgeTotal == 99 && chart.OriginalJudgeTotal == 1 && scheduled == 1,
+                "malformed T_JUDGE_ALL fabricated checkpoints or changed the playable total");
+        }
+
+        private static void VerifyAirDirectionVisualMapping()
+        {
+            const string source =
+                "RESOLUTION\t384\n" +
+                "BPM_DEF\t120\n" +
+                "AIR\t0\t0\t0\t2\tTAP\n" +
+                "AUL\t0\t24\t2\t2\tTAP\n" +
+                "AUR\t0\t48\t4\t2\tTAP\n" +
+                "ADW\t0\t72\t6\t2\tTAP\n" +
+                "ADL\t0\t96\t8\t2\tTAP\n" +
+                "ADR\t0\t120\t10\t2\tTAP\n" +
+                "ASC\t0\t144\t12\t2\tTAP\t5.0\t24\t12\t2\t5.0\tDEF\n" +
+                "ASD\t0\t168\t14\t2\tTAP\t5.0\t24\t14\t2\t5.0\tDEF\n";
+            ParsedChart chart;
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
+                chart = C2sParser.Parse(stream);
+            AirDirection[] directions = chart.Notes.Select(note => note.AirDirection).ToArray();
+            Require(directions.SequenceEqual(new[] { AirDirection.Up, AirDirection.UpLeft,
+                    AirDirection.UpRight, AirDirection.Down, AirDirection.DownLeft,
+                    AirDirection.DownRight, AirDirection.None, AirDirection.None }),
+                "C2S AIR opcode mapping changed or ASC/ASD gained a false direction");
+
+            var mirrorMethod = typeof(ChartPlaybackRenderer).GetMethod("ShouldMirrorAirMesh",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Require(mirrorMethod != null &&
+                    (bool)mirrorMethod.Invoke(null, new object[] { AirDirection.UpLeft }) &&
+                    (bool)mirrorMethod.Invoke(null, new object[] { AirDirection.DownLeft }) &&
+                    !(bool)mirrorMethod.Invoke(null, new object[] { AirDirection.UpRight }) &&
+                    !(bool)mirrorMethod.Invoke(null, new object[] { AirDirection.DownRight }),
+                "tilted AIR mesh mirroring is opposite to AUL/AUR/ADL/ADR");
+
+            ChartMirror.Apply(chart);
+            Require(chart.Notes[0].AirDirection == AirDirection.Up &&
+                    chart.Notes[1].AirDirection == AirDirection.UpRight &&
+                    chart.Notes[2].AirDirection == AirDirection.UpLeft &&
+                    chart.Notes[3].AirDirection == AirDirection.Down &&
+                    chart.Notes[4].AirDirection == AirDirection.DownRight &&
+                    chart.Notes[5].AirDirection == AirDirection.DownLeft &&
+                    chart.Notes[6].AirDirection == AirDirection.None &&
+                    chart.Notes[7].AirDirection == AirDirection.None,
+                "MIRROR MOD did not swap AIR horizontal directions exactly once");
+        }
+
+        private static void VerifyMultiplayerClockCalibration()
+        {
+            var root = new GameObject("Multiplayer clock regression");
+            try
+            {
+                var client = root.AddComponent<MultiplayerClient>();
+                Require(Math.Abs(client.ServerDeadlineDelayMilliseconds(
+                        16_000, 15_000, 1_000_000) - 1_000) < .001 &&
+                        Math.Abs(client.ServerDeadlineDelayMilliseconds(
+                        6_000, 0, 5_000) - 1_000) < .001,
+                    "uncalibrated deadline fallback trusted the device wall-clock offset");
+                MethodInfo observe = typeof(MultiplayerClient).GetMethod("ObserveServerClock",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                Require(observe != null, "server clock calibration entry point is missing");
+
+                // This device is ten seconds behind the server. With an 80ms
+                // round trip, the echoed server timestamp describes the local
+                // request midpoint and must produce an exact 10-second offset.
+                observe.Invoke(client, new object[] {
+                    new MultiplayerPongMessage { clientTime = 5_000, serverTime = 15_040 },
+                    5_080L
+                });
+                Require(client.HasServerClockSample &&
+                        Math.Abs(client.ServerClockOffsetMilliseconds - 10_000) < .001 &&
+                        Math.Abs(client.ServerDeadlineDelayMilliseconds(16_000, 15_000, 5_080) - 920) < .001 &&
+                        client.ServerDeadlineToLocalUnixMilliseconds(16_000, 15_000) == 6_000,
+                    "server deadline did not compensate a slow device wall clock");
+
+                var aheadRoot = new GameObject("Ahead multiplayer clock regression");
+                try {
+                    var ahead = aheadRoot.AddComponent<MultiplayerClient>();
+                    observe.Invoke(ahead, new object[] {
+                        new MultiplayerPongMessage { clientTime = 1_005_000, serverTime = 5_040 },
+                        1_005_080L
+                    });
+                    Require(Math.Abs(ahead.ServerDeadlineDelayMilliseconds(6_000, 5_000, 1_005_080) - 920) < .001,
+                        "server deadline did not compensate a fast device wall clock");
+                } finally {
+                    UnityEngine.Object.DestroyImmediate(aheadRoot);
+                }
+            }
+            finally {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
         }
 
         private static void VerifyIndependentLongHeadVisibility()
@@ -533,7 +675,8 @@ namespace ChunithmMobile.Editor
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
                 chart = C2sParser.Parse(stream);
             Require(chart.Notes.Count == 2 && !chart.Notes[0].VisibleHead &&
-                    !chart.Notes[1].VisibleHead && !chart.Notes[0].HasVisualHead &&
+                    !chart.Notes[1].VisibleHead && chart.Notes[0].HasVisualHead &&
+                    !chart.Notes[1].HasVisualHead &&
                     !chart.Notes[0].IsContinuation && chart.Notes[1].IsContinuation,
                 "AIR-HOLD body/continuation ownership is incorrect");
             var points = JudgePointScheduler.Build(chart);
@@ -557,7 +700,7 @@ namespace ChunithmMobile.Editor
                 chart = C2sParser.Parse(stream);
 
             Require(chart.Notes.Count == 2 && chart.Notes[0].VisibleHead &&
-                    !chart.Notes[1].VisibleHead && chart.Notes[1].VisibleTail,
+                    !chart.Notes[1].VisibleHead && !chart.Notes[1].VisibleTail,
                 "continuation ownership depended on C2S line order");
         }
 

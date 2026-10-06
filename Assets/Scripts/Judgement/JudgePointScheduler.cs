@@ -5,6 +5,8 @@ using ChunithmMobile.Input;
 
 namespace ChunithmMobile.Judgement
 {
+    // 判定点展开器：把一个带时长/多段结构的音符展开成可独立结算的时间点。
+    // 它还建立密集地面音符的 lane 保护边界，但不替代 JudgementEngine 的最终窗口判断。
     public readonly struct ScheduledJudgePoint
     {
         public readonly int NoteIndex;
@@ -68,14 +70,12 @@ namespace ChunithmMobile.Judgement
             for (int noteIndex = 0; noteIndex < chart.Notes.Count; noteIndex++) {
                 ChartNote note = chart.Notes[noteIndex];
                 int count = Math.Max(0, note.JudgePointCount);
-                if (note.Kind == NoteKind.AirLine) continue;
                 if (note.ExplicitJudgeTimesMs is { Count: > 0 }) {
                     for (int pointIndex = 0; pointIndex < note.ExplicitJudgeTimesMs.Count; pointIndex++)
                         result.Add(new ScheduledJudgePoint(noteIndex, pointIndex,
                             note.ExplicitJudgeTimesMs[pointIndex]));
                     continue;
                 }
-                if (note.Kind == NoteKind.AirLadder) continue;
                 // Mines are runtime hazards with their own checker, but their
                 // authored TAP-category checkpoint count is still authoritative.
                 if (count == 0 && note.Kind != NoteKind.Mine) continue;
@@ -149,8 +149,12 @@ namespace ChunithmMobile.Judgement
                         if (!OverlapsLane(other, lane)) continue;
                         // MINIMALIZE belongs to the candidate's own checker.
                         // ExTAP and MINE have no density-shortened window and
-                        // therefore must not steal a TAP/FLICK boundary.
+                        // therefore must not steal a TAP boundary. FLICK is
+                        // independent too: it consumes a movement pulse and
+                        // may resolve beside one ordinary ground plane in the
+                        // same input sample.
                         if (!UsesMinimalizedWindow(other)) continue;
+                        if (note.Kind != NoteKind.Flick && other.Kind == NoteKind.Flick) continue;
                         if (candidate.TimeMs < source.TimeMs - .001)
                             previousTime = Math.Max(previousTime, candidate.TimeMs);
                         else if (candidate.TimeMs > source.TimeMs + .001)

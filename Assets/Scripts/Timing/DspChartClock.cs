@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Timing
 {
+    // DSP 谱面时钟：以 AudioSettings.dspTime 对齐音频和谱面。
+    // 渲染帧率只影响画面采样，不影响 TimeMs、判定时间差和暂停恢复后的时间连续性。
     /// <summary>Monotonic chart clock referenced to Unity's audio DSP clock.</summary>
     public sealed class DspChartClock
     {

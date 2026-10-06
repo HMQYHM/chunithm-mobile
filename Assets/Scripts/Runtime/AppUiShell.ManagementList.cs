@@ -7,6 +7,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 数据管理页面：分批建立歌曲/皮肤列表，避免一次创建大量 UI 对象阻塞首帧。
+    // 删除动作必须经过明确的用户确认，并在完成后刷新索引和列表模型。
     public sealed partial class AppUiShell
     {
         private sealed class ManagedSongRow

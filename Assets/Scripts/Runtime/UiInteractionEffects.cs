@@ -4,6 +4,8 @@ using UnityEngine.EventSystems;
 
 namespace ChunithmMobile.Runtime
 {
+    // 通用 UI 交互组件：按压动画、拖动手柄、页面滑动、长按重复和可视化调整手柄。
+    // 这些组件只改变 RectTransform/视觉状态，业务值的保存仍由 AppUiShell 统一处理。
     public sealed class UiPressAnimation : MonoBehaviour, IPointerDownHandler, IPointerUpHandler,
         IPointerEnterHandler, IPointerExitHandler
     {
@@ -36,7 +38,7 @@ namespace ChunithmMobile.Runtime
         public bool LockX;
         public bool LockY;
 
-        public void OnBeginDrag(PointerEventData eventData) { Apply(eventData); }
+        public void OnBeginDrag(PointerEventData eventData) { eventData.eligibleForClick = false; Apply(eventData); }
         public void OnDrag(PointerEventData eventData) { Apply(eventData); }
 
         private void Apply(PointerEventData eventData)

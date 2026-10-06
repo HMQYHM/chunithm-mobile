@@ -3,8 +3,8 @@ BongoCat Live2D 平板触控 v4
 需要包含 Live2D 内置管线渲染修复的新版 APK，旧版 APK 仍可能只显示平板。
 
 使用方法：
-1. 数据管理 -> 游玩皮肤 -> 导入，选择 BongoCatLive2DTouchSkin-v3.zip。
-2. 在皮肤列表中选中 BongoCat Live2D 平板触控 v3。
+1. 数据管理 -> 游玩皮肤 -> 导入，选择 BongoCatLive2DTouchSkin-v4-20261002.zip。
+2. 在皮肤列表中选中 BongoCat Live2D 平板触控 v4。
 3. 进入歌曲，在触控板左右两侧按下、移动、抬手。
 4. 左侧中部的小猫，两只爪子分别跟随左右触点中心；无触点恢复抬手。
 5. 暂停时不响应底层触摸；继续倒计时恢复表现，不参与提前判定。

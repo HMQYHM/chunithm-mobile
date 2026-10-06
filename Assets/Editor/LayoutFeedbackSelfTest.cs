@@ -247,7 +247,14 @@ namespace ChunithmMobile.Editor
                     Call(renderer, "ProcessNote", 0, 1990.0);
                     Require(Part(visual, "Tail").activeSelf, "tail disappeared before arrival: " + kind);
                     Call(renderer, "ProcessNote", 0, 2001.0);
-                    Require(!Part(visual, "Tail").activeSelf, "tail passed judgement line: " + kind);
+                    // The renderer intentionally keeps the final strip inside
+                    // its small judgement-plane hysteresis band. This is the
+                    // frame-to-frame stability guarantee for curved HOLD/AIR
+                    // ribbons; the tail must disappear after the band, not on
+                    // the first sample below the plane.
+                    Require(Part(visual, "Tail").activeSelf, "tail flickered inside judgement hysteresis: " + kind);
+                    Call(renderer, "ProcessNote", 0, 2010.0);
+                    Require(!Part(visual, "Tail").activeSelf, "tail remained after judgement hysteresis: " + kind);
                     renderer.Clear();
                 }
                 var tap = new ChartNote { Kind = NoteKind.Tap, TimeMs = 1000, EndTimeMs = 1000, Lane = 4, Width = 2 };

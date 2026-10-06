@@ -6,6 +6,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 背景图片仓库：管理导入图片的压缩、长宽比、持久化路径和随机选择索引。
+    // 文件处理应使用流式/分批方式，避免大图在移动设备上同时占用多份完整像素内存。
     /// <summary>Persistent custom background images with one-at-a-time 720p processing.</summary>
     public static class BackgroundImageStore
     {

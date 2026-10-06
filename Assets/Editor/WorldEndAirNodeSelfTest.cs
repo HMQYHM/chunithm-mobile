@@ -14,6 +14,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // WORLD'S END AIR 节点回归测试：验证复杂紫色 AIR 图案中的节点不会被相邻层覆盖或遗漏。
     public static class WorldEndAirNodeSelfTest
     {
         private const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;

@@ -47,8 +47,15 @@ namespace ChunithmMobile.Rendering
         private const double GuideVisualMaxAdvanceMilliseconds = 48.0;
         // Long-note surfaces are clipped at the judgement line. The note
         // object remains alive for KEEP judgement and is recycled only after
-        // its complete authored tail leaves the normal visual range.
+        // its complete authored tail leaves the normal visual range. The
+        // hysteresis below is used only to decide whether a segment remains
+        // alive; the generated intersection itself must stay on the exact
+        // judgement plane so it lines up with the head mesh.
         private const float RibbonGameplayNearClipZ = ChartSpace.JudgementZ;
+        // Keep note objects alive before they enter the camera's visible far
+        // edge.  This is deliberately outside VisualFarZ so a frame hitch or
+        // a high scroll profile cannot make a head pop into the screen.
+        private const float NoteSpawnFarZ = ChartSpace.FarZ + ChartSpace.JudgementZ + 12f;
         // Keep every airborne surface above the complete ground-note pass.
         // Equal-queue renderers use Unity's camera-distance transparent sort.
         private const int GroundHeadQueue = 3070;
@@ -87,33 +94,24 @@ namespace ChunithmMobile.Rendering
         private double guideVisualTime = double.NegativeInfinity;
         private Material holdBody, slideBody, airHoldBody;
         private Material heavenRoof, heavenRoofPink, heavenWall, heavenShadow;
-        private Material airActionTrailRainbowBody, airActionTrailGreenBody, airActionBarBody;
-        private Material holdLine, slideLine, airActionTrailRainbowLine, airActionTrailGreenLine, defaultHead;
+        private Material airActionTrailGreenBody;
+        private Material holdLine, slideLine, airActionTrailGreenLine, defaultHead;
         private Material defaultAirHead, defaultAirArrow;
-        private bool airTrailRainbow;
         private bool firstFrameHidden;
         private Transform notesRoot;
         private readonly NoteSkinUvCache noteSkinUvs = new NoteSkinUvCache();
 
         /// <summary>
-        /// Changes only AIR ACTION's authored trail.
-        /// </summary>
-        public void ConfigureAirTrail(bool rainbow)
-        {
-            airTrailRainbow = rainbow;
-        }
-
-        /// <summary>
         /// 绑定谱面和时钟并预计算每个音符的几何数据。Bind 会清理上一局视觉对象，
         /// 但不启动播放，也不修改判定状态。
         /// </summary>
-        public void Bind(ParsedChart parsedChart, DspChartClock chartClock)
+        public void Bind(ParsedChart parsedChart, DspChartClock chartClock, bool uniformSpeed = false)
         {
             firstFrameHidden = false;
             ClearActive();
             judgedHeads.Clear();
             chart = parsedChart;
-            playback = new OriginalPlaybackMap(parsedChart);
+            playback = new OriginalPlaybackMap(parsedChart, uniformSpeed);
             lastRenderTime = double.NegativeInfinity;
             guideVisualTime = double.NegativeInfinity;
             geometry = new RibbonGeometry[parsedChart.Notes.Count];
@@ -193,15 +191,11 @@ namespace ChunithmMobile.Rendering
             heavenRoofPink = TextureMaterial("field/heaven_roof_pink", Color.white, AirBodyQueue);
             heavenWall = TextureMaterial("field/heaven_wall", new Color(1f, 1f, 1f, .72f), AirWallQueue);
             heavenShadow = TextureMaterial("field/heaven_shadow", new Color(1f, 1f, 1f, .74f), 2975);
-            airActionTrailRainbowBody = TintedAirMaterial(GameplaySkinManager.LoadFieldTexture("field/air_action_line"),
-                new Color(1, 1, 1, AirTrailOuterOpacity), AirBodyQueue);
-            airActionBarBody = TintedAirMaterial(GameplaySkinManager.LoadFieldTexture("field/air_action_bar"),
-                new Color(1, 1, 1, AirTrailOuterOpacity), AirBodyQueue);
             airActionTrailGreenBody = TintedAirMaterial(null, new Color(.12f, 1f, .34f, AirTrailOuterOpacity), AirBodyQueue);
             holdLine = MeshFactory.Material(new Color(1f, .94f, .44f, .98f), true); holdLine.renderQueue = 3040;
             slideLine = MeshFactory.Material(new Color(.68f, .96f, 1f, .98f), true); slideLine.renderQueue = 3040;
             airActionTrailGreenLine = SolidAirTrailMaterial(null, new Color(.12f, 1f, .34f, 1f));
-            airActionTrailRainbowLine = SolidAirTrailMaterial(GameplaySkinManager.LoadFieldTexture("field/air_action_line"), Color.white);
+
             BuildGuidePathMaterials();
             defaultHead = MeshFactory.Material(Color.white, true);
             defaultHead.renderQueue = GroundHeadQueue;
@@ -266,12 +260,6 @@ namespace ChunithmMobile.Rendering
             if (heavenRoofPink != null) heavenRoofPink.mainTexture = GameplaySkinManager.LoadFieldTexture("field/heaven_roof_pink");
             if (heavenWall != null) heavenWall.mainTexture = GameplaySkinManager.LoadFieldTexture("field/heaven_wall");
             if (heavenShadow != null) heavenShadow.mainTexture = GameplaySkinManager.LoadFieldTexture("field/heaven_shadow");
-            if (airActionTrailRainbowBody != null)
-                airActionTrailRainbowBody.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_action_line");
-            if (airActionBarBody != null)
-                airActionBarBody.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_action_bar");
-            if (airActionTrailRainbowLine != null)
-                airActionTrailRainbowLine.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_action_line");
 
             GameplaySkinStyle skin = GameplaySkinManager.Style;
             if (holdLine != null) holdLine.color = skin.HoldLineColor;
@@ -440,11 +428,21 @@ namespace ChunithmMobile.Rendering
             double min, max;
             GetVisualDistanceBounds(i, now, headZ, out min, out max);
             bool unresolvedHead = IsUnresolvedHead(note, i, now);
-            if ((max < ChartSpace.NearZ - RibbonClipEpsilonZ && !unresolvedHead) ||
-                min > VisualFarZ + MaximumVisibilityGuardZ ||
+            bool activeLongBody = longBody && active.ContainsKey(i);
+            // Keep an already-rendered long-note object alive through the
+            // judgement-plane crossing. Its mesh is cleared by UpdateRibbon
+            // once every segment is behind the plane, but recycling the
+            // GameObject on that exact frame made a small clock/profile
+            // fluctuation restart the body and produced a visible sideways
+            // flash at the tail. The short grace period is visual-only and
+            // does not affect judgement or scoring.
+            bool pastNearPlane = max < ChartSpace.NearZ - RibbonClipEpsilonZ;
+            bool longBodyGrace = activeLongBody && now <= visualEndMs + 260.0;
+            if ((pastNearPlane && !unresolvedHead && !longBodyGrace) ||
+                min > NoteSpawnFarZ + MaximumVisibilityGuardZ ||
                 (!longBody && now > Math.Max(note.TimeMs, visualEndMs) + 260)) return;
             float visibilityGuardZ = VisibilityGuardZ(headProfile, note.TimeMs, now, headZ);
-            if (min > VisualFarZ + visibilityGuardZ) return;
+            if (min > NoteSpawnFarZ + visibilityGuardZ) return;
             if (!active.TryGetValue(i, out NoteVisual visual)) { visual = Rent(); active[i] = visual; }
             keep.Add(i);
             updated.Add(i);
@@ -663,7 +661,7 @@ namespace ChunithmMobile.Rendering
         {
             double speed = Math.Max(.001, UnitsPerScrollMillisecond * Math.Max(.1f, VisualSpeed) *
                 Math.Max(.001, playback.MinimumPositiveSpeed));
-            double distance = VisualFarZ + MaximumVisibilityGuardZ + 2f;
+            double distance = NoteSpawnFarZ + MaximumVisibilityGuardZ + 2f;
             double lead = distance / speed + VisibilityLeadRealMilliseconds * Math.Max(.1, clock.Rate) + 250.0;
             // Distance calculation already provides the needed lead time. A
             // smaller floor prevents dense charts from keeping too many
@@ -720,12 +718,17 @@ namespace ChunithmMobile.Rendering
             if (longChainOwnerByNote.TryGetValue(noteIndex, out int owner) && owner == noteIndex &&
                 longChainGeometry.TryGetValue(chart.Notes[noteIndex].LongChainId, out LongChainGeometry chain))
                 ribbon = chain.Ribbon;
-            for (int i = 0; i < ribbon.SegmentCount; i++) {
-                int profile = ribbon.SegmentProfileIds[i];
-                double start = Distance(profile, ribbon.AuthoredTimes[i], now);
-                double end = Distance(profile, ribbon.AuthoredTimes[i + 1], now);
-                min = Math.Min(min, Math.Min(start, end));
-                max = Math.Max(max, Math.Max(start, end));
+            // Use the same per-authored-point profile as UpdateRibbon. The
+            // segment midpoint profile is only suitable for interpolating a
+            // quad; using it for lifetime decisions can disagree with the
+            // actual clipped vertices at a scroll/profile boundary. Near the
+            // judgement line that mismatch made a long note get recycled and
+            // recreated on adjacent frames, which appeared as tail shaking.
+            for (int i = 0; i < ribbon.Count; i++) {
+                int profile = ribbon.PointProfileIds[i];
+                double distance = Distance(profile, ribbon.AuthoredTimes[i], now);
+                min = Math.Min(min, distance);
+                max = Math.Max(max, distance);
             }
         }
 
@@ -744,7 +747,7 @@ namespace ChunithmMobile.Rendering
             // Signed scroll distance can cross the line before the authored
             // hit time. Such future heads must not be pinned or drawn below it.
             bool insideApproach = headZ >= (now < note.TimeMs ? ChartSpace.JudgementZ : ChartSpace.NearZ) &&
-                                  headZ <= VisualFarZ + visibilityGuardZ;
+                                  headZ <= NoteSpawnFarZ + visibilityGuardZ;
 
             // The original renderer has two different head lifetimes. A
             // normal ground head is held on the gold line until its head
@@ -814,16 +817,20 @@ namespace ChunithmMobile.Rendering
                 int endProfile = geometry[noteIndex].EndProfileId;
                 tailZ = Distance(endProfile, note.EndTimeMs, now);
                 float tailGuardZ = VisibilityGuardZ(endProfile, note.EndTimeMs, now, tailZ);
-                // The tail is geometry, not a judgement checkpoint. Keep the
-                // cap only on the approach side of the judgement line; the
-                // body itself is clipped at the same plane below.
-                showTail = tailZ >= ChartSpace.JudgementZ &&
+                // The tail is geometry, not a judgement checkpoint. Keep a
+                // small visual hysteresis band at the judgement line. Without
+                // it the cap toggles when the DSP sample lands on either side
+                // of the plane, which looks like a left/right tail flash while
+                // the body is being clipped. The cap is pinned to the exact
+                // plane during this band so it cannot drift into the touch area.
+                showTail = tailZ >= ChartSpace.JudgementZ - RibbonClipEpsilonZ &&
                     tailZ <= VisualFarZ + tailGuardZ;
             }
             visual.Tail.SetActive(showTail);
             if (visual.Tail.activeSelf) {
                 bool tailIsAir = note.Kind is NoteKind.AirHold or NoteKind.AirAction;
-                float renderTailZ = Mathf.Min(tailZ, VisualFarZ);
+                float renderTailZ = Mathf.Clamp(Mathf.Max(tailZ, ChartSpace.JudgementZ),
+                    ChartSpace.JudgementZ, VisualFarZ);
                 UpdateHead(visual.Tail, visual.TailFilter, visual.TailMesh,
                     visual.TailRenderer, noteIndex, note, renderTailZ, true);
             }
@@ -857,8 +864,8 @@ namespace ChunithmMobile.Rendering
                 case NoteKind.Hold: body = holdBody; line = holdLine; break;
                 case NoteKind.Slide: body = slideBody; line = slideLine; break;
                 case NoteKind.AirAction:
-                    body = airTrailRainbow ? airActionBarBody : airActionTrailGreenBody;
-                    line = airTrailRainbow ? airActionTrailRainbowLine : airActionTrailGreenLine;
+                    body = airActionTrailGreenBody;
+                    line = airActionTrailGreenLine;
                     air = true;
                     break;
                 case NoteKind.AirHold: body = airHoldBody; line = airActionTrailGreenLine; air = true; break;
@@ -992,11 +999,12 @@ namespace ChunithmMobile.Rendering
                 // Both ends of one quad must use the same local scroll map.
                 // Otherwise a profile switch joins unrelated Z positions and
                 // creates the large diagonal triangles seen on complex charts.
-                int profile = ribbon.SegmentProfileIds[i];
-                CalculateRibbonPoint(note, segmentStart, now, profile, ribbon.Lanes[i], ribbon.Widths[i],
+                int profileA = ribbon.PointProfileIds[i];
+                int profileB = ribbon.PointProfileIds[i + 1];
+                CalculateRibbonPoint(note, segmentStart, now, profileA, ribbon.Lanes[i], ribbon.Widths[i],
                     ribbon.AirHeights[i], ribbon.Uv[i], air, line,
                     out Vector3 leftA, out Vector3 rightA, out float uvA);
-                CalculateRibbonPoint(note, segmentEnd, now, profile, ribbon.Lanes[i + 1], ribbon.Widths[i + 1],
+                CalculateRibbonPoint(note, segmentEnd, now, profileB, ribbon.Lanes[i + 1], ribbon.Widths[i + 1],
                     ribbon.AirHeights[i + 1], ribbon.Uv[i + 1], air, line,
                     out Vector3 leftB, out Vector3 rightB, out float uvB);
                 if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
@@ -1048,10 +1056,28 @@ namespace ChunithmMobile.Rendering
             float stableFar = far + RibbonClipEpsilonZ;
             if ((leftA.z < stableNear && leftB.z < stableNear) ||
                 (leftA.z > stableFar && leftB.z > stableFar)) return false;
-            if (leftA.z < stableNear) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, stableNear);
-            else if (leftA.z > stableFar) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, stableFar);
-            if (leftB.z < stableNear) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, stableNear);
-            else if (leftB.z > stableFar) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, stableFar);
+            // Once both ends have crossed the gameplay near plane, retain the
+            // segment only inside the short hysteresis band and collapse that
+            // last strip onto one shared Z plane. Leaving the two original Z
+            // values in the mesh makes perspective recompute its X position
+            // while the head is being hidden or the tail is being removed;
+            // on a curved/ AIR ribbon this reads as a one-frame sideways flash.
+            // The segment is still discarded as soon as both ends pass the
+            // stable band above, so this does not extend the gameplay body.
+            if (leftA.z < near && leftB.z < near) {
+                leftA.z = rightA.z = near;
+                leftB.z = rightB.z = near;
+                return true;
+            }
+            // Keep the epsilon as a topology hysteresis band, but never use
+            // it as the interpolation plane. Using stableNear here places the
+            // body edge in front of the judgement line while the head remains
+            // pinned on JudgementZ, which reads as a sideways jump under
+            // perspective as the head is judged or hidden.
+            if (leftA.z < near) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, near);
+            else if (leftA.z > far) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, far);
+            if (leftB.z < near) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, near);
+            else if (leftB.z > far) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, far);
             return true;
         }
 
@@ -1454,7 +1480,7 @@ namespace ChunithmMobile.Rendering
                 point.Widths[0] = point.Widths[1] = note.Width;
                 point.AirHeights[0] = point.AirHeights[1] = note.AirHeight;
                 point.Uv[0] = point.Uv[1] = 0f;
-                point.SegmentProfileIds[0] = playback.FindProfile(
+                point.PointProfileIds[0] = point.PointProfileIds[1] = playback.FindProfile(
                     note.TimeMs, note.Lane, Math.Max(1, note.Width));
                 return point;
             }
@@ -1530,6 +1556,11 @@ namespace ChunithmMobile.Rendering
                     Mathf.RoundToInt(Mathf.Lerp(note.Width, note.EndWidth, p)));
                 result.SegmentProfileIds[i] = playback.FindProfile(authored, lane, width);
             }
+            for (int i = 0; i < result.Count; i++) {
+                int lane = Mathf.RoundToInt(result.Lanes[i]);
+                int width = Mathf.Max(1, Mathf.RoundToInt(result.Widths[i]));
+                result.PointProfileIds[i] = playback.FindProfile(result.AuthoredTimes[i], lane, width);
+            }
             return result;
         }
 
@@ -1598,6 +1629,11 @@ namespace ChunithmMobile.Rendering
                            source.AuthoredTimes[sourceSegment + 1] < local) sourceSegment++;
                     ribbon.SegmentProfileIds[i] = source.SegmentProfileIds[Math.Min(sourceSegment,
                         source.SegmentProfileIds.Length - 1)];
+                }
+                for (int i = 0; i < ribbon.Count; i++) {
+                    ribbon.PointProfileIds[i] = playback.FindProfile(ribbon.AuthoredTimes[i],
+                        Mathf.RoundToInt(ribbon.Lanes[i] + ribbon.Widths[i] * .5f),
+                        Mathf.Max(1, Mathf.RoundToInt(ribbon.Widths[i])));
                 }
                 longChainGeometry[pair.Key] = new LongChainGeometry(ribbon, chainStart, chainEnd);
             }
@@ -1946,6 +1982,7 @@ namespace ChunithmMobile.Rendering
         {
             public readonly double[] AuthoredTimes;
             public readonly int[] SegmentProfileIds;
+            public readonly int[] PointProfileIds;
             public readonly float[] Lanes;
             public readonly float[] Widths;
             public readonly float[] AirHeights;
@@ -1953,12 +1990,13 @@ namespace ChunithmMobile.Rendering
             public int Count => AuthoredTimes.Length;
             public int SegmentCount => Math.Max(0, AuthoredTimes.Length - 1);
             public int EndProfileId => SegmentProfileIds.Length > 0
-                ? SegmentProfileIds[SegmentProfileIds.Length - 1] : 0;
+                ? (PointProfileIds.Length > 0 ? PointProfileIds[PointProfileIds.Length - 1] : SegmentProfileIds[SegmentProfileIds.Length - 1]) : 0;
 
             public RibbonGeometry(int count)
             {
                 AuthoredTimes = new double[count];
                 SegmentProfileIds = new int[Math.Max(1, count - 1)];
+                PointProfileIds = new int[Math.Max(1, count)];
                 Lanes = new float[count];
                 Widths = new float[count];
                 AirHeights = new float[count];

@@ -9,6 +9,7 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Editor
 {
+    // 歌曲列表分组回归测试：验证数字等级、半级和 WORLD'S END 分类的排序/筛选规则。
     public static class SongListBucketSelfTest
     {
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -37,6 +38,8 @@ namespace ChunithmMobile.Editor
                 Require((string)bucket.Invoke(null, new object[] {
                     new SongChartEntry { Difficulty = "BASIC", Level = text } }) == text, "numeric level changed");
 
+            string pinState = PlayerPrefs.GetString(SongPinStore.PreferenceKey, null);
+            FieldInfo pinCache = typeof(SongPinStore).GetField("pinnedIds", BindingFlags.Static | BindingFlags.NonPublic);
             var root = new GameObject("Song list bucket regression");
             root.SetActive(false);
             try {
@@ -61,11 +64,58 @@ namespace ChunithmMobile.Editor
                 Set(shell, "selectedSong", songs[0]);
                 Set(shell, "selectedChart", songs[0].Charts[0]);
                 Call(shell, "SyncBucketToSelection");
+                PlayerPrefs.SetString(SongPinStore.PreferenceKey, "{\"SongIds\":[]}");
+                pinCache.SetValue(null, null);
+                SongPinStore.Toggle(songs[1]);
+                var pinnedItems = Items(shell);
+                Require(pinnedItems.Length == 2 && ReferenceEquals(ItemSong(pinnedItems[0]), songs[1]),
+                    "song-level pin did not precede every chart in the active level list");
                 Set(shell, "searchText", "Beta");
                 var matches = Items(shell);
                 Require(matches.Length == 1 && ReferenceEquals(ItemSong(matches[0]), songs[1]), "search leaked another song/difficulty");
                 Set(shell, "searchText", "no-match");
                 Require(Items(shell).Length == 0, "empty search broadened to whole bucket");
+
+                var cover = new GameObject("Cover", typeof(RectTransform)).GetComponent<RectTransform>();
+                cover.SetParent(root.transform, false);
+                var createPin = typeof(AppUiShell).GetMethod("CreatePinButton", Private);
+                var pinButton = (Button)createPin.Invoke(shell, new object[] { cover, null });
+                RectTransform pinRect = (RectTransform)pinButton.transform;
+                Require(pinButton.transform.parent == cover && pinRect.anchorMin == Vector2.one &&
+                        pinRect.anchorMax == Vector2.one && pinRect.pivot == Vector2.one &&
+                        pinRect.sizeDelta == new Vector2(58f, 58f) &&
+                        Mathf.Abs(pinRect.offsetMax.x + 8f) < .01f &&
+                        Mathf.Abs(pinRect.offsetMax.y + 8f) < .01f &&
+                        pinRect.localRotation == Quaternion.identity && pinRect.localScale == Vector3.one &&
+                        pinButton.GetComponent<Graphic>() == null &&
+                        pinButton.targetGraphic.GetType().Name == "PinIconGraphic" &&
+                        pinButton.transition == Selectable.Transition.None,
+                    "pin vector is not a transparent fixed-size control inside the fitted cover");
+                Set(shell, "songPinButton", pinButton);
+                Set(shell, "selectedSong", songs[1]);
+                Call(shell, "UpdateSongPinButton");
+                Color selectedLow = pinButton.targetGraphic.color;
+                Require(selectedLow.b > selectedLow.r && selectedLow.g > selectedLow.r,
+                    "low-contrast pinned icon did not use the cyan UI accent");
+                SongPinStore.Toggle(songs[1]);
+                Call(shell, "UpdateSongPinButton");
+                Color idleLow = pinButton.targetGraphic.color;
+                Require(Mathf.Abs(idleLow.r - idleLow.g) < .06f && idleLow.r > .6f,
+                    "unpinned icon is not visible neutral gray");
+                Set(shell, "settings", new AppSettings { HighContrastUi = true });
+                SongPinStore.Toggle(songs[1]);
+                Call(shell, "UpdateSongPinButton");
+                Color selectedHigh = pinButton.targetGraphic.color;
+                Require(selectedHigh.r > .9f && selectedHigh.g > .8f && selectedHigh.b < .2f,
+                    "high-contrast pinned icon did not use the yellow UI accent");
+                SongPinStore.Toggle(songs[1]);
+                Call(shell, "UpdateSongPinButton");
+                Color idleHigh = pinButton.targetGraphic.color;
+                Require(idleHigh.r > .98f && idleHigh.g > .98f && idleHigh.b > .98f,
+                    "high-contrast unpinned icon is not white");
+                Set(shell, "settings", new AppSettings());
+                Set(shell, "selectedSong", songs[0]);
+                Set(shell, "selectedChart", songs[0].Charts[0]);
 
                 var inputRoot = new GameObject("Search", typeof(RectTransform), typeof(InputField));
                 inputRoot.transform.SetParent(root.transform, false);
@@ -83,7 +133,13 @@ namespace ChunithmMobile.Editor
                 Require(input.text == "" && (string)typeof(AppUiShell).GetField("searchText", Private).GetValue(shell) == "",
                     "library random failed to clear input and filter");
                 Debug.Log("Song-list regression passed: WD merging/order, numeric levels, preserved metadata, filtered candidates, empty random, immediate search and search clear.");
-            } finally { UnityEngine.Object.DestroyImmediate(root); }
+            } finally {
+                if (pinState == null) PlayerPrefs.DeleteKey(SongPinStore.PreferenceKey);
+                else PlayerPrefs.SetString(SongPinStore.PreferenceKey, pinState);
+                PlayerPrefs.Save();
+                pinCache.SetValue(null, null);
+                UnityEngine.Object.DestroyImmediate(root);
+            }
         }
 
         private static object[] Items(AppUiShell shell) => ((IEnumerable)Call(shell, "SongsForCurrentBucket")).Cast<object>().ToArray();

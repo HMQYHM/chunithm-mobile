@@ -7,6 +7,8 @@ using System.Text;
 
 namespace ChunithmMobile.Chart
 {
+    // C2S 解析入口：把文本格式转换为稳定的 ParsedChart 对象。
+    // 解析阶段尽量保留原始记录，后续的滚速映射、判定点展开和视觉配对在专门模块完成。
     /// <summary>
     /// UTF-8 C2S reader. All authored times stay as double precision so short
     /// SFL reverse sections are not rounded to different frames.
@@ -25,19 +27,28 @@ namespace ChunithmMobile.Chart
         {
             public NoteKind Kind; public long Tick, Duration; public int Lane, Width, EndLane, EndWidth;
             public AirDirection Direction; public float AirHeight, EndAirHeight; public bool VisibleHead;
-            public string OriginalType, SourceType, AirLineColor, AirLadderSecondaryColor;
-            public int AirLadderStyle;
+            public string OriginalType, SourceType;
             public List<long> ExplicitJudgeTicks;
             public RawNote(NoteKind kind, long tick, long duration, int lane, int width, int endLane, int endWidth,
                 AirDirection direction, float airHeight, float endAirHeight, bool visibleHead,
-                string originalType, string sourceType, string airLineColor,
-                int airLadderStyle, string airLadderSecondaryColor)
+                string originalType, string sourceType)
             { Kind = kind; Tick = tick; Duration = duration; Lane = lane; Width = width; EndLane = endLane; EndWidth = endWidth;
               Direction = direction; AirHeight = airHeight; EndAirHeight = endAirHeight; VisibleHead = visibleHead;
-              OriginalType = originalType; SourceType = sourceType; AirLineColor = airLineColor;
-              AirLadderStyle = airLadderStyle; AirLadderSecondaryColor = airLadderSecondaryColor; }
+              OriginalType = originalType; SourceType = sourceType; }
         }
 
+        private sealed class RawGuidePath
+        {
+            public long Tick, Duration;
+            public int Lane, Width, EndLane, EndWidth, StyleInterval;
+            public float AirHeight, EndAirHeight;
+            public string Color, SecondaryColor;
+        }
+
+        /// <summary>
+        /// 读取并解析 C2S 文件，返回包含音符、BPM、滚速和显式判定时间的 ParsedChart。
+        /// 本方法不创建 Unity 对象、不推进时间轴，也不进行判定，因此可由编辑器自测复用。
+        /// </summary>
         public static ParsedChart Parse(string path)
         {
             using var stream = File.OpenRead(path);
@@ -52,6 +63,7 @@ namespace ChunithmMobile.Chart
             var scrolls = new List<RawScroll>();
             var scrollAssignments = new List<RawScrollAssignment>();
             var rawNotes = new List<RawNote>();
+            var rawGuidePaths = new List<RawGuidePath>();
             var totals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             double explicitDurationMs = 0;
 
@@ -92,6 +104,10 @@ namespace ChunithmMobile.Chart
                     case "T_JUDGE_AIR": case "T_JUDGE_FLK": case "T_JUDGE_ALL":
                         totals[p[0][8..]] = IntAt(p, 1); break;
                     default:
+                        if (ParseGuidePath(p, resolution) is { } guidePath) {
+                            rawGuidePaths.Add(guidePath);
+                            break;
+                        }
                         if (ParseNote(p, resolution) is { } note) rawNotes.Add(note);
                         break;
                 }
@@ -114,6 +130,7 @@ namespace ChunithmMobile.Chart
             var visualHeads = ResolveSlideVisualHeads(rawNotes, notesAt);
             ResolveAirHoldVisualHeads(rawNotes, visualHeads);
             ResolveAirActionVisualHeads(rawNotes, visualHeads);
+            ResolveStandaloneAirVisualHeads(rawNotes, visualHeads);
             var notes = rawNotes.Select((n, i) =>
             {
                 bool continuation = n.Duration > 0 && notesAt.TryGetValue(n.Tick + n.Duration, out var next) &&
@@ -129,10 +146,13 @@ namespace ChunithmMobile.Chart
                     HasVisualHead = visualHeads[i],
                     IsContinuation = isContinuation,
                     IsSlideCheckpoint = slideCheckpoints[i],
-                    VisibleTail = n.Duration > 0 && !continuation && n.Kind != NoteKind.AirLadder && n.Kind != NoteKind.AirLine,
+                    // SLC/SXC are curve/control records. They may be the
+                    // final record in an authored slide, but they do not
+                    // carry the visible blue/yellow tail cap. The cap belongs
+                    // to the terminal SLD/SXD record only. Other long-note
+                    // families keep their existing tail behavior.
+                    VisibleTail = n.Duration > 0 && !continuation && CanRenderVisualTail(n),
                     OriginalType = n.OriginalType, SourceType = n.SourceType,
-                    AirLineColor = n.AirLineColor, AirLadderStyle = n.AirLadderStyle,
-                    AirLadderSecondaryColor = n.AirLadderSecondaryColor,
                     JudgePointCount = judgePoints[i],
                     ExplicitJudgeTimesMs = n.ExplicitJudgeTicks?.Select(time.ToMs).ToList()
                 };
@@ -140,6 +160,8 @@ namespace ChunithmMobile.Chart
             ResolveLongVisualChains(notes, rawNotes);
 
             double latestNoteMs = notes.Count == 0 ? 0 : notes.Max(n => Math.Max(n.TimeMs, n.EndTimeMs));
+            if (rawGuidePaths.Count > 0)
+                latestNoteMs = Math.Max(latestNoteMs, rawGuidePaths.Max(raw => time.ToMs(raw.Tick + raw.Duration)));
             double duration = explicitDurationMs > 0
                 ? Math.Max(explicitDurationMs, latestNoteMs)
                 : latestNoteMs + 2500;
@@ -153,8 +175,51 @@ namespace ChunithmMobile.Chart
                 time.ToMs(s.Tick + s.Duration), s.Lane, s.Width, s.ProfileId)).OrderBy(s => s.StartMs).ToList();
             foreach (var note in notes)
                 note.ScrollProfileId = FindScrollProfile(mappedAssignments, note.TimeMs, note.Lane, note.Width);
-            int total = totals.TryGetValue("ALL", out var all) ? all : notes.Sum(n => n.JudgePointCount);
-            return new ParsedChart(notes, duration, bpms[0].Bpm, total, mappedScrolls, mappedProfiles, mappedAssignments);
+            var guidePaths = rawGuidePaths.Select(raw => new VisualGuidePath {
+                TimeMs = time.ToMs(raw.Tick), EndTimeMs = time.ToMs(raw.Tick + raw.Duration),
+                Lane = raw.Lane, Width = Math.Max(1, raw.Width), EndLane = raw.EndLane,
+                EndWidth = Math.Max(1, raw.EndWidth), AirHeight = Math.Clamp(raw.AirHeight, -16, 32),
+                EndAirHeight = Math.Clamp(raw.EndAirHeight, -16, 32), StyleInterval = raw.StyleInterval,
+                Color = raw.Color, SecondaryColor = raw.SecondaryColor
+            }).OrderBy(item => item.TimeMs).ToList();
+            foreach (VisualGuidePath guidePath in guidePaths)
+                guidePath.ScrollProfileId = FindScrollProfile(mappedAssignments, guidePath.TimeMs,
+                    guidePath.Lane, guidePath.Width);
+            // T_JUDGE_ALL is metadata supplied by the exporter. A damaged or
+            // newer chart can declare a value that the supported records cannot
+            // actually schedule. Never invent checkpoints on unrelated notes
+            // to force that number: scoring and combo use the deterministic
+            // schedule that gameplay will really consume.
+            int scheduledTotal = notes.Sum(ScheduledPointCount);
+            int declaredTotal = totals.TryGetValue("ALL", out var all) ? Math.Max(0, all) : scheduledTotal;
+            // A few hand-authored charts omit BPM records entirely. The parser
+            // already uses the default BPM for time conversion; keep the same
+            // fallback here instead of indexing an empty list during gameplay
+            // startup.
+            double chartBpm = bpms.Count > 0 ? bpms[0].Bpm : defaultBpm;
+            return new ParsedChart(notes, duration, chartBpm, scheduledTotal,
+                mappedScrolls, mappedProfiles, mappedAssignments, declaredTotal, guidePaths);
+        }
+
+        private static RawGuidePath ParseGuidePath(string[] p, long resolution)
+        {
+            if (p.Length < 11 || !string.Equals(p[0], "ALD", StringComparison.OrdinalIgnoreCase)) return null;
+            int lane = IntAt(p, 3), width = Math.Max(1, IntAt(p, 4));
+            return new RawGuidePath {
+                Tick = AbsoluteTick(p[1], p[2], resolution),
+                StyleInterval = Math.Max(0, IntAt(p, 5)),
+                AirHeight = FloatAt(p, 6, 5), Duration = Math.Max(0, LongAt(p, 7)),
+                EndLane = IntAt(p, 8, lane), EndWidth = Math.Max(1, IntAt(p, 9, width)),
+                EndAirHeight = FloatAt(p, 10, FloatAt(p, 6, 5)),
+                Lane = lane, Width = width, Color = StringAt(p, 11, "DEF"),
+                SecondaryColor = StringAt(p, 12, "DEF")
+            };
+        }
+
+        private static int ScheduledPointCount(ChartNote note)
+        {
+            if (note.ExplicitJudgeTimesMs is { Count: > 0 }) return note.ExplicitJudgeTimesMs.Count;
+            return Math.Max(0, note.JudgePointCount);
         }
 
         private static void ResolveLongVisualChains(List<ChartNote> notes, IReadOnlyList<RawNote> rawNotes)
@@ -187,6 +252,9 @@ namespace ChunithmMobile.Chart
         private static bool IsLongVisualNote(ChartNote note) =>
             note.Kind is NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
                 NoteKind.AirHold or NoteKind.AirAction;
+
+        private static bool CanRenderVisualTail(RawNote note) =>
+            note.OriginalType is not ("SLC" or "SXC");
 
         private static int FindScrollProfile(List<ScrollAssignment> assignments, double timeMs, int lane, int width)
         {
@@ -273,11 +341,11 @@ namespace ChunithmMobile.Chart
 
         private static bool CanOwnHead(RawNote note)
         {
-            // ALD is a decorative overlay and AHD/AHX are AIR-HOLD body
-            // records. SLD owns a slide head; SLC/SXC/SXD are its continuous
-            // body sections. HXD is a standalone EX HOLD and owns its head.
+            // AHD/AHX are AIR-HOLD body records. SLD and SXD own a slide head; SLC/SXC are control
+            // sections and never create a standalone head. HXD is a standalone
+            // EX HOLD and owns its head.
             return note.OriginalType is not
-                ("ALD" or "AHD" or "AHX" or "SLC" or "SXC" or "SXD");
+                ("AHD" or "AHX" or "SLC" or "SXC");
         }
 
         private static bool[] ResolveSlideVisualHeads(IReadOnlyList<RawNote> notes,
@@ -306,9 +374,7 @@ namespace ChunithmMobile.Chart
 
         private static bool IsContinuousSegment(RawNote previous, RawNote current)
         {
-            if (previous == null || current == null || previous.Duration <= 0 ||
-                previous.Kind is NoteKind.AirLadder or NoteKind.AirLine ||
-                current.Kind is NoteKind.AirLadder or NoteKind.AirLine)
+            if (previous == null || current == null || previous.Duration <= 0)
                 return false;
             // Only opcodes that explicitly describe a continuation may take
             // ownership from the preceding record. Two independent SLD/HLD
@@ -366,11 +432,11 @@ namespace ChunithmMobile.Chart
                 for (int j = i - 1; j >= 0; j--) {
                     RawNote previous = notes[j];
                     if (previous.Tick + previous.Duration < note.Tick) continue;
-                    if (previous.Kind != NoteKind.AirHold ||
-                        previous.Tick + previous.Duration != note.Tick) continue;
-                    int previousEnd = previous.EndLane + Math.Max(1, previous.EndWidth);
-                    int currentEnd = note.Lane + Math.Max(1, note.Width);
-                    if (previous.EndLane < currentEnd && note.Lane < previousEnd) {
+                    // Geometry alone does not make a continuation. A new AHD
+                    // may start exactly where another one ends while owning a
+                    // fresh TAP/AIR gesture. Only an opcode whose source names
+                    // the AIR long family may suppress the new visual cap.
+                    if (IsContinuousSegment(previous, note)) {
                         hasPrevious = true;
                         break;
                     }
@@ -391,17 +457,28 @@ namespace ChunithmMobile.Chart
             }
         }
 
+        private static void ResolveStandaloneAirVisualHeads(IReadOnlyList<RawNote> notes, bool[] visualHeads)
+        {
+            // AIR/AUL/AUR/AD* is a separate arrow even when it occupies the
+            // exact timing plane and lane range of a TAP, AIR-HOLD, or AIR
+            // ACTION record. Long-note ownership may hide continuation caps,
+            // but it must never absorb this directional arrow. Judgement
+            // ownership remains in VisibleHead/JudgePointCount; this method
+            // changes only the authored visual layer.
+            for (int i = 0; i < notes.Count; i++)
+                if (notes[i].Kind == NoteKind.Air)
+                    visualHeads[i] = true;
+        }
+
         private static RawNote ParseNote(string[] p, long resolution)
         {
             if (p.Length < 5) return null;
-            int airLadderInterval = p[0] == "ALD" ? Math.Max(0, IntAt(p, 5)) : 0;
             var kind = p[0] switch {
                 "TAP" => NoteKind.Tap, "CHR" => NoteKind.ExTap, "MNE" => NoteKind.Mine,
                 "FLK" => NoteKind.Flick, "HLD" or "HXD" => NoteKind.Hold,
                 "SLD" or "SLC" or "SXC" or "SXD" => NoteKind.Slide,
                 "AIR" or "AUL" or "AUR" or "ADR" or "ADL" or "ADW" => NoteKind.Air,
                 "AHD" or "AHX" => NoteKind.AirHold, "ASC" or "ASD" => NoteKind.AirAction,
-                "ALD" => airLadderInterval > 0 ? NoteKind.AirLadder : NoteKind.AirLine,
                 _ => (NoteKind)(-1)
             };
             if ((int)kind < 0) return null;
@@ -409,43 +486,37 @@ namespace ChunithmMobile.Chart
             int lane = IntAt(p, 3), width = IntAt(p, 4);
             long duration = p[0] switch {
                 "HLD" or "HXD" or "SLD" or "SLC" or "SXC" or "SXD" => LongAt(p, 5),
-                "AHD" or "AHX" => LongAt(p, 6), "ASC" or "ASD" or "ALD" => LongAt(p, 7), _ => 0
+                "AHD" or "AHX" => LongAt(p, 6), "ASC" or "ASD" => LongAt(p, 7), _ => 0
             };
             int endLane = p[0] switch {
                 "SLD" or "SLC" or "SXC" or "SXD" => IntAt(p, 6, lane),
-                "ASC" or "ASD" or "ALD" => IntAt(p, 8, lane), _ => lane
+                "ASC" or "ASD" => IntAt(p, 8, lane), _ => lane
             };
             int endWidth = p[0] switch {
                 "SLD" or "SLC" or "SXC" or "SXD" => IntAt(p, 7, width),
-                "ASC" or "ASD" or "ALD" => IntAt(p, 9, width), _ => width
+                "ASC" or "ASD" => IntAt(p, 9, width), _ => width
             };
             AirDirection direction = p[0] switch {
                 "AIR" => AirDirection.Up, "AUL" => AirDirection.UpLeft, "AUR" => AirDirection.UpRight,
                 "ADR" => AirDirection.DownRight, "ADL" => AirDirection.DownLeft, "ADW" => AirDirection.Down,
-                "ASD" => AirDirection.Down, "ASC" => AirDirection.Up,
                 _ => AirDirection.None
             };
-            float airHeight = p[0] is "ASC" or "ASD" or "ALD" ? FloatAt(p, 6, 5) : 5;
-            float endAirHeight = p[0] is "ASC" or "ASD" or "ALD" ? FloatAt(p, 10, airHeight) : airHeight;
+            float airHeight = p[0] is "ASC" or "ASD" ? FloatAt(p, 6, 5) : 5;
+            float endAirHeight = p[0] is "ASC" or "ASD" ? FloatAt(p, 10, airHeight) : airHeight;
             // HXD stores its EX-head style/direction after the duration.
             string source = p[0] == "HXD" ? StringAt(p, 6) : StringAt(p, 5);
-            // SLD owns a slide head. SLC/SXC/SXD are continuous body records;
-            // ResolveSegmentVisibility keeps them headless even when a chain
-            // is represented by many short authored sections.
-            bool visibleHead = p[0] is not ("ALD" or "AHD" or "AHX");
-            string color = p[0] == "ALD" ? StringAt(p, 11, "DEF") : "DEF";
-            int ladderStyle = airLadderInterval;
-            string ladderSecondaryColor = p[0] == "ALD" ? StringAt(p, 12, "DEF") : "DEF";
+            // SLD/SXD may own a slide cap. SLC/SXC only shape the curve;
+            // ResolveSegmentVisibility removes duplicate caps when an owning
+            // record is connected to the previous segment.
+            bool visibleHead = p[0] is not ("AHD" or "AHX");
             return new RawNote(kind, tick, Math.Max(0, duration), lane, width, endLane, endWidth,
-                direction, airHeight, endAirHeight, visibleHead, p[0], source, color,
-                ladderStyle, ladderSecondaryColor);
+                direction, airHeight, endAirHeight, visibleHead, p[0], source);
         }
 
         private static int[] AllocateJudgePoints(List<RawNote> notes, Dictionary<string, int> totals,
             TickTimeMapper time)
         {
             var result = new int[notes.Count];
-            AllocateAirLadderJudgeTicks(notes);
             for (int i = 0; i < notes.Count; i++)
                 result[i] = notes[i].ExplicitJudgeTicks?.Count ?? 0;
             void Distribute(List<int> indices, int target, HashSet<int> mandatory, Func<RawNote, double> weight)
@@ -465,6 +536,8 @@ namespace ChunithmMobile.Chart
             }
             List<int> Where(Func<RawNote, bool> f) => Enumerable.Range(0, notes.Count).Where(i => f(notes[i])).ToList();
             int Total(string key, int fallback) => totals.TryGetValue(key, out int value) ? value : fallback;
+            double DurationMs(RawNote note) => Math.Max(0,
+                time.ToMs(note.Tick + note.Duration) - time.ToMs(note.Tick));
 
             // The arcade TAP total includes MNE checkpoints. MNE still has an
             // independent hazard checker at runtime, but its safe crossing is
@@ -474,12 +547,11 @@ namespace ChunithmMobile.Chart
             Distribute(taps, Total("TAP", taps.Count), taps.ToHashSet(), n => n.Width);
             var flicks = Where(n => n.Kind == NoteKind.Flick);
             Distribute(flicks, Total("FLK", flicks.Count), flicks.ToHashSet(), n => n.Width);
-            var holds = Where(n => (n.Kind is NoteKind.Hold or NoteKind.HeavenHold) && n.Duration > 0);
-            double DurationMs(RawNote note) => Math.Max(0,
-                time.ToMs(note.Tick + note.Duration) - time.ToMs(note.Tick));
-            Distribute(holds, Total("HLD", 0), new HashSet<int>(), DurationMs);
-            var slides = Where(n => n.Kind == NoteKind.Slide && n.Duration > 0);
-            Distribute(slides, Total("SLD", 0), new HashSet<int>(), DurationMs);
+            // HLD and SLD judge points belong to the complete continuous
+            // object, not to each exported fragment independently. Allocating
+            // each fragment separately moves points at SLC/SXC seams and is
+            // the source of several long-note timing/display mismatches.
+            AllocateLongJudgeTicks(notes, totals, result, time);
             var ordinaryAirHeads = Where(n => n.Kind == NoteKind.Air && n.VisibleHead);
             foreach (int i in ordinaryAirHeads) result[i]++;
             var airLongHeads = Enumerable.Range(0, notes.Count).Where(i =>
@@ -499,113 +571,128 @@ namespace ChunithmMobile.Chart
                 airTarget - ordinaryAirHeads.Count - airLongHeads.Count - ladderPoints);
             Distribute(airBodies, bodyTarget, airBodies.ToHashSet(), DurationMs);
 
-            if (totals.TryGetValue("ALL", out int expected)) {
-                int delta = expected - result.Sum();
-                var adjustable = Enumerable.Range(0, notes.Count)
-                    .Where(i => notes[i].Kind is not (NoteKind.AirLadder or NoteKind.AirLine))
-                    .OrderByDescending(i => notes[i].Duration).ToList();
-                if (delta > 0 && adjustable.Count > 0) result[adjustable[0]] += delta;
-                else if (delta < 0) foreach (int i in adjustable.OrderByDescending(i => result[i])) {
-                    int remove = Math.Min(result[i], -delta); result[i] -= remove; delta += remove; if (delta == 0) break;
-                }
-            }
             return result;
         }
 
-        private sealed class AirLadderChain
+        private sealed class LongJudgeChain
         {
-            public int HeadIndex;
+            public readonly List<int> Members = new List<int>();
             public long StartTick;
             public long EndTick;
-            public int Interval;
+            public NoteKind Kind;
+            public int BodyPoints;
         }
 
-        private readonly struct AirLadderEndpoint : IEquatable<AirLadderEndpoint>
+        private static void AllocateLongJudgeTicks(IReadOnlyList<RawNote> notes,
+            Dictionary<string, int> totals, int[] result, TickTimeMapper time)
         {
-            private readonly long tick;
-            private readonly int lane;
-            private readonly int width;
-            private readonly int heightBits;
-            private readonly int interval;
+            var chainByIndex = Enumerable.Repeat(-1, notes.Count).ToArray();
+            var chains = new List<LongJudgeChain>();
+            var endings = new Dictionary<long, List<int>>();
 
-            public AirLadderEndpoint(long tick, int lane, int width, float height, int interval)
-            {
-                this.tick = tick;
-                this.lane = lane;
-                this.width = width;
-                heightBits = BitConverter.SingleToInt32Bits(height);
-                this.interval = interval;
-            }
+            for (int i = 0; i < notes.Count; i++) {
+                RawNote note = notes[i];
+                if (!IsJudgeableLong(note)) continue;
+                int owner = -1;
+                if (endings.TryGetValue(note.Tick, out var candidates))
+                    for (int c = candidates.Count - 1; c >= 0; c--) {
+                        int candidate = candidates[c];
+                        if (IsContinuousSegment(notes[candidate], note)) {
+                            owner = candidate;
+                            break;
+                        }
+                    }
 
-            public bool Equals(AirLadderEndpoint other) =>
-                tick == other.tick && lane == other.lane && width == other.width &&
-                heightBits == other.heightBits && interval == other.interval;
-
-            public override bool Equals(object obj) => obj is AirLadderEndpoint other && Equals(other);
-
-            public override int GetHashCode()
-            {
-                unchecked {
-                    int hash = tick.GetHashCode();
-                    hash = hash * 397 ^ lane;
-                    hash = hash * 397 ^ width;
-                    hash = hash * 397 ^ heightBits;
-                    return hash * 397 ^ interval;
-                }
-            }
-        }
-
-        private static void AllocateAirLadderJudgeTicks(IReadOnlyList<RawNote> notes)
-        {
-            var chains = new List<AirLadderChain>();
-            var endpoints = new Dictionary<AirLadderEndpoint, Queue<int>>();
-            for (int noteIndex = 0; noteIndex < notes.Count; noteIndex++)
-            {
-                RawNote note = notes[noteIndex];
-                if (note.Kind != NoteKind.AirLadder || note.AirLadderStyle <= 0) continue;
-
-                var start = new AirLadderEndpoint(note.Tick, note.Lane, note.Width,
-                    note.AirHeight, note.AirLadderStyle);
-                int chainIndex = -1;
-                if (endpoints.TryGetValue(start, out Queue<int> candidates) && candidates.Count > 0)
-                    chainIndex = candidates.Dequeue();
-
-                if (chainIndex < 0)
-                {
+                int chainIndex;
+                if (owner >= 0) {
+                    chainIndex = chainByIndex[owner];
+                } else {
                     chainIndex = chains.Count;
-                    chains.Add(new AirLadderChain {
-                        HeadIndex = noteIndex,
+                    chains.Add(new LongJudgeChain {
                         StartTick = note.Tick,
                         EndTick = note.Tick + note.Duration,
-                        Interval = note.AirLadderStyle
+                        Kind = note.Kind
                     });
                 }
-                else
-                {
-                    chains[chainIndex].EndTick = note.Tick + note.Duration;
-                }
-
-                var end = new AirLadderEndpoint(note.Tick + note.Duration,
-                    note.EndLane, note.EndWidth, note.EndAirHeight, note.AirLadderStyle);
-                if (!endpoints.TryGetValue(end, out Queue<int> owners))
-                {
-                    owners = new Queue<int>();
-                    endpoints.Add(end, owners);
-                }
-                owners.Enqueue(chainIndex);
+                chainByIndex[i] = chainIndex;
+                LongJudgeChain chain = chains[chainIndex];
+                chain.Members.Add(i);
+                chain.StartTick = Math.Min(chain.StartTick, note.Tick);
+                chain.EndTick = Math.Max(chain.EndTick, note.Tick + note.Duration);
+                if (!endings.TryGetValue(note.Tick + note.Duration, out var list))
+                    endings[note.Tick + note.Duration] = list = new List<int>();
+                list.Add(i);
             }
 
-            foreach (AirLadderChain chain in chains)
+            AllocateLongKind(NoteKind.Hold, "HLD");
+            AllocateLongKind(NoteKind.Slide, "SLD");
+
+            void AllocateLongKind(NoteKind kind, string totalKey)
             {
-                var ticks = new List<long>();
-                long tick = chain.StartTick;
-                while (tick <= chain.EndTick)
-                {
-                    ticks.Add(tick);
-                    if (tick > long.MaxValue - chain.Interval) break;
-                    tick += chain.Interval;
+                var selected = Enumerable.Range(0, chains.Count)
+                    .Where(i => chains[i].Kind == kind && chains[i].Members.Count > 0)
+                    .ToList();
+                if (selected.Count == 0) return;
+                int target = totals.TryGetValue(totalKey, out int value) ? Math.Max(0, value) : 0;
+                double Weight(int chainIndex) => Math.Max(.001,
+                    time.ToMs(chains[chainIndex].EndTick) - time.ToMs(chains[chainIndex].StartTick));
+                // KEEP density follows elapsed audio time. Raw tick length is
+                // wrong across BPM changes: equal tick spans at 120 and 240 BPM
+                // must not receive the same number of checkpoints.
+                double totalWeight = selected.Sum(Weight);
+                var fractions = new List<(int chain, double fraction)>();
+                int assigned = 0;
+                foreach (int chainIndex in selected) {
+                    double exact = target * Weight(chainIndex) / totalWeight;
+                    int whole = (int)Math.Floor(exact);
+                    chains[chainIndex].BodyPoints = whole;
+                    assigned += whole;
+                    fractions.Add((chainIndex, exact - whole));
                 }
-                notes[chain.HeadIndex].ExplicitJudgeTicks = ticks;
+                foreach (var item in fractions.OrderByDescending(x => x.fraction).Take(target - assigned))
+                    chains[item.chain].BodyPoints++;
+
+                foreach (int chainIndex in selected)
+                    AssignChainPoints(chains[chainIndex], notes, result);
+            }
+        }
+
+        private static bool IsJudgeableLong(RawNote note) =>
+            note.Duration > 0 && (note.Kind is NoteKind.Hold or NoteKind.Slide);
+
+        private static void AssignChainPoints(LongJudgeChain chain, IReadOnlyList<RawNote> notes, int[] result)
+        {
+            var pointsByNote = new Dictionary<int, List<long>>();
+            foreach (int index in chain.Members) pointsByNote[index] = new List<long>();
+
+            bool hasHead = chain.Members.Any(index => notes[index].VisibleHead);
+            int bodyCount = chain.BodyPoints;
+            for (int point = 0; point < bodyCount; point++) {
+                double fraction = hasHead
+                    ? (point + 1d) / (bodyCount + 1d)
+                    : bodyCount == 0 ? 0 : point / (double)bodyCount;
+                long tick = chain.StartTick + (long)Math.Round(
+                    (chain.EndTick - chain.StartTick) * fraction,
+                    MidpointRounding.AwayFromZero);
+                int owner = chain.Members[chain.Members.Count - 1];
+                foreach (int index in chain.Members) {
+                    RawNote note = notes[index];
+                    if (tick < note.Tick + note.Duration) { owner = index; break; }
+                }
+                pointsByNote[owner].Add(tick);
+            }
+
+            foreach (int index in chain.Members) {
+                RawNote note = notes[index];
+                var points = pointsByNote[index];
+                if (note.VisibleHead) points.Add(note.Tick);
+                points.Sort();
+                note.ExplicitJudgeTicks = points;
+                // The head is already allocated by T_JUDGE_TAP/ALL. Only add
+                // the continuous-body points here; replacing the value would
+                // erase the head contribution for the first chain segment.
+                int headPoints = note.VisibleHead ? 1 : 0;
+                result[index] += Math.Max(0, points.Count - headPoints);
             }
         }
 

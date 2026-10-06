@@ -3,6 +3,7 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 文本滚动组件：处理制作名单等超出容器宽度的循环显示和暂停交互。
     /// <summary>Scrolls overflowing legacy UI text after a short reading pause.</summary>
     public sealed class UiMarqueeText : MonoBehaviour
     {

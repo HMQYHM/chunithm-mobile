@@ -1,8 +1,11 @@
 using System;
+using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace ChunithmMobile.Runtime
 {
+    // 设备内存信息工具：为导入、解码和皮肤加载提供保守的内存预算。
+    // 预算只是提前保护，不能代替每一步的异常处理和临时对象释放。
     /// <summary>
     /// Provides an OS-level free-memory estimate for optional preflight checks.
     /// It intentionally returns -1 where the platform does not expose a useful
@@ -28,8 +31,22 @@ namespace ChunithmMobile.Runtime
             {
                 Debug.LogWarning("Unable to query Android available memory: " + exception.Message);
             }
+#elif UNITY_IOS && !UNITY_EDITOR
+            try
+            {
+                return Math.Max(0, ChunithmGetAvailableMemory());
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Unable to query iOS available memory: " + exception.Message);
+            }
 #endif
             return -1;
         }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        [DllImport("__Internal")]
+        private static extern long ChunithmGetAvailableMemory();
+#endif
     }
 }

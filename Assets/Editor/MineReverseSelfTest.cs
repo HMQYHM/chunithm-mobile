@@ -14,6 +14,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 地雷/倒播回归测试：确认地雷时间窗口和倒退播放时的可见性边界不混淆。
     public static class MineReverseSelfTest
     {
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;

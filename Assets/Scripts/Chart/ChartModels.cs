@@ -3,7 +3,9 @@ using System.Collections.Generic;
 
 namespace ChunithmMobile.Chart
 {
-    public enum NoteKind { Tap, ExTap, Flick, Hold, HeavenHold, Slide, Air, AirHold, AirAction, AirLadder, AirLine, Mine }
+    // 数据契约层：保存解析后的谱面语义。这里的字段描述“谱面是什么”，不描述
+    // “当前是否可见”或“是否已经判定”；后两者分别属于渲染层和判定层。
+    public enum NoteKind { Tap, ExTap, Flick, Hold, HeavenHold, Slide, Air, AirHold, AirAction, Mine }
     public enum AirDirection { None, Up, UpLeft, UpRight, Down, DownLeft, DownRight }
     public enum Judgement { JusticeCritical, Justice, Attack, Miss }
 
@@ -37,16 +39,26 @@ namespace ChunithmMobile.Chart
         // normalized runtime shape but have different head/body semantics.
         public string OriginalType = "";
         public string SourceType = "";
-        public string AirLineColor = "DEF";
-        // ALD column 5 is the authored AIR.LADDER sample interval in chart
-        // ticks. Zero identifies a non-scoring decorative AIR line.
-        public int AirLadderStyle;
-        public string AirLadderSecondaryColor = "DEF";
         public int JudgePointCount = 1;
-        // AIR.LADDER points use a chain-wide tick grid and cannot be rebuilt
-        // by evenly splitting every individual ALD geometry segment.
         public List<double> ExplicitJudgeTimesMs;
         public int ScrollProfileId;
+    }
+
+    [Serializable]
+    public sealed class VisualGuidePath
+    {
+        public double TimeMs;
+        public double EndTimeMs;
+        public int Lane;
+        public int Width;
+        public int EndLane;
+        public int EndWidth;
+        public float AirHeight = 5f;
+        public float EndAirHeight = 5f;
+        public int ScrollProfileId;
+        public string Color = "DEF";
+        public string SecondaryColor = "DEF";
+        public int StyleInterval;
     }
 
     [Serializable]
@@ -84,21 +96,28 @@ namespace ChunithmMobile.Chart
         public readonly double DurationMs;
         public readonly double Bpm;
         public readonly int OriginalJudgeTotal;
+        // Exported T_JUDGE_ALL is retained for diagnostics. Gameplay uses
+        // OriginalJudgeTotal, which is the number of points actually scheduled.
+        public readonly int DeclaredJudgeTotal;
         public readonly List<ScrollEvent> ScrollEvents;
         public readonly Dictionary<int, List<ScrollEvent>> FieldScrollProfiles;
         public readonly List<ScrollAssignment> ScrollAssignments;
+        public readonly List<VisualGuidePath> GuidePaths;
 
         public ParsedChart(List<ChartNote> notes, double durationMs, double bpm,
             int originalJudgeTotal, List<ScrollEvent> scrollEvents,
-            Dictionary<int, List<ScrollEvent>> fieldScrollProfiles, List<ScrollAssignment> scrollAssignments)
+            Dictionary<int, List<ScrollEvent>> fieldScrollProfiles, List<ScrollAssignment> scrollAssignments,
+            int declaredJudgeTotal = -1, List<VisualGuidePath> guidePaths = null)
         {
             Notes = notes;
             DurationMs = durationMs;
             Bpm = bpm;
             OriginalJudgeTotal = originalJudgeTotal;
+            DeclaredJudgeTotal = declaredJudgeTotal < 0 ? originalJudgeTotal : declaredJudgeTotal;
             ScrollEvents = scrollEvents;
             FieldScrollProfiles = fieldScrollProfiles;
             ScrollAssignments = scrollAssignments;
+            GuidePaths = guidePaths ?? new List<VisualGuidePath>();
         }
     }
 }

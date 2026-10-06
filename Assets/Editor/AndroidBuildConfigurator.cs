@@ -32,11 +32,12 @@ namespace ChunithmMobile.Editor
         public static void Apply()
         {
             ConfigureExternalTools();
+            ConfigureAndroidSigning();
             PlayerSettings.productName = "CHUNITHM Mobile";
             PlayerSettings.companyName = "HMQYHM";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.zhongermate.chunithmmobile");
-            PlayerSettings.bundleVersion = "0.3.2";
-            PlayerSettings.Android.bundleVersionCode = 302;
+            PlayerSettings.bundleVersion = "0.3.3";
+            PlayerSettings.Android.bundleVersionCode = 303;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
             // Use the installed stable platform explicitly. Auto would currently
@@ -87,12 +88,36 @@ namespace ChunithmMobile.Editor
             // toolchain paths through the project's configured Unity settings.
         }
 
+        private static void ConfigureAndroidSigning()
+        {
+            // Signing credentials stay outside the project and are supplied by
+            // the build environment. This lets a release use the original
+            // keystore without committing its password or machine-specific
+            // path to source control.
+            string keystore = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEYSTORE");
+            string storePassword = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEYSTORE_PASS");
+            string alias = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEY_ALIAS");
+            string aliasPassword = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEY_PASS");
+            if (string.IsNullOrWhiteSpace(keystore) && string.IsNullOrWhiteSpace(alias)) return;
+            if (string.IsNullOrWhiteSpace(keystore) || string.IsNullOrWhiteSpace(storePassword) ||
+                string.IsNullOrWhiteSpace(alias) || string.IsNullOrWhiteSpace(aliasPassword))
+                throw new BuildFailedException("Android signing requires CHUNITHM_ANDROID_KEYSTORE, CHUNITHM_ANDROID_KEYSTORE_PASS, CHUNITHM_ANDROID_KEY_ALIAS and CHUNITHM_ANDROID_KEY_PASS.");
+            if (!System.IO.File.Exists(keystore))
+                throw new BuildFailedException("Android signing keystore not found: " + keystore);
+
+            PlayerSettings.Android.useCustomKeystore = true;
+            PlayerSettings.Android.keystoreName = keystore;
+            PlayerSettings.Android.keystorePass = storePassword;
+            PlayerSettings.Android.keyaliasName = alias;
+            PlayerSettings.Android.keyaliasPass = aliasPassword;
+        }
+
         [MenuItem("CHUNITHM Mobile/Build Android APK")]
         public static void BuildApk()
         {
             Apply();
             string output = System.Environment.GetEnvironmentVariable("CHUNITHM_APK_OUTPUT");
-            if (string.IsNullOrWhiteSpace(output)) output = "Build/Android/CHUNITHM-Mobile-0.3.2-unity-arm64.apk";
+            if (string.IsNullOrWhiteSpace(output)) output = "Build/Android/CHUNITHM-Mobile-0.3.3-unity-arm64.apk";
             string outputDirectory = System.IO.Path.GetDirectoryName(output);
             if (!string.IsNullOrWhiteSpace(outputDirectory)) System.IO.Directory.CreateDirectory(outputDirectory);
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions {

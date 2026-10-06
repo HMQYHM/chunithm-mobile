@@ -9,6 +9,7 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Editor
 {
+    // 皮肤设置回归测试：验证背景皮肤、游玩皮肤、缺失资源回退和设置持久化。
     public static class SkinSettingsSelfTest
     {
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -27,8 +28,24 @@ namespace ChunithmMobile.Editor
                 "existing installations must keep the original palette");
             Require(JsonUtility.FromJson<AppSettings>(JsonUtility.ToJson(new AppSettings { HighContrastUi = true })).HighContrastUi,
                 "palette selection was not serialized");
+            Require((int)AppLanguage.Japanese == 3, "Japanese language enum slot changed");
+            Require(new AppSettings { LanguageMode = (int)AppLanguage.Japanese }.EffectiveLanguage == AppLanguage.Japanese,
+                "Japanese language mode was not resolved");
+            UiLocalization.SetLanguage(AppLanguage.Japanese);
+            Require(UiLocalization.Translate("设置") == "設定" && UiLocalization.Translate("GitHub 项目主页") == "GitHub プロジェクトページ",
+                "Japanese localization table is incomplete");
+            UiLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
             GameplaySkinManager.Initialize(GameplaySkinManager.BuiltinId);
+            Require(GameplaySkinManager.Active.BuiltIn &&
+                GameplaySkinManager.Active.Id == GameplaySkinManager.BuiltinId,
+                "the redistributable base skin was not selected at startup");
+            Require(GameplaySkinManager.ScoreWarningEnabled &&
+                GameplaySkinManager.ScoreWarningThreshold == 900000,
+                "the built-in gameplay-ui.json was not loaded");
+            Require(GameplaySkinManager.LoadNoteTexture("tap_01") != null,
+                "the built-in note resource was not loaded");
             CheckSkinImportAndPreferences();
+            CheckSettingsAndAudioIntegrationContracts();
             CheckJudgementHud();
             CheckMultiplayerAddressPersistence();
             AppLanguage previous = UiLocalization.Current;
@@ -41,6 +58,20 @@ namespace ChunithmMobile.Editor
             }
             finally { UiLocalization.SetLanguage(previous); }
             Debug.Log("Skin UI regression passed: five settings categories, both palettes, saved preferences, package import/activation/fallback, conditional controls, dropdowns and three-language landscape screenshots.");
+        }
+
+        private static void CheckSettingsAndAudioIntegrationContracts()
+        {
+            FieldInfo studioUrl = typeof(AppUiShell).GetField("SkinStudioUrl", Private | BindingFlags.Static);
+            Require(studioUrl != null && (string)studioUrl.GetValue(null) ==
+                "https://github.com/HMQYHM/chunithm-mobile/tree/main/CHUNITHM-Mobile-Unity/tools/SkinStudio",
+                "Skin Studio settings link changed unexpectedly");
+            Require(typeof(AppUiShell).GetMethod("QueueRuntimeSettingsApply", Private) != null,
+                "visual settings are missing the coalesced refresh path");
+            Require(typeof(LocalChartPlaybackSession).GetMethod("NotifyAudioRouteChanged") != null &&
+                typeof(LocalChartPlaybackSession).GetMethod("RebindAudioOutput") != null,
+                "audio route changes do not expose the pause/rebind path");
+            Debug.Log("Settings/audio integration contracts passed: Skin Studio link, coalesced visual refresh and Bluetooth route rebind.");
         }
 
         private static void CheckSkinImportAndPreferences()
@@ -79,6 +110,15 @@ namespace ChunithmMobile.Editor
                     "external judgement image was ignored");
                 Require(GameplaySkinManager.LoadJudgementTexture(Chart.Judgement.Miss).width > 2,
                     "missing judgement did not fall back to built-in image");
+                // A layout declaration alone must not suppress the game's
+                // original cover when its authored PNG is absent.
+                string stylePath = Path.Combine(imported.RootPath, "ui", "gameplay-ui.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(stylePath));
+                File.WriteAllText(stylePath, "{\"elements\":[{\"id\":\"songCover\",\"visible\":true,\"image\":\"ui/missing-cover.png\"}]}");
+                Require(GameplaySkinManager.SetActive(id), "skin with missing cover could not be reloaded");
+                GameplaySkinElementDefinition cover = GameplaySkinManager.Style.LayoutElement("songCover");
+                Require(cover != null && GameplaySkinManager.LoadSkinSprite(imported, cover.Image) == null,
+                    "missing skin cover was unexpectedly treated as available");
                 CheckJudgementHud();
                 PlayerPrefs.SetString(key, "{\"SettingsVersion\":18,\"GameplayComboX\":61,\"GameplayComboY\":65,\"GameplayComboScale\":120}");
                 AppSettings migrated = AppSettings.Load();
@@ -195,13 +235,13 @@ namespace ChunithmMobile.Editor
                 canvas.transform.GetChild(0).gameObject.SetActive(true);
                 Get<Text>(shell, "gameplayCombo").text = "128\nCOMBO";
                 MethodInfo layout = typeof(AppUiShell).GetMethod("ApplyGameplayElementLayout", Private);
-                layout.Invoke(shell, new object[] { settings });
+                layout.Invoke(shell, new object[] { settings, false });
                 RectTransform combo = Get<Text>(shell, "gameplayCombo").rectTransform;
                 Vector2 comboSize = combo.sizeDelta, comboAnchor = combo.anchorMin;
                 settings.GameplayJudgementX = 35;
                 settings.GameplayJudgementY = 35;
                 settings.GameplayJudgementScale = 120;
-                layout.Invoke(shell, new object[] { settings });
+                layout.Invoke(shell, new object[] { settings, false });
                 Require(combo.sizeDelta == comboSize && combo.anchorMin == comboAnchor,
                     "judgement layout still changes COMBO");
                 RectTransform block = Get<RectTransform>(shell, "gameplayJudgementBlock");
@@ -283,7 +323,11 @@ namespace ChunithmMobile.Editor
                 choices.Show();
                 GameObject list = (GameObject)typeof(Dropdown).GetField("m_Dropdown", Private).GetValue(choices);
                 list.GetComponent<CanvasGroup>().alpha = 1;
-                Require(canvas.GetComponentsInChildren<Toggle>().Length >= 4, "background dropdown did not open");
+                // The template item is inactive after Unity clones the three
+                // options, so only the three live option toggles are visible
+                // to GetComponentsInChildren. Counting four made this edit
+                // mode regression depend on an inactive implementation detail.
+                Require(canvas.GetComponentsInChildren<Toggle>().Length >= 3, "background dropdown did not open");
                 Capture(camera, canvas, new Vector2Int(1280, 720), $"Build/skin-dropdown-{themed}-{language}.png");
                 foreach (string field in new[] { "m_Dropdown", "m_Blocker" }) {
                     FieldInfo info = typeof(Dropdown).GetField(field, Private);
@@ -324,6 +368,8 @@ namespace ChunithmMobile.Editor
                     }
                     if (category == "音频") Require(body.Find("按键音").GetComponentInChildren<Toggle>() != null &&
                         body.Find("正解音").GetComponentInChildren<Slider>() != null, "combined audio controls missing");
+                    if (category == "更多") Require(body.Find("GitHub 项目主页")?.GetComponentInChildren<Button>() != null,
+                        "GitHub project action missing");
                 }
             }
             finally {

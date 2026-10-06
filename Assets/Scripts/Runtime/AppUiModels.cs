@@ -1,12 +1,101 @@
 using System;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace ChunithmMobile.Runtime
 {
+    // UI 数据模型集中定义页面、设置、MOD、歌曲选择和结算所需的数据。
+    // 这些对象描述状态，不直接操作 Unity 控件；页面刷新由 AppUiShell 负责。
     public enum AppPage { Loading, Home, SongSelect, DataManagement, Multiplayer, MultiplayerBrowser, MultiplayerRoom, MultiplayerGroupResults, Gameplay, Settings, Results, DelayCalibrationResults }
     public enum SongSortMode { Category, Level }
-    public enum AppLanguage { SimplifiedChinese = 0, TraditionalChinese = 1, English = 2 }
+    public enum AppLanguage { SimplifiedChinese = 0, TraditionalChinese = 1, English = 2, Japanese = 3 }
+
+    /// <summary>
+    /// Persists song-level pins independently from chart difficulty and list sort mode.
+    /// A song ID is the stable key, so every chart belonging to the same song follows
+    /// the pin in category, level, search and duplicate-difficulty lists.
+    /// </summary>
+    public static class SongPinStore
+    {
+        public const string PreferenceKey = "chunithm_mobile_pinned_songs_v1";
+
+        [Serializable]
+        private sealed class State
+        {
+            public string[] SongIds = Array.Empty<string>();
+        }
+
+        private static HashSet<string> pinnedIds;
+
+        public static bool IsPinned(SongEntry song)
+        {
+            string key = KeyFor(song);
+            return !string.IsNullOrWhiteSpace(key) && Pins().Contains(key);
+        }
+
+        public static bool Toggle(SongEntry song)
+        {
+            string key = KeyFor(song);
+            if (string.IsNullOrWhiteSpace(key)) return false;
+            HashSet<string> pins = Pins();
+            bool pinned;
+            if (pins.Contains(key)) { pins.Remove(key); pinned = false; }
+            else { pins.Add(key); pinned = true; }
+            Save();
+            return pinned;
+        }
+
+        /// <summary>
+        /// Drops pins for songs no longer present after an import or deletion.
+        /// Returning the change state lets callers avoid an unnecessary preference write.
+        /// </summary>
+        public static bool Prune(IEnumerable<SongEntry> songs)
+        {
+            var available = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (SongEntry song in songs ?? Array.Empty<SongEntry>())
+            {
+                string key = KeyFor(song);
+                if (!string.IsNullOrWhiteSpace(key)) available.Add(key);
+            }
+            HashSet<string> pins = Pins();
+            int before = pins.Count;
+            pins.RemoveWhere(key => !available.Contains(key));
+            if (pins.Count == before) return false;
+            Save();
+            return true;
+        }
+
+        // Stable fallback keeps hand-created/test songs pin-able even without Music.xml.
+        public static string KeyFor(SongEntry song)
+        {
+            if (song == null) return "";
+            return !string.IsNullOrWhiteSpace(song.Id) ? song.Id.Trim() : (song.Root ?? "").Trim();
+        }
+
+        private static HashSet<string> Pins()
+        {
+            if (pinnedIds != null) return pinnedIds;
+            pinnedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string json = UnityEngine.PlayerPrefs.GetString(PreferenceKey, "");
+            if (string.IsNullOrWhiteSpace(json)) return pinnedIds;
+            try
+            {
+                State state = UnityEngine.JsonUtility.FromJson<State>(json);
+                foreach (string id in state?.SongIds ?? Array.Empty<string>())
+                    if (!string.IsNullOrWhiteSpace(id)) pinnedIds.Add(id.Trim());
+            }
+            catch { pinnedIds.Clear(); }
+            return pinnedIds;
+        }
+
+        private static void Save()
+        {
+            var state = new State { SongIds = new List<string>(Pins()).ToArray() };
+            UnityEngine.PlayerPrefs.SetString(PreferenceKey, UnityEngine.JsonUtility.ToJson(state));
+            UnityEngine.PlayerPrefs.Save();
+        }
+    }
 
     [Serializable]
     public sealed class ModSettings
@@ -17,19 +106,25 @@ namespace ChunithmMobile.Runtime
         public bool AirLongNoMotion;
         public bool NonMissJusticeCritical;
         public bool MirrorChart;
+        public bool FlickAllTap;
         public bool MineImmunity;
+        public bool FullscreenTouchpad;
+        public bool UniformSpeed;
+        public bool FullscreenTouchpadRestoreAirAreaAuto;
+        public bool FullscreenTouchpadRestoreDirectionalAirAuto;
         public float MusicRate = 1f;
         public bool HasAnyMod => AutoPlay || AirAreaAuto || DirectionalAirAuto || AirLongNoMotion || NonMissJusticeCritical ||
-                                  MirrorChart || MineImmunity || Math.Abs(MusicRate - 1f) >= .001f;
+                                  MirrorChart || FlickAllTap || MineImmunity || FullscreenTouchpad || UniformSpeed || Math.Abs(MusicRate - 1f) >= .001f;
         public bool RecordsScore => !AutoPlay && !AirAreaAuto && !DirectionalAirAuto &&
-                                    !MineImmunity && !NonMissJusticeCritical && Math.Abs(MusicRate - 1f) < .001f;
+                                    !MineImmunity && !NonMissJusticeCritical && !FlickAllTap && !FullscreenTouchpad &&
+                                    Math.Abs(MusicRate - 1f) < .001f;
     }
 
     [Serializable]
     public sealed class AppSettings
     {
-        public int SettingsVersion = 21;
-        // -1 follows the system. 0 is Simplified Chinese, 1 is Traditional Chinese, 2 is English.
+        public int SettingsVersion = 25;
+        // -1 follows the system. 0 is Simplified Chinese, 1 is Traditional Chinese, 2 is English, 3 is Japanese.
         public int LanguageMode = -1;
         public int MusicVolume = 100;
         public int BackgroundMusicVolume = 100;
@@ -37,8 +132,9 @@ namespace ChunithmMobile.Runtime
         public int KeySoundVolume = 80;
         public bool AnswerSoundEnabled = true;
         public int AnswerSoundVolume = 80;
+        public int AnswerSoundOffsetMs;
         public int DspBufferSize = 512;
-        public bool ShowGameplayFps;
+        public bool ShowGameplayFps = true;
         // MusicOffsetMs moves the song audio relative to the chart clock.
         // JudgeOffsetMs moves only the input judgement reference point.
         public int MusicOffsetMs;
@@ -54,15 +150,26 @@ namespace ChunithmMobile.Runtime
         public bool ExcludeMissFromAverage = true;
         public bool ShowTouchFeedback = true;
         public bool ShowAirGuide = true;
+        public bool ShowInputBoundary = true;
+        public bool ShowTouchpadVisual = true;
         public bool ShowGameplaySongInfo = true;
+        // 0 current combo, 1 remaining combo, 2 current score,
+        // 3..8 remaining allowed loss for SSS+, SSS, SS+, SS, S+, S;
+        // 9 accumulated score loss from the 1,010,000 full-JC result;
+        // 10 distance to the saved personal best score.
+        public int GameplayBelowNoteMetricMode;
+        // 0 SSS+, 1 SSS, 2 SS+, 3 SS, 4 S+, 5 S.
+        public int GameplayTargetRank;
         public int JacketBackgroundOpacity = 42;
         public int TouchpadHeight = 17;
         public int TouchpadWidth = 100;
-        public int TouchpadTilt;
         public int TouchpadOpacity = 100;
         public int TouchEffectOpacity = 100;
+        public int TouchHighlightBrightness = 100;
         // Logical contact width in tenths of one mobile touchpad lane (5..30).
         public int TouchContactRangeTenths = 10;
+        // Shared display length for every draggable guide line in the layout editor.
+        public int EditorGuideLengthPercent = 100;
         public int GroundAreaHeight = 17;
         public int AirAreaBottom = 17;
         public int AirAreaTop = 96;
@@ -88,11 +195,14 @@ namespace ChunithmMobile.Runtime
         public int GameplaySongInfoY = 91;
         public int GameplaySongInfoScale = 100;
         public bool EmojiBackground;
-        public bool AirTrailRainbow;
         public bool HighContrastUi;
         // 0 note trails, 1 emoji trails, 2 imported image trails.
         public int BackgroundSkinMode;
         public string GameplaySkinId = GameplaySkinManager.BuiltinId;
+        // Per-skin layout edits made in the in-game visual editor. The package
+        // remains read-only; an override is applied after the package layout
+        // and can be removed with “恢复默认布局”.
+        public List<GameplayLayoutOverride> GameplayLayoutOverrides = new List<GameplayLayoutOverride>();
 
         private const string Key = "chunithm_mobile_settings_v1";
 
@@ -102,14 +212,17 @@ namespace ChunithmMobile.Runtime
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
             try {
                 AppSettings value = UnityEngine.JsonUtility.FromJson<AppSettings>(json) ?? new AppSettings();
+                int loadedSettingsVersion = value.SettingsVersion;
                 if (value.SettingsVersion < 2) {
                     value.NoteSpeedOption = OriginalNoteSpeed.FromLegacyPercent(value.NoteSpeed <= 0 ? 100 : value.NoteSpeed);
                 }
+                if (loadedSettingsVersion >= 2 && loadedSettingsVersion < 25)
+                    value.NoteSpeedOption = OriginalNoteSpeed.FromLegacyOption(value.NoteSpeedOption);
                 if (value.SettingsVersion < 3) {
                     value.KeySoundEnabled = true;
                     value.KeySoundVolume = 80;
                     value.AnswerSoundEnabled = true;
-                    value.AnswerSoundVolume = 80;
+                value.AnswerSoundVolume = 80;
                 }
                 if (value.SettingsVersion < 4) value.GameplaySongInfoScale = 100;
                 if (value.SettingsVersion < 5) {
@@ -139,18 +252,14 @@ namespace ChunithmMobile.Runtime
                     value.GameplayPauseScale = 100;
                     value.PauseRequiresDoubleTap = false;
                 }
-                if (value.SettingsVersion < 13) value.AirTrailRainbow = false;
                 if (value.SettingsVersion < 14)
                     value.BackgroundSkinMode = value.EmojiBackground ? 1 : 0;
-                if (value.SettingsVersion < 15)
-                    value.AirTrailRainbow = false;
                 if (value.SettingsVersion < 16) {
                     value.TouchpadOpacity = 100;
                     value.TouchEffectOpacity = 100;
                     value.TouchContactRangeTenths = 10;
                 }
                 if (value.SettingsVersion < 17) value.GameplaySkinId = GameplaySkinManager.BuiltinId;
-                if (value.SettingsVersion < 18) value.TouchpadTilt = 0;
                 if (value.SettingsVersion < 19) {
                     value.GameplayJudgementX = value.GameplayComboX;
                     value.GameplayJudgementScale = value.GameplayComboScale > 0 ? value.GameplayComboScale : 100;
@@ -159,12 +268,18 @@ namespace ChunithmMobile.Runtime
                 }
                 if (value.SettingsVersion < 20) value.ShowGameplayFps = false;
                 if (value.SettingsVersion < 21) value.BackgroundBrightness = 0;
-                value.SettingsVersion = 21;
+                if (value.SettingsVersion < 22) value.EditorGuideLengthPercent = 100;
+                if (value.SettingsVersion < 23) {
+                    value.ShowGameplayFps = true;
+                    value.GameplayBelowNoteMetricMode = 3;
+                }
+                if (value.SettingsVersion < 24) value.GameplayBelowNoteMetricMode = 3;
+                value.SettingsVersion = 25;
                 value.BackgroundBrightness = UnityEngine.Mathf.Clamp(value.BackgroundBrightness, 0, 100);
                 value.GameplayJudgementX = UnityEngine.Mathf.Clamp(value.GameplayJudgementX, 5, 95);
                 value.GameplayJudgementY = UnityEngine.Mathf.Clamp(value.GameplayJudgementY, 5, 95);
                 value.GameplayJudgementScale = UnityEngine.Mathf.Clamp(value.GameplayJudgementScale, 50, 180);
-                value.LanguageMode = UnityEngine.Mathf.Clamp(value.LanguageMode, -1, 2);
+                value.LanguageMode = UnityEngine.Mathf.Clamp(value.LanguageMode, -1, 3);
                 value.NoteSpeedOption = OriginalNoteSpeed.ClampOption(value.NoteSpeedOption);
                 value.MusicVolume = UnityEngine.Mathf.Clamp(value.MusicVolume, 0, 100);
                 value.BackgroundMusicVolume = UnityEngine.Mathf.Clamp(value.BackgroundMusicVolume, 0, 100);
@@ -194,22 +309,28 @@ namespace ChunithmMobile.Runtime
                 int sharedBoundary = UnityEngine.Mathf.Clamp(value.TouchpadHeight, 8, 45);
                 value.TouchpadHeight = sharedBoundary;
                 value.TouchpadWidth = UnityEngine.Mathf.Clamp(value.TouchpadWidth, 60, 100);
-                value.TouchpadTilt = UnityEngine.Mathf.Clamp(value.TouchpadTilt, -20, 20);
                 value.TouchpadOpacity = UnityEngine.Mathf.Clamp(value.TouchpadOpacity, 0, 100);
                 value.TouchEffectOpacity = UnityEngine.Mathf.Clamp(value.TouchEffectOpacity, 0, 100);
+                value.TouchHighlightBrightness = UnityEngine.Mathf.Clamp(value.TouchHighlightBrightness, 0, 200);
                 value.TouchContactRangeTenths = UnityEngine.Mathf.Clamp(value.TouchContactRangeTenths, 5, 30);
+                value.EditorGuideLengthPercent = UnityEngine.Mathf.Clamp(value.EditorGuideLengthPercent, 50, 150);
                 value.GroundAreaHeight = sharedBoundary;
                 value.AirAreaBottom = sharedBoundary;
                 value.AirAreaTop = UnityEngine.Mathf.Clamp(value.AirAreaTop, sharedBoundary + 5, 100);
                 value.MusicOffsetMs = UnityEngine.Mathf.Clamp(value.MusicOffsetMs, -500, 500);
                 value.JudgeOffsetMs = UnityEngine.Mathf.Clamp(value.JudgeOffsetMs, -500, 500);
-                value.MusicOffsetMs = NormalizeLatencyOffset(value.MusicOffsetMs);
-                value.JudgeOffsetMs = NormalizeLatencyOffset(value.JudgeOffsetMs);
+                value.MusicOffsetMs = NormalizeGameplayLatencyOffset(value.MusicOffsetMs);
+                value.JudgeOffsetMs = NormalizeGameplayLatencyOffset(value.JudgeOffsetMs);
+                value.AnswerSoundOffsetMs = UnityEngine.Mathf.Clamp(value.AnswerSoundOffsetMs, -500, 500);
+                value.AnswerSoundOffsetMs = NormalizeGameplayLatencyOffset(value.AnswerSoundOffsetMs);
                 value.BackgroundSkinMode = UnityEngine.Mathf.Clamp(value.BackgroundSkinMode, 0, 2);
                 if (string.IsNullOrWhiteSpace(value.GameplaySkinId)) value.GameplaySkinId = GameplaySkinManager.BuiltinId;
+                if (value.GameplayLayoutOverrides == null) value.GameplayLayoutOverrides = new List<GameplayLayoutOverride>();
                 value.GameplayPauseX = UnityEngine.Mathf.Clamp(value.GameplayPauseX, 5, 95);
                 value.GameplayPauseY = UnityEngine.Mathf.Clamp(value.GameplayPauseY, 8, 95);
                 value.GameplayPauseScale = UnityEngine.Mathf.Clamp(value.GameplayPauseScale, 50, 180);
+                value.GameplayBelowNoteMetricMode = UnityEngine.Mathf.Clamp(value.GameplayBelowNoteMetricMode, 0, 10);
+                value.GameplayTargetRank = UnityEngine.Mathf.Clamp(value.GameplayTargetRank, 0, 5);
                 return value;
             }
             catch { return new AppSettings(); }
@@ -221,10 +342,13 @@ namespace ChunithmMobile.Runtime
                 if (LanguageMode == (int)AppLanguage.SimplifiedChinese) return AppLanguage.SimplifiedChinese;
                 if (LanguageMode == (int)AppLanguage.TraditionalChinese) return AppLanguage.TraditionalChinese;
                 if (LanguageMode == (int)AppLanguage.English) return AppLanguage.English;
+                if (LanguageMode == (int)AppLanguage.Japanese) return AppLanguage.Japanese;
                 if (UnityEngine.Application.systemLanguage == UnityEngine.SystemLanguage.ChineseTraditional)
                     return AppLanguage.TraditionalChinese;
                 if (UnityEngine.Application.systemLanguage == UnityEngine.SystemLanguage.ChineseSimplified)
                     return AppLanguage.SimplifiedChinese;
+                if (UnityEngine.Application.systemLanguage == UnityEngine.SystemLanguage.Japanese)
+                    return AppLanguage.Japanese;
                 return AppLanguage.English;
             }
         }
@@ -235,8 +359,10 @@ namespace ChunithmMobile.Runtime
                 if (LanguageMode == (int)AppLanguage.SimplifiedChinese) return "简体中文";
                 if (LanguageMode == (int)AppLanguage.TraditionalChinese) return "繁體中文";
                 if (LanguageMode == (int)AppLanguage.English) return "English";
+                if (LanguageMode == (int)AppLanguage.Japanese) return "日本語";
                 if (EffectiveLanguage == AppLanguage.TraditionalChinese) return "跟隨系統（繁體中文）";
                 if (EffectiveLanguage == AppLanguage.SimplifiedChinese) return "跟隨系統（简体中文）";
+                if (EffectiveLanguage == AppLanguage.Japanese) return "システム（日本語）";
                 return "跟隨系統（English）";
             }
         }
@@ -299,8 +425,9 @@ namespace ChunithmMobile.Runtime
             GameplaySongInfoX = 16;
             GameplaySongInfoY = 91;
             GameplaySongInfoScale = 100;
+            GameplayBelowNoteMetricMode = 3;
+            GameplayTargetRank = 0;
             EmojiBackground = false;
-            AirTrailRainbow = false;
             BackgroundSkinMode = 0;
             HighContrastUi = false;
             GameplaySkinId = GameplaySkinManager.BuiltinId;
@@ -312,6 +439,11 @@ namespace ChunithmMobile.Runtime
             return UnityEngine.Mathf.Clamp(UnityEngine.Mathf.RoundToInt(value / 5f) * 5, -500, 500);
         }
 
+        public static int NormalizeGameplayLatencyOffset(int value)
+        {
+            return UnityEngine.Mathf.Clamp(value, -500, 500);
+        }
+
         public static int NormalizeDspBufferSize(int value)
         {
             if (value <= 128) return 128;
@@ -319,6 +451,18 @@ namespace ChunithmMobile.Runtime
             if (value <= 512) return 512;
             return 1024;
         }
+    }
+
+    [Serializable]
+    public sealed class GameplayLayoutOverride
+    {
+        public string SkinId;
+        public string ElementId;
+        public float X;
+        public float Y;
+        public float Width;
+        public float Height;
+        public bool Visible = true;
     }
 
     [Serializable]
@@ -389,11 +533,37 @@ namespace ChunithmMobile.Runtime
         }
     }
 
+    /// <summary>
+    /// Best completed judgement achievement for one song chart. The numeric
+    /// order is intentional so an achievement can only move upward over time.
+    /// </summary>
+    public enum SongAchievement
+    {
+        None = 0,
+        FC = 1,
+        AJ = 2,
+        ACJ = 3
+    }
+
+    public static class SongAchievementRules
+    {
+        public static SongAchievement FromCounts(int justiceCritical, int justice, int attack, int miss)
+        {
+            if (justiceCritical < 0 || justice < 0 || attack < 0 || miss < 0) return SongAchievement.None;
+            int total = justiceCritical + justice + attack + miss;
+            if (total <= 0 || miss > 0) return SongAchievement.None;
+            if (justiceCritical == total) return SongAchievement.ACJ;
+            if (attack == 0) return SongAchievement.AJ;
+            return SongAchievement.FC;
+        }
+    }
+
     public static class SongRecordStore
     {
         private const string LegacyPrefix = "chunithm_mobile_best_v1_";
         private const string BestPrefix = "chunithm_mobile_best_v2_";
         private const string LastPrefix = "chunithm_mobile_last_v2_";
+        private const string AchievementPrefix = "chunithm_mobile_achievement_v1_";
 
         public static bool TryGet(string songRoot, string difficulty, string chartPath, out int score)
         {
@@ -428,6 +598,35 @@ namespace ChunithmMobile.Runtime
                 UnityEngine.PlayerPrefs.SetInt(Key(BestPrefix, songRoot, difficulty, chartPath), score);
             UnityEngine.PlayerPrefs.Save();
             return newBest;
+        }
+
+        public static bool TryGetAchievement(string songRoot, string difficulty, string chartPath,
+            out SongAchievement achievement)
+        {
+            string key = Key(AchievementPrefix, songRoot, difficulty, chartPath);
+            int raw = UnityEngine.PlayerPrefs.GetInt(key, 0);
+            if (raw < (int)SongAchievement.None || raw > (int)SongAchievement.ACJ)
+            {
+                achievement = SongAchievement.None;
+                return false;
+            }
+            achievement = (SongAchievement)raw;
+            return achievement != SongAchievement.None;
+        }
+
+        /// <summary>
+        /// Stores the highest judgement achievement independently of the best
+        /// score. A lower-scoring AJ/ACJ run must still upgrade an older FC.
+        /// </summary>
+        public static bool SaveAchievement(string songRoot, string difficulty, string chartPath,
+            SongAchievement achievement)
+        {
+            if (achievement <= SongAchievement.None || achievement > SongAchievement.ACJ) return false;
+            TryGetAchievement(songRoot, difficulty, chartPath, out SongAchievement previous);
+            if (achievement <= previous) return false;
+            UnityEngine.PlayerPrefs.SetInt(Key(AchievementPrefix, songRoot, difficulty, chartPath), (int)achievement);
+            UnityEngine.PlayerPrefs.Save();
+            return true;
         }
 
         private static string Key(string prefix, string songRoot, string difficulty, string chartPath)

@@ -247,7 +247,7 @@ namespace ChunithmMobile.Runtime
         private static readonly string[] RequiredTrackFiles = {
             "track/runtime/field_blue_16.png", "track/runtime/barline_blue.png", "track/runtime/goal_line.png",
             "track/field/hold_joint.png", "track/field/slide_joint.png", "track/field/air_hold_joint.png",
-            "track/field/air_action_bar.png", "track/field/air_action_line.png", "track/field/heaven_roof.png",
+            "track/field/heaven_roof.png",
             "track/field/heaven_roof_pink.png", "track/field/heaven_wall.png", "track/field/heaven_shadow.png"
         };
         private static readonly string[] RequiredEffectFiles = {

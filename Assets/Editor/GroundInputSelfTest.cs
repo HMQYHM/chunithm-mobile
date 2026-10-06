@@ -13,6 +13,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 地面输入回归测试：验证 16 分区、覆盖范围、移动阶段、flick 脉冲和多指样本。
+    // 使用假的音频时间源，确保测试结果不依赖编辑器帧率。
     public static class GroundInputSelfTest
     {
         private const BindingFlags PrivateInstance = BindingFlags.NonPublic | BindingFlags.Instance;
@@ -265,11 +267,15 @@ namespace ChunithmMobile.Editor
         private static void VerifyDefaultFlick()
         {
             double window = JudgementEngine.FlickWindowMs;
+            double lateWindow = JudgementEngine.FlickLateWindowMs;
             Require(Math.Abs(window - (1000.0 / 60 * 5 + 20)) < .000001, "FLICK window must expand each side by 20ms");
-            Require(JudgementEngine.MissWindowMs(NoteKind.Flick) == window, "FLICK cleanup differs from the input window");
+            Require(Math.Abs(lateWindow - window - 10) < .000001,
+                "FLICK late window must retain the additional 10ms");
+            Require(JudgementEngine.MissWindowMs(NoteKind.Flick) == lateWindow,
+                "FLICK cleanup differs from the late input window");
             foreach (double rate in new[] { .5, 1.0, 2.0 }) {
-                foreach (double delta in new[] { -window, window, -window - .01, window + .01 }) {
-                    bool hit = Math.Abs(delta) <= window;
+                foreach (double delta in new[] { -window, lateWindow, -window - .01, lateWindow + .01 }) {
+                    bool hit = delta >= -window && delta <= lateWindow;
                     Require((JudgementEngine.JudgeFlick(delta * rate, 0, rate).Grade == Chart.Judgement.JusticeCritical) == hit,
                         "FLICK exact timing boundary changed with rate");
                 }
@@ -279,34 +285,43 @@ namespace ChunithmMobile.Editor
                         note.Width = width;
                         using var test = new Fixture(new[] { note }, rate);
                         double time = 1000 + delta * rate;
-                        test.Frame(100, Finger(1, 2f, TouchPhase.Began));
-                        test.Frame(time - 1, Finger(1, 2f, TouchPhase.Stationary));
-                        test.Frame(time, Finger(1, 2.6f, TouchPhase.Moved));
+                        test.Frame(100, Finger(1, 7f, TouchPhase.Began));
+                        test.Frame(time - 1, Finger(1, 7f, TouchPhase.Stationary));
+                        test.Frame(time, Finger(1, 8.1f, TouchPhase.Moved));
                         Require(test.Judge.ScoreState.JusticeCritical == 1,
-                            "default FLICK must accept an old finger's fresh half-cell gesture outside the note lanes");
+                            "default FLICK must accept a fresh gesture in its authored lane");
                     }
                 using (var test = new Fixture(new[] { Note(NoteKind.Flick, 1000, 8) }, rate)) {
-                    test.Frame(100, Finger(1, 2f, TouchPhase.Began));
-                    test.Frame(1000 - (window + .01) * rate, Finger(1, 2.6f, TouchPhase.Moved));
+                    test.Frame(100, Finger(1, 7f, TouchPhase.Began));
+                    test.Frame(1000 - (window + .01) * rate, Finger(1, 8.1f, TouchPhase.Moved));
                     Require(test.Judge.ScoreState.Resolved == 0, "FLICK hit outside the early boundary");
-                    test.Frame(1000 + (window - .01) * rate, Finger(1, 2.6f, TouchPhase.Stationary));
+                    test.Frame(1000 + (lateWindow - .01) * rate, Finger(1, 8.1f, TouchPhase.Stationary));
                     Require(test.Judge.ScoreState.Resolved == 0, "FLICK expired early or reused a stationary gesture");
-                    test.Frame(1000 + (window + .01) * rate, Finger(1, 2.6f, TouchPhase.Stationary));
+                    test.Frame(1000 + (lateWindow + .01) * rate, Finger(1, 8.1f, TouchPhase.Stationary));
                     Require(test.Judge.ScoreState.Miss == 1, "unhit FLICK did not MISS after its late boundary");
                 }
+                using (var test = new Fixture(new[] { Note(NoteKind.Flick, 1000, 8) }, rate)) {
+                    // Keep the initial press outside the ordinary TAP attack
+                    // window even at 2x. Otherwise the press itself correctly
+                    // becomes ATTACK before the later slash sample arrives.
+                    test.Frame(800, Finger(1, 8.8f, TouchPhase.Began));
+                    test.Frame(1000, Finger(1, 8.1f, TouchPhase.Moved));
+                    Require(test.Judge.ScoreState.JusticeCritical == 1,
+                        "FLICK did not accept a gesture in the authored lane");
+                }
             }
-            using (var test = new Fixture(new[] { Note(NoteKind.Flick, 1000, 8), Note(NoteKind.Flick, 1200, 12) })) {
-                test.Frame(900, Finger(1, 2f, TouchPhase.Began));
-                test.Frame(1000, Finger(1, 2.3f, TouchPhase.Moved));
+            using (var test = new Fixture(new[] { Note(NoteKind.Flick, 1000, 8), Note(NoteKind.Flick, 1200, 8) })) {
+                test.Frame(900, Finger(1, 7f, TouchPhase.Began));
+                test.Frame(1000, Finger(1, 7.4f, TouchPhase.Moved));
                 Require(test.Judge.ScoreState.Resolved == 0, "sub-half-cell movement triggered FLICK");
-                test.Frame(1001, Finger(1, 2.6f, TouchPhase.Moved));
+                test.Frame(1001, Finger(1, 8.1f, TouchPhase.Moved));
                 Require(test.Judge.ScoreState.JusticeCritical == 1, "gesture hit a FLICK outside its window");
-                test.Frame(1200, Finger(1, 2.6f, TouchPhase.Stationary));
+                test.Frame(1200, Finger(1, 8.4f, TouchPhase.Stationary));
                 Require(test.Judge.ScoreState.Resolved == 1, "stationary contact repeated FLICK");
-                test.Frame(1201, Finger(1, 2f, TouchPhase.Moved));
+                test.Frame(1201, Finger(1, 7.8f, TouchPhase.Moved));
                 Require(test.Judge.ScoreState.JusticeCritical == 2, "a fresh opposite-direction gesture was rejected");
             }
-            Debug.Log("Default FLICK passed: +/-103.333ms real window, half-cell gestures, old touches, lane/width independence, stationary rejection and no hits outside the timing window at .5x/1x/2x.");
+            Debug.Log("Default FLICK passed: timing window, authored-lane hitbox, half-cell gesture trigger, stationary rejection and no hits outside the timing window at .5x/1x/2x.");
         }
 
         private static void VerifyOverlappingFlicks()
@@ -325,22 +340,22 @@ namespace ChunithmMobile.Editor
                         using var test = new Fixture(notes, rate, offsetMs: offset);
                         var events = new List<int>();
                         test.Judge.Judged += (point, result) => events.Add(point.NoteIndex);
-                        test.Frame(InputTime(900), Finger(1, 2f, TouchPhase.Began), Finger(2, 4f, TouchPhase.Began));
-                        test.Frame(InputTime(1050), Finger(1, 2.6f, TouchPhase.Moved), Finger(2, 4.6f, TouchPhase.Moved));
+                        test.Frame(InputTime(900), Finger(1, 7f, TouchPhase.Began), Finger(2, 7f, TouchPhase.Began));
+                        test.Frame(InputTime(1050), Finger(1, 12.6f, TouchPhase.Moved), Finger(2, 12.6f, TouchPhase.Moved));
                         Require(test.Judge.ScoreState.JusticeCritical == 3 && events.Count == 3 &&
                             events.Contains(0) && events.Contains(1) && events.Contains(2),
                             "one gesture must resolve all overlapping FLICK windows exactly once, regardless of lane/rate/offset");
-                        test.Frame(InputTime(1200), Finger(1, 2.6f, TouchPhase.Stationary));
-                        test.Frame(InputTime(1200.1), Finger(1, 2.6f, TouchPhase.Moved));
+                        test.Frame(InputTime(1200), Finger(1, 12.6f, TouchPhase.Stationary));
+                        test.Frame(InputTime(1200.1), Finger(1, 12.6f, TouchPhase.Moved));
                         Require(test.Judge.ScoreState.Resolved == 3, "a stale gesture hit a FLICK entering the window later");
-                        test.Frame(InputTime(1201), Finger(1, 2f, TouchPhase.Moved));
+                        test.Frame(InputTime(1201), Finger(1, 7f, TouchPhase.Moved));
                         Require(test.Judge.ScoreState.JusticeCritical == 4 && events.Count == 4,
                             "a fresh gesture did not resolve the remaining FLICK exactly once");
                     }
 
             using (var test = new Fixture(new[] {
-                Note(NoteKind.Flick, 1000, 8), Note(NoteKind.Tap, 1048, 5),
-                Note(NoteKind.Flick, 1050, 8), Note(NoteKind.Tap, 1080, 5) })) {
+                Note(NoteKind.Flick, 1000, 5), Note(NoteKind.Tap, 1048, 5),
+                Note(NoteKind.Flick, 1050, 5), Note(NoteKind.Tap, 1080, 5) })) {
                 var events = new List<int>();
                 test.Judge.Judged += (point, result) => events.Add(point.NoteIndex);
                 test.Frame(900, Finger(1, 4.9f, TouchPhase.Began));
@@ -353,8 +368,8 @@ namespace ChunithmMobile.Editor
             using (var test = new Fixture(new[] {
                 Note(NoteKind.Flick, 1000, 8), Note(NoteKind.Flick, 1000, 8),
                 Note(NoteKind.Flick, 1040, 8) })) {
-                test.Frame(900, Finger(1, 2f, TouchPhase.Began));
-                test.Frame(1050, Finger(1, 2.6f, TouchPhase.Moved));
+                test.Frame(900, Finger(1, 7f, TouchPhase.Began));
+                test.Frame(1050, Finger(1, 8.6f, TouchPhase.Moved));
                 Require(test.Judge.ScoreState.JusticeCritical == 3,
                     "same-time/same-lane duplicate FLICK records lost independent scores");
             }

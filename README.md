@@ -1,6 +1,7 @@
+<!-- Languages: [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [English](README.en.md) -->
 # CHUNITHM Mobile — Unity migration
 
-This is the new, independent Unity implementation. The current release is **0.3.2**. The existing Android/Kotlin app is deliberately untouched.
+This is the new, independent Unity implementation. The current release is **0.3.3**. The existing Android/Kotlin app is deliberately untouched.
 
 ## Android target
 
@@ -47,7 +48,7 @@ Install Unity 2022.3.62f3c1 with **Android Build Support**, **Android SDK & NDK 
 
 `CHUNITHM Mobile > Build Android APK`
 
-Output: `Build/Android/CHUNITHM-Mobile-0.3.2-unity-arm64.apk`
+Output: `Build/Android/CHUNITHM-Mobile-0.3.3-unity-arm64.apk`
 
 No songs or charts are embedded in the APK. For an early playback test, use ADB to copy a song folder containing a `.c2s` file to `/sdcard/Android/data/com.zhongermate.chunithmmobile/files/Songs/`; the development bridge loads the first chart and logs all global/local scroll counts. Android's app-specific external directory needs no broad storage permission.
 

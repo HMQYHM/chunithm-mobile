@@ -38,6 +38,7 @@ namespace ChunithmMobile.Runtime
         public const float PreparationSeconds = 2f;
         private double preparationEndDsp;
         private float pausedPreparationRemaining;
+        private bool audioRouteRebindPending;
         // Every load gets a generation. Async file/audio continuations from an
         // older load must never mutate the current gameplay session.
         private int playbackGeneration;
@@ -568,11 +569,44 @@ namespace ChunithmMobile.Runtime
             clock.Pause();
         }
 
+        /// <summary>
+        /// Bluetooth route changes can invalidate the native AudioSource
+        /// cursor while Unity recreates the output device. Pause the chart at
+        /// its DSP position first; LowLatencyAudioController calls
+        /// RebindAudioOutput after the route has remained stable.
+        /// </summary>
+        public void NotifyAudioRouteChanged()
+        {
+            if (loadedChart == null || songSource == null) return;
+            audioRouteRebindPending = true;
+            PausePlayback();
+        }
+
+        public void RebindAudioOutput()
+        {
+            if (!audioRouteRebindPending || loadedChart == null || songSource == null || songSource.clip == null)
+                return;
+            double chartTimeMs = Math.Max(0, clock.TimeMs);
+            int frequency = Math.Max(1, songSource.clip.frequency);
+            double audioTimeMs = Math.Max(0, chartTimeMs - preparedMusicOffsetMs);
+            int sample = Mathf.Clamp(Mathf.RoundToInt((float)(audioTimeMs * frequency / 1000.0)),
+                0, Math.Max(0, songSource.clip.samples - 1));
+            // Keep the source paused while writing timeSamples. Stopping it
+            // would make AudioSource.UnPause a no-op on several Android
+            // Bluetooth backends, forcing the next resume to restart audio.
+            songSource.Pause();
+            songSource.timeSamples = sample;
+            audioRouteRebindPending = false;
+            Debug.Log($"Audio route rebound while paused: chart={chartTimeMs:F1}ms, " +
+                      $"audio={audioTimeMs:F1}ms, sample={sample}, frequency={frequency}Hz");
+        }
+
         public void ResumePlayback()
         {
             if (applicationPaused || !applicationFocused) return;
             pauseRequested = false;
             if (loadedChart == null || clock.Playing) return;
+            if (audioRouteRebindPending) RebindAudioOutput();
             if (pausedPreparationRemaining > 0) {
                 SchedulePreparedPlayback(preparedMusicOffsetMs, pausedPreparationRemaining);
                 pausedPreparationRemaining = 0;
@@ -608,6 +642,7 @@ namespace ChunithmMobile.Runtime
             songSource = null;
             mixedSongClip = null;
             songClip = null;
+            audioRouteRebindPending = false;
             loadedChart = null;
             calibrationPlayback = false;
         }

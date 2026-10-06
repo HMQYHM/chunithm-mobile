@@ -6,8 +6,17 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 皮肤宽度回归测试：验证 1 到 16 lane 资源的主体 UV 不因外框尺寸相同而错位。
     public static class SkinWidthSelfTest
     {
+        // Keep the regression test callable without starting a build. The
+        // development script registers SkinWidthSelfTest as an Editor test,
+        // while BuildVerifiedApk remains the explicit build entry point.
+        public static void Run()
+        {
+            VerifySkinWidths();
+        }
+
         public static void BuildVerifiedApk()
         {
             GameplayPauseSelfTest.Run();

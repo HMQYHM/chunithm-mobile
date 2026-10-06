@@ -153,7 +153,7 @@
   document.addEventListener("pointerup",event=>{if(!drag||drag.pointerId!==event.pointerId)return;clearTimeout(drag.timer);const wasDragging=drag.active;drag=null;delete $("stage").dataset.dragging;if(wasDragging)finishEdit();else render();});
   document.addEventListener("pointercancel",event=>{if(drag&&drag.pointerId===event.pointerId){clearTimeout(drag.timer);drag=null;finishEdit();}});
   function fillInspector(){ const e=find(state.selected); $("emptyInspector").hidden=!!e;$("inspector").hidden=!e;if(!e)return; $("elementId").innerHTML=ids.map(id=>`<option value="${id}">${labels[id]}</option>`).join("");$("elementId").value=e.id;$("visible").checked=!!e.visible;["x","y","width","height","opacity","color","image","label","textSize","textColor"].forEach(k=>{$(k).value=e[k]??""});$("opacityValue").value=Number(e.opacity).toFixed(2);$("metricMode").value=state.metric;$("metricDescription").textContent=metricText[state.metric]||""; }
-  function render(){renderLayers();renderStage();fillInspector();renderRules();renderScene();renderNumberStyles();livePanel?.render();updateProjectUi()}
+  function render(){renderLayers();renderStage();fillInspector();renderRules();renderScene();renderNumberStyles();renderTouchOverlay();livePanel?.render();updateProjectUi()}
   $("addRegion").onclick=()=>{beginEdit();const id=$("regionPreset").value;ensure(id);state.selected=id;setSettingsTab("layout");render();finishEdit();};
   function bindField(id,key,parse){const update=()=>{const e=find(state.selected);if(!e)return;const value=parse?parse($(id).value):$(id).value;if(Object.is(e[key],value))return;beginEdit();e[key]=value;if(key==="opacity")$("opacityValue").value=Number(e[key]).toFixed(2);renderStage()};$(id).addEventListener("input",update);$(id).addEventListener("change",()=>{update();finishEdit()})}
   ["x","y","width","height","opacity","textSize"].forEach(k=>bindField(k,k,Number));["color","image","label","textColor"].forEach(k=>bindField(k,k));
@@ -252,6 +252,30 @@
   function numberStyle(part){const value=state.document[part]&&typeof state.document[part]==="object"?state.document[part]:{};if(!state.document[part])state.document[part]=value;return value;}
   function renderDigitEditors(){const host=$("digitEditors");if(!host)return;host.innerHTML="";for(const [part,title] of Object.entries(digitParts)){const style=numberStyle(part),digits=Array.isArray(style.digits)?style.digits:[],section=document.createElement("div");section.className="digit-group";const heading=document.createElement("div");heading.className="subheading";heading.textContent=title+"数字皮肤（0–9）";section.appendChild(heading);const grid=document.createElement("div");grid.className="digit-grid";for(let digit=0;digit<=9;digit++){const item=digits.find(value=>String(value.digit)===String(digit)),label=document.createElement("label");label.className="digit-item";label.textContent=digit;const input=document.createElement("input");input.type="file";input.accept="image/png";input.dataset.part=part;input.dataset.digit=String(digit);const path=document.createElement("small");path.textContent=item?.image||"未设置";label.append(input,path);grid.appendChild(label);}section.appendChild(grid);host.appendChild(section);}}
   function renderNumberStyles(){for(const [part,[size,color]] of Object.entries(numberParts)){const value=numberStyle(part);$(size).value=value.fontSize||value.defaultSize||({combo:58,score:42,judgements:16}[part]);$(color).value=value.color||"#FFFFFF";}renderDigitEditors();}
+  function touchOverlay(){
+    if(!state.document.touchOverlay||typeof state.document.touchOverlay!=="object")state.document.touchOverlay={};
+    const value=state.document.touchOverlay;
+    if(!value.tablet)value.tablet={}; if(!value.leftPaw)value.leftPaw={}; if(!value.rightPaw)value.rightPaw={};
+    return value;
+  }
+  const touchFields={
+    touchTabletX:["tablet","x",.24],touchTabletY:["tablet","y",.08],touchTabletWidth:["tablet","width",.52],touchTabletHeight:["tablet","height",.30],
+    touchLeftPawWidth:["leftPaw","width",.14],touchLeftPawHeight:["leftPaw","height",.18],touchRightPawWidth:["rightPaw","width",.14],touchRightPawHeight:["rightPaw","height",.18],
+    touchLeftPawOffsetX:["leftPaw","offsetX",0],touchLeftPawOffsetY:["leftPaw","offsetY",0],touchRightPawOffsetX:["rightPaw","offsetX",0],touchRightPawOffsetY:["rightPaw","offsetY",0],
+    touchLeftPawSmoothing:["leftPaw","smoothing",.18],touchRightPawSmoothing:["rightPaw","smoothing",.18]
+  };
+  function renderTouchOverlay(){
+    const value=touchOverlay(); $("touchOverlayEnabled").checked=value.enabled===true;
+    $("touchTabletImage").value=value.tablet.image||""; $("touchLeftPawImage").value=value.leftPaw.image||""; $("touchRightPawImage").value=value.rightPaw.image||"";
+    for(const [id,[group,key,fallback]] of Object.entries(touchFields))$(id).value=value[group][key]??fallback;
+  }
+  $("touchOverlayEnabled")?.addEventListener("change",event=>{beginEdit();touchOverlay().enabled=event.target.checked;finishEdit();});
+  for(const id of Object.keys(touchFields))$(id)?.addEventListener("input",event=>{beginEdit();const [group,key]=touchFields[id];touchOverlay()[group][key]=Number(event.target.value);});
+  for(const [id,group,key] of [["touchTabletImage","tablet","image"],["touchLeftPawImage","leftPaw","image"],["touchRightPawImage","rightPaw","image"]])$(id)?.addEventListener("input",event=>{beginEdit();touchOverlay()[group][key]=event.target.value;});
+  async function importTouchImage(input,group){const file=input.files[0];if(!file)return;try{await livePanel.validateFile(file);beginEdit();const path=window.SkinStudioLive2D.path(`ui/touch/${file.name}`);state.files.set(path,file);touchOverlay()[group].image=path;renderTouchOverlay();finishEdit();notify("触控板图片已导入");}catch(error){notify("触控板图片读取失败："+error.message,true);}finally{input.value="";}}
+  $("touchTabletFile")?.addEventListener("change",event=>importTouchImage(event.target,"tablet"));
+  $("touchLeftPawFile")?.addEventListener("change",event=>importTouchImage(event.target,"leftPaw"));
+  $("touchRightPawFile")?.addEventListener("change",event=>importTouchImage(event.target,"rightPaw"));
   for(const [part,[size,color]] of Object.entries(numberParts)){
     $(size).addEventListener("input",()=>{beginEdit();numberStyle(part).fontSize=Number($(size).value)||0});
     $(color).addEventListener("input",()=>{beginEdit();numberStyle(part).color=$(color).value});

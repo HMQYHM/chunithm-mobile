@@ -3,6 +3,8 @@ using UnityEngine;
 
 namespace ChunithmMobile.Input
 {
+    // AIR 输入适配器：保存传感器样本的短历史，推导进入、离开、上升、下降和平均高度。
+    // 样本缺失不等于手指/手势立刻离开，短暂空样本由历史时间戳交给判定层处理。
     /// <summary>
     /// Mobile emulation of the cabinet's six vertical AIR sensors. Horizontal
     /// note position and arrow direction are intentionally ignored.
@@ -100,12 +102,30 @@ namespace ChunithmMobile.Input
         public void SetAirArea(Rect area)
         {
             normalizedAirArea = new Rect(Mathf.Clamp01(area.x), Mathf.Clamp01(area.y),
-                Mathf.Clamp01(area.width), Mathf.Clamp(area.height, .001f, 1f));
+                Mathf.Clamp01(area.width), Mathf.Clamp01(area.height));
+            // A full-screen ground MOD intentionally disables the physical AIR
+            // capture area. Clear history here so a hand that was previously
+            // above the boundary cannot leak its grace interval into the MOD.
+            if (normalizedAirArea.height <= .0001f) ResetCaptureState();
         }
 
         public void Capture(double now)
         {
             if (frame == null) return;
+            if (normalizedAirArea.height <= .0001f) {
+                // Never divide by a zero-height AIR area. The empty state uses
+                // negative-infinity timestamps so the judge does not retain a
+                // stale AIR contact while the accessibility MOD owns AIR AUTO.
+                frame.Air = new AirState {
+                    TimeMs = now,
+                    LastPresentTimeMs = double.NegativeInfinity,
+                    LastMotionTimeMs = double.NegativeInfinity,
+                    LowestSensor = -1,
+                    HighestSensor = -1,
+                    MeanX = .5f
+                };
+                return;
+            }
             seenPointers.Clear();
             int count = 0, low = SensorCount, high = -1;
             float heightSum = 0, xSum = 0, velocitySum = 0;

@@ -7,6 +7,8 @@ using UnityEditor.Build;
 
 namespace ChunithmMobile.Editor
 {
+    // Gradle 后处理器：把唯一命名的应用图标资源写入 Android 工程的 launcher 位置。
+    // 只处理生成目录，不修改运行时皮肤或歌曲资源。
     // Unity otherwise emits app_icon regardless of the source texture filename.
     public sealed class AndroidLauncherIconResources : IPostGenerateGradleAndroidProject
     {

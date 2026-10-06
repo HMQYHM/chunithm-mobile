@@ -3,6 +3,8 @@ using ChunithmMobile.Runtime;
 
 namespace ChunithmMobile.Rendering
 {
+    // 轨道底板渲染器：绘制轨道、判定线、触控板和边界层。
+    // 视觉开关只改变显示，不应关闭 ArcadeInputRig 的采样逻辑。
     /// <summary>
     /// Builds the gameplay surface from small, predictable quads.
     /// Keeping the field in ChartSpace avoids the skew and oversized strips

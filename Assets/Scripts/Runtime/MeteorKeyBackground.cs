@@ -5,6 +5,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 非游玩页面的流星/emoji 背景：维护种子、速度、旋转、拖尾和边界淡入淡出。
+    // 进入 Gameplay 时应停用或隐藏，保证背景不会遮挡谱面并减少移动端 GPU 开销。
     public enum MeteorBackgroundProfile
     {
         Home,

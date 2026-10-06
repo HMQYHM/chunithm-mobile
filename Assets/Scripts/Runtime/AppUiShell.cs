@@ -78,6 +78,7 @@ namespace ChunithmMobile.Runtime
             public Text Artist;
             public Text Level;
             public Text Score;
+            public Text Achievement;
             public Text Rank;
             public Text Bpm;
             public Text Duration;
@@ -242,13 +243,28 @@ namespace ChunithmMobile.Runtime
         private ScrollRect settingsScroll;
         private CanvasGroup settingsContentGroup;
         private Coroutine settingsTransition;
+        // Visual sliders emit one event for every pointer position. Coalesce
+        // those events so skin/audio refreshes happen once after the drag
+        // settles instead of rebuilding the gameplay surface every frame.
+        private Coroutine runtimeSettingsApplyRoutine;
+        private bool runtimeSettingsApplyPending;
+        private float runtimeSettingsApplyDeadline;
         private float settingsCursor;
         private AudioSource settingsPreviewSource;
         private string settingsCategory = "延迟";
+        private Text noteSpeedSettingsValue;
+        private const string GitHubProjectUrl = "https://github.com/HMQYHM/chunithm-mobile";
+        private const string SkinStudioUrl = "https://github.com/HMQYHM/chunithm-mobile/tree/main/CHUNITHM-Mobile-Unity/tools/SkinStudio";
         private static readonly string[] SettingsCategories = { "延迟", "画面", "皮肤", "音频", "更多" };
         private readonly Dictionary<string, Button> settingsCategoryButtons = new Dictionary<string, Button>();
-        private static readonly string[] UpdateLogVersions = { "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
+        private static readonly string[] UpdateLogVersions = { "0.3.3", "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
         private static readonly string[][] UpdateLogLineKeys = {
+            new[] {
+                "0.3.3 更新日志",
+                "0.3.3 1. 增加日文界面翻译",
+                "0.3.3 2. 增加 GitHub 项目主页入口",
+                "0.3.3 3. 发布 Android 与 iOS 构建"
+            },
             new[] {
                 "0.3.2 更新日志",
                 "0.3.2 1. 增加多种分数与 combo 显示模式",
@@ -724,7 +740,7 @@ namespace ChunithmMobile.Runtime
             Label("MOBILE", page, 26, TextAnchor.MiddleLeft, new Vector2(.075f, .38f), new Vector2(.55f, .47f), cyan);
             RectTransform menu = Panel("Menu", page, Color.clear, new Vector2(.64f, .14f), new Vector2(.94f, .86f));
             MenuButton("开始游戏", "进入歌曲列表", menu, .68f, cyan, OpenSongSelect);
-            MenuButton("联机模式", "远程房间与多人游玩", menu, .46f,
+            MenuButton("在线模式", "在线房间与多人游玩", menu, .46f,
                 HighContrastUi ? new Color(.04f, .74f, 1f) : new Color(.18f, .25f, .50f), OpenMultiplayer);
             MenuButton("设置", "音频、画面与判定", menu, .24f, surfaceRaised, () => SwitchTo(AppPage.Settings));
             MenuButton("数据管理", "导入、删除与重建索引", menu, .02f, surfaceRaised, OpenSongDataManagement);
@@ -886,7 +902,7 @@ namespace ChunithmMobile.Runtime
             AddMeteorBackground(page, MeteorBackgroundProfile.Quiet);
             ButtonText("‹", page, new Vector2(.02f, .90f), new Vector2(.07f, .98f), surfaceRaised,
                 () => SwitchTo(AppPage.Home));
-            Label("联机模式", page, 38, TextAnchor.MiddleLeft, new Vector2(.09f, .90f), new Vector2(.42f, .98f), Color.white);
+            Label("在线模式", page, 38, TextAnchor.MiddleLeft, new Vector2(.09f, .90f), new Vector2(.42f, .98f), Color.white);
 
             RectTransform connection = Panel("Multiplayer connection", page, surface,
                 new Vector2(.055f, .13f), new Vector2(.56f, .85f));
@@ -941,7 +957,7 @@ namespace ChunithmMobile.Runtime
 
             RectTransform statusPanel = Panel("Multiplayer status", page, surface,
                 new Vector2(.595f, .13f), new Vector2(.945f, .85f));
-            Label("联机大厅", statusPanel, 28, TextAnchor.MiddleLeft,
+            Label("大厅", statusPanel, 28, TextAnchor.MiddleLeft,
                 new Vector2(.09f, .86f), new Vector2(.34f, .96f), Color.white);
             multiplayerSearchInput = Input("搜索房间", statusPanel,
                 new Vector2(.35f, .86f), new Vector2(.65f, .955f));
@@ -967,7 +983,7 @@ namespace ChunithmMobile.Runtime
             roomScroll.vertical = true;
             roomScroll.movementType = ScrollRect.MovementType.Elastic;
             roomScroll.scrollSensitivity = 42f;
-            Label("最多 8 人 · 房主统一 MOD · 支持准备状态同步", statusPanel, 15,
+            Label("最多 8 人 · 个人房间 · 常驻房间由服务端后台创建", statusPanel, 15,
                 TextAnchor.LowerLeft, new Vector2(.09f, .135f), new Vector2(.91f, .195f), cyan);
             multiplayerSelectSongButton = ButtonText("同步当前选曲", statusPanel,
                 new Vector2(.09f, .035f), new Vector2(.30f, .125f), surfaceRaised, SendMultiplayerSongSelection);
@@ -2087,11 +2103,11 @@ namespace ChunithmMobile.Runtime
                 value => settings.JudgeOffsetMs = value);
             SkinSection("判定时间显示", cyan);
             SkinToggle("JC", "", settings.ShowJusticeCriticalMs,
-                value => ChangeSetting(() => settings.ShowJusticeCriticalMs = value));
+                value => ChangeSetting(() => settings.ShowJusticeCriticalMs = value, false));
             SkinToggle("JUSTICE", "", settings.ShowJusticeMs,
-                value => ChangeSetting(() => settings.ShowJusticeMs = value));
+                value => ChangeSetting(() => settings.ShowJusticeMs = value, false));
             SkinToggle("ATTACK", "", settings.ShowAttackMs,
-                value => ChangeSetting(() => settings.ShowAttackMs = value));
+                value => ChangeSetting(() => settings.ShowAttackMs = value, false));
             SettingsFooter("画面", () => ShowSettingsCategory("画面"));
         }
 
@@ -2218,7 +2234,7 @@ namespace ChunithmMobile.Runtime
                     Mathf.Clamp(settings.GameplayBelowNoteMetricMode - 2, 0, 8),
                     index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index + 2, 2, 10)), false);
             SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
-                value => ChangeSetting(() => settings.ShowGameplayFps = value));
+                value => ChangeSetting(() => settings.ShowGameplayFps = value, false));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
             SettingsSlider("背景亮度", "%", 0, 100, settings.BackgroundBrightness,
                 value => settings.BackgroundBrightness = Mathf.RoundToInt(value));
@@ -2239,7 +2255,7 @@ namespace ChunithmMobile.Runtime
             SettingsSlider("遮罩不透明度", "%", 20, 100, settings.TrackMaskOpacity,
                 value => settings.TrackMaskOpacity = Mathf.RoundToInt(value));
             }
-            SettingsOption("谱面流速", OriginalNoteSpeed.Label(settings.NoteSpeedOption),
+            noteSpeedSettingsValue = SettingsOption("谱面流速", OriginalNoteSpeed.Label(settings.NoteSpeedOption),
                 () => ChangeNoteSpeed(-1), () => ChangeNoteSpeed(1));
             SettingsSectionTitle("触控与 AIR", "触控板、判定区域和反馈", cyan);
             SettingsSlider("触控板 / AIR 分界", "%", 8, 45, settings.TouchpadHeight,
@@ -2258,18 +2274,18 @@ namespace ChunithmMobile.Runtime
             SettingsSlider("AIR 区域上边界", "%", settings.TouchpadHeight + 5, 100, settings.AirAreaTop,
                 value => settings.AirAreaTop = Mathf.Max(Mathf.RoundToInt(value), settings.AirAreaBottom + 5));
             SkinToggle("AIR 平均高度线", "", settings.ShowAirGuide,
-                value => ChangeSetting(() => settings.ShowAirGuide = value));
+                value => ChangeSetting(() => settings.ShowAirGuide = value, false));
             SkinToggle("触摸反馈", "", settings.ShowTouchFeedback,
-                value => ChangeSetting(() => settings.ShowTouchFeedback = value));
+                value => ChangeSetting(() => settings.ShowTouchFeedback = value, false));
             SkinToggle("触控板显示", "游玩界面显示触控板", settings.ShowTouchpadVisual,
-                value => ChangeSetting(() => settings.ShowTouchpadVisual = value));
+                value => ChangeSetting(() => settings.ShowTouchpadVisual = value, false));
             SkinToggle("触控板 / AIR 分界线", "", settings.ShowInputBoundary,
-                value => ChangeSetting(() => settings.ShowInputBoundary = value));
+                value => ChangeSetting(() => settings.ShowInputBoundary = value, false));
             SettingsSectionTitle("游玩 HUD", "暂停、分数、COMBO 与歌曲信息", violet);
             SkinToggle("暂停按钮需连续点击两次", "", settings.PauseRequiresDoubleTap,
-                value => ChangeSetting(() => settings.PauseRequiresDoubleTap = value));
+                value => ChangeSetting(() => settings.PauseRequiresDoubleTap = value, false));
             SkinToggle("游玩歌曲信息", "", settings.ShowGameplaySongInfo,
-                value => ChangeSetting(() => settings.ShowGameplaySongInfo = value));
+                value => ChangeSetting(() => settings.ShowGameplaySongInfo = value, false));
             SettingsSlider("分数大小", "%", 50, 180, settings.GameplayScoreScale,
                 value => settings.GameplayScoreScale = Mathf.RoundToInt(value));
             SettingsSlider("COMBO 大小", "%", 50, 180, settings.GameplayComboScale,
@@ -2303,8 +2319,6 @@ namespace ChunithmMobile.Runtime
                 GameplaySkinManager.SetActive(settings.GameplaySkinId);
                 settings.Save(); ApplyRuntimeSettings(); RenderSettingsCategory(false);
             }, false);
-            SkinToggle("AIR 拖尾颜色", "彩虹色", settings.AirTrailRainbow,
-                value => ChangeSetting(() => settings.AirTrailRainbow = value));
             GameplaySkinResourceSummary activeSummary = GameplaySkinManager.GetResourceSummary(GameplaySkinManager.Active);
             string resourceState = GameplaySkinManager.Active.BuiltIn ? "内置基础资源"
                 : activeSummary.Missing.Count == 0 ? "资源完整"
@@ -2312,7 +2326,13 @@ namespace ChunithmMobile.Runtime
             SkinAction("当前皮肤资源", resourceState, null);
             SkinAction("导入游玩皮肤", "支持部分资源，缺失项自动使用内置基础皮肤", BeginGameplaySkinImport);
             SkinAction("管理游玩皮肤", "›", OpenGameplaySkinManagement);
+            SkinAction("想自己制作皮肤🤔？", "打开 Skin Studio ↗", OpenSkinStudio);
             SettingsFooter("音频", () => ShowSettingsCategory("音频"));
+        }
+
+        private static void OpenSkinStudio()
+        {
+            Application.OpenURL(SkinStudioUrl);
         }
 
         private void SettingsSectionTitle(string title, string subtitle, Color accentColor)
@@ -2472,9 +2492,15 @@ namespace ChunithmMobile.Runtime
             SettingsAction("索引状态", SongCatalog.LastLoadUsedCache ? "本次沿用缓存" : "本次已重建", null);
             SettingsAction("制作与感谢", "查看制作与感谢", ShowCredits);
             SettingsAction("导出最近日志", "使用系统文件保存窗口", ExportLogs);
+            SettingsAction("GitHub 项目主页", "打开 GitHub", OpenGitHubProject);
             SettingsAction("关于与许可", "CHUNITHM Mobile " + Application.version, ShowAbout);
             SettingsAction("恢复全部默认设置", "需要确认",
                 () => ShowModal("恢复默认", "确定恢复全部界面、判定和音频设置？", ResetSettings, true));
+        }
+
+        private static void OpenGitHubProject()
+        {
+            Application.OpenURL(GitHubProjectUrl);
         }
 
         private void BuildUpdateLogsSettings()
@@ -2529,8 +2555,8 @@ namespace ChunithmMobile.Runtime
         private void ChangeLanguage(int direction)
         {
             int next = settings.LanguageMode + Math.Sign(direction);
-            if (next < -1) next = 2;
-            if (next > 2) next = -1;
+            if (next < -1) next = 3;
+            if (next > 3) next = -1;
             settings.LanguageMode = next;
             settings.Save();
             UiLocalization.SetLanguage(settings.EffectiveLanguage);
@@ -2673,14 +2699,16 @@ namespace ChunithmMobile.Runtime
                 new Vector2(.51f, .12f), new Vector2(.96f, .88f), action == null ? muted : cyan);
         }
 
-        private void SettingsOption(string title, string value, UnityEngine.Events.UnityAction previous,
+        private Text SettingsOption(string title, string value, UnityEngine.Events.UnityAction previous,
             UnityEngine.Events.UnityAction next)
         {
             RectTransform row = SettingsRect(title, 108f, surfaceRaised);
             FitModText(Label(title, row, 23, TextAnchor.MiddleLeft, new Vector2(.03f, .12f), new Vector2(.43f, .88f), Color.white), 23);
             ButtonText("‹", row, new Vector2(.46f, .20f), new Vector2(.54f, .80f), surface, previous);
-            FitModText(Label(value, row, 21, TextAnchor.MiddleCenter, new Vector2(.55f, .12f), new Vector2(.87f, .88f), cyan), 21);
+            Text valueLabel = Label(value, row, 21, TextAnchor.MiddleCenter, new Vector2(.55f, .12f), new Vector2(.87f, .88f), cyan);
+            FitModText(valueLabel, 21);
             ButtonText("›", row, new Vector2(.88f, .20f), new Vector2(.96f, .80f), surface, next);
+            return valueLabel;
         }
 
         private void SettingsStepper(string title, Func<int> current, Action<int> changed)
@@ -2788,8 +2816,7 @@ namespace ChunithmMobile.Runtime
                     valueLabel.text = valueFormatter != null ? valueFormatter(rounded) : rounded + suffix;
                 if (directInput != null) directInput.SetTextWithoutNotify(rounded.ToString(CultureInfo.InvariantCulture));
                 changed?.Invoke(value);
-                settings.Save();
-                ApplyRuntimeSettings();
+                QueueRuntimeSettingsApply();
             });
             if (directInput != null) directInput.onEndEdit.AddListener(text => {
                 if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
@@ -2797,6 +2824,26 @@ namespace ChunithmMobile.Runtime
                 directInput.SetTextWithoutNotify(Mathf.RoundToInt(slider.value).ToString(CultureInfo.InvariantCulture));
             });
             return slider;
+        }
+
+        private void QueueRuntimeSettingsApply()
+        {
+            runtimeSettingsApplyPending = true;
+            runtimeSettingsApplyDeadline = Time.unscaledTime + .08f;
+            if (runtimeSettingsApplyRoutine == null)
+                runtimeSettingsApplyRoutine = StartCoroutine(ApplyQueuedRuntimeSettings());
+        }
+
+        private IEnumerator ApplyQueuedRuntimeSettings()
+        {
+            while (runtimeSettingsApplyPending) {
+                yield return null;
+                if (Time.unscaledTime < runtimeSettingsApplyDeadline) continue;
+                runtimeSettingsApplyPending = false;
+                settings?.Save();
+                ApplyRuntimeSettings();
+            }
+            runtimeSettingsApplyRoutine = null;
         }
 
         private void SettingsFooter(string next, UnityEngine.Events.UnityAction action)
@@ -2817,8 +2864,14 @@ namespace ChunithmMobile.Runtime
             if (next == settings.NoteSpeedOption) return;
             settings.NoteSpeedOption = next;
             settings.Save();
-            ApplyRuntimeSettings();
-            RenderSettingsCategory(false);
+            if (noteSpeedSettingsValue != null)
+                noteSpeedSettingsValue.text = OriginalNoteSpeed.Label(next);
+            // The setting page does not need a full skin/layout rebuild for a
+            // speed-only change. Apply only the renderer value when gameplay
+            // is already alive, and coalesce the normal runtime refresh.
+            if (gameplayChartRenderer != null)
+                gameplayChartRenderer.VisualSpeed = OriginalNoteSpeed.VisualMultiplier(next);
+            QueueRuntimeSettingsApply();
         }
 
         private static void SetSharedInputBoundary(AppSettings target, int value)
@@ -2831,12 +2884,12 @@ namespace ChunithmMobile.Runtime
             target.AirAreaTop = Mathf.Max(target.AirAreaTop, boundary + 5);
         }
 
-        private void ChangeSetting(Action mutation)
+        private void ChangeSetting(Action mutation, bool rebuild = true)
         {
             mutation?.Invoke();
             settings.Save();
-            ApplyRuntimeSettings();
-            RenderSettingsCategory(false);
+            if (rebuild) RenderSettingsCategory(false);
+            QueueRuntimeSettingsApply();
         }
 
         private void BuildLayoutEditor()
@@ -2851,11 +2904,14 @@ namespace ChunithmMobile.Runtime
             layoutEditorPreview.offsetMin = Vector2.zero; layoutEditorPreview.offsetMax = Vector2.zero;
 
             editorTouchpadHandle = EditorBoundary("触控板 / AIR 分界", new Color(.03f, .86f, .92f, .22f), value =>
-                SetSharedInputBoundary(draftSettings, Percent(value.y, 8, 45)));
+                EditSkinElementPosition("touchpad", new Vector2(.5f, value.y), () =>
+                    SetSharedInputBoundary(draftSettings, Percent(value.y, 8, 45))));
             editorTouchpadWidthHandle = EditorVerticalBoundary("触控板横向宽度", new Color(.08f, .92f, .72f, .22f), value =>
-                draftSettings.TouchpadWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) * 200f), 60, 100));
+                EditSkinElementSize("touchpad", Mathf.RoundToInt((value.x - .5f) * 200f), () =>
+                    draftSettings.TouchpadWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) * 200f), 60, 100)));
             editorAirTopHandle = EditorBoundary("AIR 区域上边界", new Color(.68f, .72f, 1f, .22f), value =>
-                draftSettings.AirAreaTop = Mathf.Max(Percent(value.y, 20, 100), draftSettings.AirAreaBottom + 5));
+                EditSkinElementPosition("airZone", new Vector2(.5f, value.y), () =>
+                    draftSettings.AirAreaTop = Mathf.Max(Percent(value.y, 20, 100), draftSettings.AirAreaBottom + 5)));
             editorTrackHandle = EditorBoundary("轨道整体上下位置", new Color(.22f, 1f, .62f, .20f), value =>
                 draftSettings.TrackVerticalOffset = Mathf.Clamp(Mathf.RoundToInt((value.y - .5f) * 100f), -40, 40));
             editorTrackWidthHandle = EditorVerticalBoundary("轨道下端宽度", new Color(1f, .48f, .20f, .24f), value =>
@@ -2867,27 +2923,37 @@ namespace ChunithmMobile.Runtime
                 draftSettings.TrackMaskHeight = Mathf.Clamp(Mathf.RoundToInt((1f - value.y) * 100f), 4, 45);
             });
             editorPauseHandle = EditorBox("暂停按钮", new Color(.95f, .46f, .18f, 1f), new Vector2(110, 104), value => {
-                draftSettings.GameplayPauseX = Mathf.Clamp(Percent(value.x), 5, 95);
-                draftSettings.GameplayPauseY = Mathf.Clamp(Percent(value.y), 8, 95);
-            }, delta => draftSettings.GameplayPauseScale = Mathf.Clamp(
-                draftSettings.GameplayPauseScale + Mathf.RoundToInt(delta), 50, 180));
+                EditSkinElementPosition("pauseButton", value, () => {
+                    draftSettings.GameplayPauseX = Mathf.Clamp(Percent(value.x), 5, 95);
+                    draftSettings.GameplayPauseY = Mathf.Clamp(Percent(value.y), 8, 95);
+                });
+            }, delta => EditSkinElementSize("pauseButton", delta, () => draftSettings.GameplayPauseScale = Mathf.Clamp(
+                draftSettings.GameplayPauseScale + Mathf.RoundToInt(delta), 50, 180)));
             editorHudHandle = EditorBox("得分与判定详情", cyan, new Vector2(350, 160), value => {
-                draftSettings.GameplayHudX = Percent(value.x); draftSettings.GameplayHudY = Percent(value.y);
-            }, delta => draftSettings.GameplayScoreScale = Mathf.Clamp(
-                draftSettings.GameplayScoreScale + Mathf.RoundToInt(delta), 50, 180));
+                EditSkinElementPosition("scoreHud", value, () => {
+                    draftSettings.GameplayHudX = Percent(value.x); draftSettings.GameplayHudY = Percent(value.y);
+                });
+            }, delta => EditSkinElementSize("scoreHud", delta, () => draftSettings.GameplayScoreScale = Mathf.Clamp(
+                draftSettings.GameplayScoreScale + Mathf.RoundToInt(delta), 50, 180)));
             editorComboHandle = EditorBox("COMBO", new Color(1f, .72f, .12f, 1f), new Vector2(320, 180), value => {
-                draftSettings.GameplayComboX = Percent(value.x); draftSettings.GameplayComboY = Percent(value.y);
-            }, delta => draftSettings.GameplayComboScale = Mathf.Clamp(
-                draftSettings.GameplayComboScale + Mathf.RoundToInt(delta), 50, 180));
+                EditSkinElementPosition("comboHud", value, () => {
+                    draftSettings.GameplayComboX = Percent(value.x); draftSettings.GameplayComboY = Percent(value.y);
+                });
+            }, delta => EditSkinElementSize("comboHud", delta, () => draftSettings.GameplayComboScale = Mathf.Clamp(
+                draftSettings.GameplayComboScale + Mathf.RoundToInt(delta), 50, 180)));
             editorJudgementHandle = EditorBox("当前判定", new Color(.42f, 1f, .54f), new Vector2(430, 100), value => {
-                draftSettings.GameplayJudgementX = Percent(value.x, 5, 95);
-                draftSettings.GameplayJudgementY = Percent(value.y, 5, 95);
-            }, delta => draftSettings.GameplayJudgementScale = Mathf.Clamp(
-                draftSettings.GameplayJudgementScale + Mathf.RoundToInt(delta), 50, 180));
+                EditSkinElementPosition("judgement", value, () => {
+                    draftSettings.GameplayJudgementX = Percent(value.x, 5, 95);
+                    draftSettings.GameplayJudgementY = Percent(value.y, 5, 95);
+                });
+            }, delta => EditSkinElementSize("judgement", delta, () => draftSettings.GameplayJudgementScale = Mathf.Clamp(
+                draftSettings.GameplayJudgementScale + Mathf.RoundToInt(delta), 50, 180)));
             editorSongInfoHandle = EditorBox("歌曲信息", new Color(.92f, .36f, 1f, 1f), new Vector2(460, 132), value => {
-                draftSettings.GameplaySongInfoX = Percent(value.x); draftSettings.GameplaySongInfoY = Percent(value.y);
-            }, delta => draftSettings.GameplaySongInfoScale = Mathf.Clamp(
-                draftSettings.GameplaySongInfoScale + Mathf.RoundToInt(delta), 50, 180));
+                EditSkinElementPosition("songInfo", value, () => {
+                    draftSettings.GameplaySongInfoX = Percent(value.x); draftSettings.GameplaySongInfoY = Percent(value.y);
+                });
+            }, delta => EditSkinElementSize("songInfo", delta, () => draftSettings.GameplaySongInfoScale = Mathf.Clamp(
+                draftSettings.GameplaySongInfoScale + Mathf.RoundToInt(delta), 50, 180)));
 
             Button menuButton = ButtonText("", layoutEditorLayer, Vector2.one, Vector2.one,
                 new Color(.02f, .36f, .44f, .98f), ToggleLayoutEditorMenu);
@@ -3096,6 +3162,11 @@ namespace ChunithmMobile.Runtime
         private void OpenLayoutEditor()
         {
             draftSettings = CloneSettings(settings);
+            if (draftSettings.GameplayLayoutOverrides == null)
+                draftSettings.GameplayLayoutOverrides = new List<GameplayLayoutOverride>();
+            if (GameplaySkinManager.Active != null && !GameplaySkinManager.Active.BuiltIn)
+                foreach (string id in new[] { "pauseButton", "scoreHud", "comboHud", "judgement", "songInfo", "touchpad", "airZone" })
+                    EnsureDraftLayoutOverride(id);
             SetPageImmediate(pages[currentPage], false);
             SetPageImmediate(pages[AppPage.Gameplay], true);
             SetGameplayScene(true);
@@ -3132,11 +3203,19 @@ namespace ChunithmMobile.Runtime
                 draftSettings.EditorGuideLengthPercent, value => Mathf.RoundToInt(value) + "%");
             SetButtonLabel(layoutEditorTouchpadButton, UiLocalization.Translate("触控板显示") + "  " + OnOff(draftSettings.ShowTouchpadVisual));
             SetButtonLabel(layoutEditorBoundaryButton, UiLocalization.Translate("分界线显示") + "  " + OnOff(draftSettings.ShowInputBoundary));
+            ApplyGameplaySkinLayout(GameplaySkinManager.Style);
+            ApplyGameplayElementLayout(draftSettings, preserveSkinLayout: true);
+            ApplyGameplayLayoutOverrides(GameplaySkinManager.Style, draftSettings);
             PositionEditorBox(editorPauseHandle, draftSettings.GameplayPauseX, draftSettings.GameplayPauseY);
             PositionEditorBox(editorHudHandle, draftSettings.GameplayHudX, draftSettings.GameplayHudY);
             PositionEditorBox(editorComboHandle, draftSettings.GameplayComboX, draftSettings.GameplayComboY);
             PositionEditorBox(editorJudgementHandle, draftSettings.GameplayJudgementX, draftSettings.GameplayJudgementY);
             PositionEditorBox(editorSongInfoHandle, draftSettings.GameplaySongInfoX, draftSettings.GameplaySongInfoY);
+            PositionSkinEditorBox(editorPauseHandle, "pauseButton");
+            PositionSkinEditorBox(editorHudHandle, "scoreHud");
+            PositionSkinEditorBox(editorComboHandle, "comboHud");
+            PositionSkinEditorBox(editorJudgementHandle, "judgement");
+            PositionSkinEditorBox(editorSongInfoHandle, "songInfo");
             PositionEditorBoundary(editorTouchpadHandle, draftSettings.TouchpadHeight);
             PositionEditorTouchWidth(editorTouchpadWidthHandle, draftSettings.TouchpadWidth);
             PositionEditorBoundary(editorAirTopHandle, draftSettings.AirAreaTop);
@@ -3146,13 +3225,14 @@ namespace ChunithmMobile.Runtime
             PositionEditorBoundary(editorTrackMaskHandle, 100 - draftSettings.TrackMaskHeight);
             if (editorTrackMaskHandle != null)
                 editorTrackMaskHandle.gameObject.SetActive(draftSettings.TrackMaskEnabled);
-            ApplyGameplayElementLayout(draftSettings);
             ResizeEditorBox(editorHudHandle, new Vector2(350, 160), draftSettings.GameplayScoreScale);
             ResizeEditorBox(editorComboHandle, new Vector2(320, 180), draftSettings.GameplayComboScale);
             ResizeEditorBox(editorJudgementHandle, new Vector2(430, 100), draftSettings.GameplayJudgementScale);
             ResizeEditorBox(editorSongInfoHandle, new Vector2(460, 132), draftSettings.GameplaySongInfoScale);
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(true);
-            if (gameplayTouchpad != null) {
+            bool skinTouchpadLayout = UseSkinEditorOverride("touchpad");
+            bool skinAirLayout = UseSkinEditorOverride("airZone");
+            if (gameplayTouchpad != null && !skinTouchpadLayout) {
                 float width = draftSettings.TouchpadWidth / 100f;
                 gameplayTouchpad.anchorMin = new Vector2((1f - width) * .5f, 0);
                 gameplayTouchpad.anchorMax = new Vector2((1f + width) * .5f, draftSettings.TouchpadHeight / 100f);
@@ -3163,17 +3243,22 @@ namespace ChunithmMobile.Runtime
                 gameplayTouchpad.gameObject.SetActive(draftSettings.ShowTouchpadVisual);
             }
             float editorGroundHeight = Mathf.Clamp(draftSettings.GroundAreaHeight / 100f, .08f, .45f);
-            inputRig?.Ground?.SetPlayArea(new Rect(0, 0, 1, editorGroundHeight));
-            inputRig?.Ground?.SetTouchpadWidth(draftSettings.TouchpadWidth / 100f);
+            if (!skinTouchpadLayout) {
+                inputRig?.Ground?.SetPlayArea(new Rect(0, 0, 1, editorGroundHeight));
+                inputRig?.Ground?.SetTouchpadWidth(draftSettings.TouchpadWidth / 100f);
+            }
             inputRig?.Ground?.SetContactRangeLanes(draftSettings.TouchContactRangeTenths / 10f);
             float editorTouchOpacity = draftSettings.TouchpadOpacity / 100f;
             foreach (Image lane in gameplayLaneHighlights)
                 if (lane != null) lane.color = new Color(.02f, .15f, .19f, .72f * editorTouchOpacity);
             gameplayTouchContacts?.Configure(draftSettings.ShowTouchFeedback, editorGroundHeight,
                 draftSettings.TouchEffectOpacity / 100f);
-            UpdateAirZone(gameplayAirZone, draftSettings.TouchpadHeight / 100f, draftSettings.AirAreaTop / 100f);
-            PositionHorizontalLine(gameplayAirBoundaryBottom, draftSettings.TouchpadHeight / 100f);
-            PositionHorizontalLine(gameplayAirBoundaryTop, draftSettings.AirAreaTop / 100f);
+            if (!skinAirLayout)
+                UpdateAirZone(gameplayAirZone, draftSettings.TouchpadHeight / 100f, draftSettings.AirAreaTop / 100f);
+            if (!skinTouchpadLayout)
+                PositionHorizontalLine(gameplayAirBoundaryBottom, draftSettings.TouchpadHeight / 100f);
+            if (!skinAirLayout)
+                PositionHorizontalLine(gameplayAirBoundaryTop, draftSettings.AirAreaTop / 100f);
             gameplayAirBoundaryBottom.gameObject.SetActive(draftSettings.ShowInputBoundary);
             gameplayAirBoundaryTop.gameObject.SetActive(draftSettings.ShowInputBoundary);
             editorTouchpadHandle.gameObject.SetActive(draftSettings.ShowInputBoundary);
@@ -3205,6 +3290,11 @@ namespace ChunithmMobile.Runtime
             UpdateEditorHandleLabel(editorTrackTopWidthHandle, "轨道上端宽度  " + draftSettings.TrackTopWidth + "%");
             UpdateEditorHandleLabel(editorTrackMaskHandle, "遮罩高度  " + draftSettings.TrackMaskHeight + "%");
             UpdateEditorHandleLabel(editorPauseHandle, $"暂停按钮  {draftSettings.GameplayPauseX}% / {draftSettings.GameplayPauseY}%");
+            ApplySkinEditorVisibility();
+            // Reapply the package baseline after legacy preview controls. This
+            // keeps authored skin rectangles stable while the editor is open.
+            ApplyGameplaySkinLayout(GameplaySkinManager.Style);
+            ApplyGameplayLayoutOverrides(GameplaySkinManager.Style, draftSettings);
         }
 
         private static void SetLayoutEditorSliderValue(Slider slider, Text valueLabel, float value,
@@ -3319,6 +3409,10 @@ namespace ChunithmMobile.Runtime
         private void ResetLayoutDraft()
         {
             if (draftSettings == null) return;
+            if (GameplaySkinManager.Active != null && !GameplaySkinManager.Active.BuiltIn &&
+                draftSettings.GameplayLayoutOverrides != null)
+                draftSettings.GameplayLayoutOverrides.RemoveAll(item => item != null &&
+                    string.Equals(item.SkinId, GameplaySkinManager.Active.Id, StringComparison.OrdinalIgnoreCase));
             AppSettings defaults = new AppSettings();
             draftSettings.TouchpadHeight = defaults.TouchpadHeight;
             draftSettings.TouchpadWidth = defaults.TouchpadWidth;
@@ -3564,12 +3658,16 @@ namespace ChunithmMobile.Runtime
             gameplaySongInfoCover.sprite = null;
             gameplaySongInfoCover.color = new Color(.08f, .14f, .18f, 1f);
             GameplaySkinElementDefinition coverOverride = GameplaySkinManager.Style.LayoutElement("songCover");
-            if (coverOverride == null || string.IsNullOrWhiteSpace(coverOverride.Image)) {
+            bool skinOwnsCover = coverOverride != null && coverOverride.Visible &&
+                !string.IsNullOrWhiteSpace(coverOverride.Image) &&
+                GameplaySkinManager.LoadSkinSprite(GameplaySkinManager.Active, coverOverride.Image) != null;
+            if (!skinOwnsCover) {
                 if (!string.IsNullOrWhiteSpace(song.JacketPath))
                     LocalCoverLoader.Load(this, song.JacketPath, gameplaySongInfoCover, true);
             }
-            // LocalCoverLoader is asynchronous; apply the declarative layer last
-            // and skip the loader above when the active skin owns the cover.
+            // LocalCoverLoader is asynchronous; apply the declarative layer last.
+            // An absent or unreadable skin cover deliberately leaves the song's
+            // own jacket as the visible fallback.
             ApplyGameplaySkinLayout(GameplaySkinManager.Style);
         }
 
@@ -4210,6 +4308,10 @@ namespace ChunithmMobile.Runtime
             level.resizeTextForBestFit = true; level.resizeTextMinSize = 11; level.resizeTextMaxSize = 17;
             Text score = Label("", body, 22, TextAnchor.MiddleLeft, new Vector2(.07f, .15f), new Vector2(.68f, .285f), Color.white);
             score.resizeTextForBestFit = true; score.resizeTextMinSize = 13; score.resizeTextMaxSize = 22;
+            Text achievement = Label("", body, 17, TextAnchor.MiddleRight, new Vector2(.54f, .14f), new Vector2(.68f, .29f), Color.white, true);
+            achievement.fontStyle = FontStyle.Bold;
+            achievement.resizeTextForBestFit = true; achievement.resizeTextMinSize = 11; achievement.resizeTextMaxSize = 17;
+            achievement.gameObject.SetActive(false);
             Text rank = Label("", body, 31, TextAnchor.MiddleRight, new Vector2(.68f, .14f), new Vector2(.93f, .29f), inactive);
             rank.resizeTextForBestFit = true; rank.resizeTextMinSize = 17; rank.resizeTextMaxSize = 31;
             Text bpm = Label("", body, 15, TextAnchor.MiddleLeft, new Vector2(.07f, .055f), new Vector2(.48f, .15f), muted);
@@ -4217,7 +4319,7 @@ namespace ChunithmMobile.Runtime
             SongCardVisual visual = new SongCardVisual {
                 Card = card, Button = button, Border = card.GetComponent<Image>(), Art = art,
                 Placeholder = placeholder, Title = title, Artist = artist, Level = level,
-                Score = score, Rank = rank, Bpm = bpm, Duration = duration
+                Score = score, Achievement = achievement, Rank = rank, Bpm = bpm, Duration = duration
             };
             // The card root owns the click. Child graphics such as the jacket,
             // caption and labels do not need their own raycast target; leaving
@@ -4281,6 +4383,7 @@ namespace ChunithmMobile.Runtime
             bool hasChart = chart != null;
             visual.Level.gameObject.SetActive(hasChart);
             visual.Score.gameObject.SetActive(false);
+            visual.Achievement.gameObject.SetActive(false);
             visual.Rank.gameObject.SetActive(false);
             if (hasChart)
             {
@@ -4294,11 +4397,71 @@ namespace ChunithmMobile.Runtime
                     visual.Score.gameObject.SetActive(true);
                     visual.Rank.gameObject.SetActive(true);
                 }
+                if (SongRecordStore.TryGetAchievement(song.Root, chart.Difficulty, chart.Path,
+                    out SongAchievement achievement))
+                {
+                    ConfigureSongAchievement(visual.Achievement, achievement);
+                    visual.Achievement.gameObject.SetActive(true);
+                }
+                ApplySongCardAchievementLayout(visual, visual.Achievement.gameObject.activeSelf);
             }
+            else ApplySongCardAchievementLayout(visual, false);
             visual.Bpm.text = "BPM  " + (song.Bpm ?? "-");
             visual.Duration.text = song.DurationText ?? "";
             visual.Duration.gameObject.SetActive(!string.IsNullOrWhiteSpace(song.DurationText));
             PositionVirtualSongCard(visual.Card, index);
+        }
+
+        private static void SetNormalizedTextRange(Text text, Vector2 min, Vector2 max)
+        {
+            if (text == null) return;
+            RectTransform rect = text.rectTransform;
+            rect.anchorMin = min;
+            rect.anchorMax = max;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        private static string SongAchievementLabel(SongAchievement achievement)
+        {
+            switch (achievement)
+            {
+                case SongAchievement.ACJ: return "ACJ";
+                case SongAchievement.AJ: return "AJ";
+                case SongAchievement.FC: return "FC";
+                default: return "";
+            }
+        }
+
+        private static Color SongAchievementColor(SongAchievement achievement)
+        {
+            switch (achievement)
+            {
+                case SongAchievement.ACJ: return new Color(1f, .82f, .10f, 1f);
+                case SongAchievement.AJ: return new Color(.25f, .68f, 1f, 1f);
+                case SongAchievement.FC: return new Color(.28f, .90f, .45f, 1f);
+                default: return Color.white;
+            }
+        }
+
+        private static void ConfigureSongAchievement(Text text, SongAchievement achievement)
+        {
+            if (text == null) return;
+            text.text = SongAchievementLabel(achievement);
+            text.color = SongAchievementColor(achievement);
+            text.fontStyle = FontStyle.Bold;
+        }
+
+        private static void ApplySongCardAchievementLayout(SongCardVisual visual, bool showAchievement)
+        {
+            if (visual == null) return;
+            // Reserve a narrow slot immediately before the rank only when a
+            // marker is present. Without a marker, the original score width is
+            // restored so old cards keep their exact layout.
+            SetNormalizedTextRange(visual.Score, new Vector2(.07f, .15f),
+                showAchievement ? new Vector2(.53f, .285f) : new Vector2(.68f, .285f));
+            SetNormalizedTextRange(visual.Achievement, new Vector2(.54f, .14f), new Vector2(.68f, .29f));
+            SetNormalizedTextRange(visual.Rank, new Vector2(.68f, .14f), new Vector2(.93f, .29f));
         }
 
         private void ReleaseAllSongCards()
@@ -4429,13 +4592,41 @@ namespace ChunithmMobile.Runtime
                 Text difficulty = Label(chart.Difficulty, button.transform, 21, TextAnchor.MiddleLeft, new Vector2(.035f, .12f), new Vector2(.34f, .88f), Color.white);
                 difficulty.resizeTextForBestFit = true; difficulty.resizeTextMinSize = 12; difficulty.resizeTextMaxSize = 21;
                 Label("Lv. " + chart.Level, button.transform, 19, TextAnchor.MiddleLeft, new Vector2(.36f, .12f), new Vector2(.53f, .88f), active ? Color.white : muted);
+                Text detailScore = null;
+                Text detailAchievement = Label("", button.transform, 16, TextAnchor.MiddleRight,
+                    new Vector2(.70f, .12f), new Vector2(.82f, .88f), Color.white, true);
+                detailAchievement.fontStyle = FontStyle.Bold;
+                detailAchievement.resizeTextForBestFit = true;
+                detailAchievement.resizeTextMinSize = 10;
+                detailAchievement.resizeTextMaxSize = 16;
+                detailAchievement.gameObject.SetActive(false);
+                Text detailRank = null;
                 if (SongRecordStore.TryGet(selectedSong.Root, chart.Difficulty, chart.Path, out int bestScore))
                 {
-                    Text score = Label(bestScore.ToString("N0"), button.transform, 18, TextAnchor.MiddleRight, new Vector2(.54f, .12f), new Vector2(.82f, .88f), Color.white);
-                    score.resizeTextForBestFit = true; score.resizeTextMinSize = 12; score.resizeTextMaxSize = 18;
-                    Label(ResultViewModel.RankForScore(bestScore), button.transform, 22, TextAnchor.MiddleRight, new Vector2(.83f, .12f), new Vector2(.965f, .88f), Color.white);
+                    detailScore = Label(bestScore.ToString("N0"), button.transform, 18, TextAnchor.MiddleRight,
+                        new Vector2(.54f, .12f), new Vector2(.82f, .88f), Color.white);
+                    detailScore.resizeTextForBestFit = true; detailScore.resizeTextMinSize = 12; detailScore.resizeTextMaxSize = 18;
+                    detailRank = Label(ResultViewModel.RankForScore(bestScore), button.transform, 22, TextAnchor.MiddleRight,
+                        new Vector2(.83f, .12f), new Vector2(.965f, .88f), Color.white);
                 }
+                bool hasAchievement = SongRecordStore.TryGetAchievement(selectedSong.Root, chart.Difficulty,
+                    chart.Path, out SongAchievement achievement);
+                if (hasAchievement)
+                {
+                    ConfigureSongAchievement(detailAchievement, achievement);
+                    detailAchievement.gameObject.SetActive(true);
+                }
+                ApplyDetailAchievementLayout(detailScore, detailAchievement, detailRank, hasAchievement);
             }
+        }
+
+        private static void ApplyDetailAchievementLayout(Text score, Text achievement, Text rank, bool showAchievement)
+        {
+            if (score != null)
+                SetNormalizedTextRange(score, new Vector2(.54f, .12f),
+                    showAchievement ? new Vector2(.68f, .88f) : new Vector2(.82f, .88f));
+            SetNormalizedTextRange(achievement, new Vector2(.70f, .12f), new Vector2(.82f, .88f));
+            SetNormalizedTextRange(rank, new Vector2(.83f, .12f), new Vector2(.965f, .88f));
         }
 
         private void SelectChart(SongChartEntry chart)
@@ -6037,7 +6228,6 @@ namespace ChunithmMobile.Runtime
             if (gameplayChartRenderer != null)
             {
                 gameplayChartRenderer.RefreshSkin();
-                gameplayChartRenderer.ConfigureAirTrail(settings.AirTrailRainbow);
                 gameplayChartRenderer.VisualSpeed = OriginalNoteSpeed.VisualMultiplier(settings.NoteSpeedOption);
             }
             gameplayPlayfield?.RefreshSkin();
@@ -6067,6 +6257,7 @@ namespace ChunithmMobile.Runtime
             if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(settings.ShowGameplaySongInfo);
             ApplyGameplaySkinLayout(gameplaySkin);
+            ApplyGameplayLayoutOverrides(gameplaySkin, settings);
             ApplySkinInputAreas(gameplaySkin);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
             FindObjectOfType<RuntimeLoadingOverlay>()?.SetHighContrastPalette(HighContrastUi);
@@ -6108,7 +6299,7 @@ namespace ChunithmMobile.Runtime
             rect.anchoredPosition = Vector2.zero;
         }
 
-        private void ApplyGameplayElementLayout(AppSettings source)
+        private void ApplyGameplayElementLayout(AppSettings source, bool preserveSkinLayout = false)
         {
             if (source == null) return;
             float pauseScale = Mathf.Clamp(source.GameplayPauseScale, 50, 180) / 100f;
@@ -6117,15 +6308,16 @@ namespace ChunithmMobile.Runtime
             float judgementScale = Mathf.Clamp(source.GameplayJudgementScale, 50, 180) / 100f;
             float songScale = Mathf.Clamp(source.GameplaySongInfoScale, 50, 180) / 100f;
 
-            PositionGameplayElement(gameplayPauseButton?.transform as RectTransform,
+            bool Skin(string id) => preserveSkinLayout && UseSkinEditorOverride(id);
+            if (!Skin("pauseButton")) PositionGameplayElement(gameplayPauseButton?.transform as RectTransform,
                 source.GameplayPauseX, source.GameplayPauseY, new Vector2(110, 104) * pauseScale);
-            PositionGameplayElement(gameplayHud, source.GameplayHudX, source.GameplayHudY,
+            if (!Skin("scoreHud")) PositionGameplayElement(gameplayHud, source.GameplayHudX, source.GameplayHudY,
                 new Vector2(350, 160) * scoreScale);
-            PositionGameplayElement(gameplayCombo?.rectTransform, source.GameplayComboX, source.GameplayComboY,
+            if (!Skin("comboHud")) PositionGameplayElement(gameplayCombo?.rectTransform, source.GameplayComboX, source.GameplayComboY,
                 new Vector2(320, 180) * comboScale);
-            PositionGameplayElement(gameplayJudgementBlock, source.GameplayJudgementX, source.GameplayJudgementY,
+            if (!Skin("judgement")) PositionGameplayElement(gameplayJudgementBlock, source.GameplayJudgementX, source.GameplayJudgementY,
                 new Vector2(430, 100) * judgementScale);
-            PositionGameplayElement(gameplaySongInfoBlock, source.GameplaySongInfoX, source.GameplaySongInfoY,
+            if (!Skin("songInfo")) PositionGameplayElement(gameplaySongInfoBlock, source.GameplaySongInfoX, source.GameplaySongInfoY,
                 new Vector2(460, 132) * songScale);
 
             if (gameplayScore != null) gameplayScore.fontSize = Mathf.Max(18, Mathf.RoundToInt(42 * scoreScale));
@@ -6141,6 +6333,16 @@ namespace ChunithmMobile.Runtime
                 gameplaySongInfoCoverMask.sizeDelta = Vector2.one * 108 * songScale;
                 gameplaySongInfoCoverMask.anchoredPosition = new Vector2(64 * songScale, 0);
             }
+        }
+
+        private void PositionSkinEditorBox(RectTransform handle, string id)
+        {
+            if (handle == null || !UseSkinEditorOverride(id)) return;
+            GameplayLayoutOverride item = EnsureDraftLayoutOverride(id);
+            if (item == null) return;
+            handle.anchorMin = new Vector2(Mathf.Clamp01(item.X), Mathf.Clamp01(item.Y));
+            handle.anchorMax = new Vector2(Mathf.Clamp01(item.X + item.Width), Mathf.Clamp01(item.Y + item.Height));
+            handle.offsetMin = handle.offsetMax = Vector2.zero;
         }
 
         private void OnGameplayJudged(ScheduledJudgePoint point, JudgementResult judgement)
@@ -6366,8 +6568,12 @@ namespace ChunithmMobile.Runtime
             int previousBest = 0;
             int previousLast = 0;
             if (recordsScore && model.Score > 0)
+            {
+                SongRecordStore.SaveAchievement(playedSong.Root, playedChart.Difficulty, playedChart.Path,
+                    SongAchievementRules.FromCounts(model.JusticeCritical, model.Justice, model.Attack, model.Miss));
                 SongRecordStore.SaveResult(playedSong.Root, playedChart.Difficulty,
                     playedChart.Path, model.Score, out previousBest, out previousLast);
+            }
             else
                 SongRecordStore.TryGet(playedSong.Root, playedChart.Difficulty, playedChart.Path, out previousBest);
             bool hasCover = !string.IsNullOrWhiteSpace(playedSong.JacketPath);

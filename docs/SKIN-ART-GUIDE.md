@@ -147,8 +147,6 @@ track/runtime/goal_line.png       判定线装饰，建议 32 x 32
 track/field/hold_joint.png        HOLD 中间主体
 track/field/slide_joint.png       SLIDE 中间主体
 track/field/air_hold_joint.png    AIR 长条主体
-track/field/air_action_bar.png    AIR 动作条
-track/field/air_action_line.png   AIR 动作细线
 track/field/heaven_roof.png       AIR 顶部外观
 track/field/heaven_roof_pink.png  AIR 粉色顶部外观
 track/field/heaven_wall.png       AIR 侧墙

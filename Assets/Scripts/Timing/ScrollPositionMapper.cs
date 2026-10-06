@@ -5,6 +5,8 @@ using ChunithmMobile.Chart;
 
 namespace ChunithmMobile.Timing
 {
+    // 滚速积分器：根据分段滚速把“距离判定点的时间”映射为轨道距离。
+    // 必须使用谱面时间而不是帧数累加，否则不同刷新率会产生不同下落速度。
     /// <summary>Integrates authored scroll velocity. Negative SFL moves notes backwards; STP holds them still.</summary>
     public sealed class ScrollPositionMapper
     {

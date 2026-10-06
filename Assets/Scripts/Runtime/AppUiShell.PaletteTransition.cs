@@ -4,6 +4,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // UI 配色切换：负责太阳/月亮按钮的过渡动画和主题应用。
+    // 动画期间状态只保留一个目标主题，完成后统一刷新页面，避免半套配色闪烁。
     public sealed partial class AppUiShell
     {
         private Button homePaletteButton;

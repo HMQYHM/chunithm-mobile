@@ -4,6 +4,8 @@ using UnityEngine.Networking;
 
 namespace ChunithmMobile.Runtime
 {
+    // 界面背景音乐控制器：管理入口音乐、结算音乐、渐弱和页面切换时的连续播放。
+    // 游玩歌曲由 LocalChartPlaybackSession 管理，不能由本类抢占或重置。
     /// <summary>Owns application BGM and the fixed cue sequence used by page transitions.</summary>
     public sealed class InterfaceAudioController : MonoBehaviour
     {
@@ -22,6 +24,7 @@ namespace ChunithmMobile.Runtime
         private Coroutine cueSequence;
         private Coroutine skinAudioLoad;
         private string loadedSkinId;
+        private int skinAudioGeneration;
         private bool keySoundEnabled = true;
         private bool answerSoundEnabled = true;
         private float keySoundVolume = .8f;
@@ -43,7 +46,11 @@ namespace ChunithmMobile.Runtime
             answerClip = Resources.Load<AudioClip>("Audio/se_touch_answer");
             entrySource.clip = entryClip;
             resultsSource.clip = resultsClip;
-            loadedSkinId = GameplaySkinManager.Active.Id;
+            // Force the first runtime settings pass to load audio from the
+            // active external skin. Awake runs immediately after the skin
+            // manager is initialized, so treating the ID as already loaded
+            // would silently keep the built-in BGM on a cold launch.
+            loadedSkinId = null;
         }
 
         public void RefreshSkinAudio()
@@ -51,21 +58,26 @@ namespace ChunithmMobile.Runtime
             string skinId = GameplaySkinManager.Active.Id;
             if (string.Equals(loadedSkinId, skinId, System.StringComparison.OrdinalIgnoreCase)) return;
             loadedSkinId = skinId;
+            int generation = ++skinAudioGeneration;
             if (skinAudioLoad != null) StopCoroutine(skinAudioLoad);
-            skinAudioLoad = StartCoroutine(LoadSkinAudio(skinId));
+            skinAudioLoad = StartCoroutine(LoadSkinAudio(skinId, generation));
         }
 
-        private IEnumerator LoadSkinAudio(string skinId)
+        private IEnumerator LoadSkinAudio(string skinId, int generation)
         {
             AudioClip nextEntry = Resources.Load<AudioClip>("Audio/ui_entry");
             AudioClip nextResults = Resources.Load<AudioClip>("Audio/ui_results");
             AudioClip nextSwitch = Resources.Load<AudioClip>("Audio/delay_ready");
             AudioClip nextAnswer = Resources.Load<AudioClip>("Audio/se_touch_answer");
-            yield return LoadSkinClip("ui_entry.mp3", AudioType.MPEG, value => { if (value != null) nextEntry = value; });
-            yield return LoadSkinClip("ui_results.mp3", AudioType.MPEG, value => { if (value != null) nextResults = value; });
-            yield return LoadSkinClip("delay_ready.wav", AudioType.WAV, value => { if (value != null) nextSwitch = value; });
-            yield return LoadSkinClip("se_touch_answer.wav", AudioType.WAV, value => { if (value != null) nextAnswer = value; });
-            if (!string.Equals(loadedSkinId, skinId, System.StringComparison.OrdinalIgnoreCase)) yield break;
+            yield return LoadSkinClip("ui_entry.mp3", AudioType.MPEG, value => { if (IsUsableClip(value)) nextEntry = value; });
+            if (generation != skinAudioGeneration) yield break;
+            yield return LoadSkinClip("ui_results.mp3", AudioType.MPEG, value => { if (IsUsableClip(value)) nextResults = value; });
+            if (generation != skinAudioGeneration) yield break;
+            yield return LoadSkinClip("delay_ready.wav", AudioType.WAV, value => { if (IsUsableClip(value)) nextSwitch = value; });
+            if (generation != skinAudioGeneration) yield break;
+            yield return LoadSkinClip("se_touch_answer.wav", AudioType.WAV, value => { if (IsUsableClip(value)) nextAnswer = value; });
+            if (generation != skinAudioGeneration ||
+                !string.Equals(loadedSkinId, skinId, System.StringComparison.OrdinalIgnoreCase)) yield break;
 
             if (nextEntry != null) entryClip = nextEntry;
             if (nextResults != null) resultsClip = nextResults;
@@ -88,17 +100,38 @@ namespace ChunithmMobile.Runtime
         {
             string path = GameplaySkinManager.GetAudioPath(fileName);
             if (string.IsNullOrWhiteSpace(path)) { receive?.Invoke(null); yield break; }
-            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(
-                new System.Uri(path).AbsoluteUri, type)) {
-                yield return request.SendWebRequest();
-                if (request.result != UnityWebRequest.Result.Success) {
-                    Debug.LogWarning("Gameplay skin audio failed: " + fileName + " | " + request.error);
-                    receive?.Invoke(null);
-                    yield break;
+            // File-backed audio can fail once on slower Android storage while
+            // the package is still being indexed. Retry the decode once before
+            // falling back to the built-in clip; this prevents a transient
+            // request failure from leaving the interface silent for the rest
+            // of the session.
+            for (int attempt = 0; attempt < 2; attempt++) {
+                using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(
+                    new System.Uri(path).AbsoluteUri, type)) {
+                    if (request.downloadHandler is DownloadHandlerAudioClip handler) {
+                        handler.streamAudio = false;
+                        handler.compressed = false;
+                    }
+                    yield return request.SendWebRequest();
+                    if (request.result == UnityWebRequest.Result.Success) {
+                        AudioClip clip = DownloadHandlerAudioClip.GetContent(request);
+                        if (IsUsableClip(clip)) {
+                            receive?.Invoke(clip);
+                            yield break;
+                        }
+                        Debug.LogWarning("Gameplay skin audio is empty or undecodable: " + fileName);
+                    } else {
+                        Debug.LogWarning("Gameplay skin audio failed: " + fileName +
+                            " | attempt=" + (attempt + 1) + " | " + request.error);
+                    }
                 }
-                receive?.Invoke(DownloadHandlerAudioClip.GetContent(request));
+                if (attempt == 0) yield return new WaitForSecondsRealtime(.1f);
             }
+            receive?.Invoke(null);
         }
+
+        private static bool IsUsableClip(AudioClip clip) => clip != null &&
+            clip.samples > 0 && clip.frequency > 0 && clip.channels > 0 && clip.length > .01f;
 
         public void Configure(bool enableKeySound, float keyVolume,
             bool enableAnswerSound, float answerVolume, float backgroundVolume)

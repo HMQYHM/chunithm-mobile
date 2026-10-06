@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 轨道遮罩和边界显示层：绘制触控板、触控范围线、AIR 分界线及相关透明度。
+    // 显示开关只影响 Graphic，不影响输入读取和判定。
     [RequireComponent(typeof(CanvasRenderer))]
     public sealed class TrackMaskOverlay : MaskableGraphic
     {

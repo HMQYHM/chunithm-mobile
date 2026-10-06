@@ -1,7 +1,7 @@
 # Platform architecture
 
-Android is the active shipping target. Apple and HarmonyOS NEXT are later ports,
-not parallel feature branches.
+Android and iOS/iPadOS are supported from the same Unity project. HarmonyOS NEXT
+remains a later port, not a parallel feature branch.
 
 ## Shared code
 
@@ -25,13 +25,15 @@ Only these boundaries may contain platform SDK calls:
 - store signing and package metadata
 
 `PlatformServices` owns platform identity, the safe area and the high precision
-audio clock. `PlatformStoragePaths` owns Android external storage. Gameplay code
-must not call Android Java, iOS native APIs, ArkTS or Node-API directly.
+audio clock. `PlatformStoragePaths` owns mobile storage, document picker and file
+sharing bridges. Gameplay code must not call Android Java, iOS native APIs, ArkTS
+or Node-API directly.
 
 ## Build order
 
 1. Android: Unity, IL2CPP ARM64, Vulkan with GLES3 fallback, API 24+.
-2. Apple: Unity iOS export, Xcode, Metal, ARM64, iOS/iPadOS safe areas and audio.
+2. Apple: Unity iOS export, Xcode, Metal, IL2CPP ARM64, iOS 12+, native document
+   picker and file sharing. Final compilation and signing still require macOS/Xcode.
 3. HarmonyOS NEXT: import the shared Unity project into Tuanjie, export the
    OpenHarmony UAAL project, then sign and integrate platform capabilities in
    DevEco Studio.

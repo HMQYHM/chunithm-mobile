@@ -3,6 +3,8 @@ using ChunithmMobile.Chart;
 
 namespace ChunithmMobile.Timing
 {
+    // 原版播放映射：将谱面时间、滚速事件和轨道空间位置关联起来。
+    // 该类只做确定性换算，不创建 GameObject，也不负责显示/判定生命周期。
     /// <summary>
     /// Original-style playback separates the global note course from local
     /// field pieces. SFL and SLP profile 0 affect every note. SLP profile 1..16
@@ -14,10 +16,12 @@ namespace ChunithmMobile.Timing
         private readonly Dictionary<int, ScrollPositionMapper> fieldProfiles = new Dictionary<int, ScrollPositionMapper>();
         private readonly List<ScrollAssignment> assignments;
 
-        public OriginalPlaybackMap(ParsedChart chart)
+        public OriginalPlaybackMap(ParsedChart chart, bool uniformSpeed = false)
         {
-            global = new ScrollPositionMapper(chart.DurationMs, chart.ScrollEvents);
+            global = new ScrollPositionMapper(chart.DurationMs,
+                uniformSpeed ? new List<ScrollEvent>() : chart.ScrollEvents);
             assignments = chart.ScrollAssignments;
+            if (uniformSpeed) return;
             foreach (var profile in chart.FieldScrollProfiles)
                 fieldProfiles[profile.Key] = new ScrollPositionMapper(chart.DurationMs, profile.Value);
         }

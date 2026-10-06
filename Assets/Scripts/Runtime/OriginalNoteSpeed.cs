@@ -7,12 +7,20 @@ namespace ChunithmMobile.Runtime
     /// <summary>Values decoded from the original PlayOptionSpeedTableRecord.bin.</summary>
     public static class OriginalNoteSpeed
     {
-        public const int DefaultOption = 20;
+        // The visible speed is a decimal value.  The default remains the same
+        // 4.8 parameter used by the previous table. The visible control is
+        // intentionally capped at 17.0; values above that make the gameplay
+        // preview and settings list unnecessarily large without adding a
+        // useful playable range.
+        public const int DefaultOption = 48;
         public const float DefaultParameter = 4.8f;
+        public const float Step = .1f;
+        public const float MaximumParameter = 17f;
+        public const float GlobalSpeedMultiplier = 2f;
 
         private static readonly string[] Labels = BuildLabels();
 
-        public static int Count => 62;
+        public static int Count => Mathf.RoundToInt(MaximumParameter / Step) + 1;
 
         public static int ClampOption(int option) => Mathf.Clamp(option, 0, Count - 1);
 
@@ -21,12 +29,19 @@ namespace ChunithmMobile.Runtime
         public static float Parameter(int option)
         {
             option = ClampOption(option);
-            if (option <= 56) return .8f + option * .2f;
-            if (option <= 60) return 14f + (option - 57) * 2f;
-            return 60f;
+            return option * Step;
         }
 
-        public static float VisualMultiplier(int option) => Parameter(option) / DefaultParameter * 1.2f;
+        public static float VisualMultiplier(int option) =>
+            Parameter(option) / DefaultParameter * 1.2f * GlobalSpeedMultiplier;
+
+        public static int FromLegacyOption(int option)
+        {
+            option = Mathf.Clamp(option, 0, 61);
+            float legacyParameter = option <= 56 ? .8f + option * .2f
+                : option <= 60 ? 14f + (option - 57) * 2f : 60f;
+            return ClampOption(Mathf.RoundToInt(legacyParameter / Step));
+        }
 
         public static int FromLegacyPercent(int percent)
         {
@@ -45,14 +60,8 @@ namespace ChunithmMobile.Runtime
         private static string[] BuildLabels()
         {
             var labels = new string[Count];
-            for (int option = 0; option <= 56; option++)
-                labels[option] = (1f + option * .25f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
-            // Keep the visible high-speed choices on the same quarter-step
-            // grid. The old integer branch jumped from 15.00 to 16/17/18/19,
-            // which made the setting appear to skip speeds above 10.
-            for (int option = 57; option <= 60; option++)
-                labels[option] = (15f + (option - 56) * .25f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
-            labels[61] = "SONIC";
+            for (int option = 0; option < labels.Length; option++)
+                labels[option] = (option * Step).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
             return labels;
         }
     }

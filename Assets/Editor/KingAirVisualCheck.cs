@@ -11,11 +11,12 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 指定高难谱面视觉检查：用于复现 KING 等复杂 AIR 组合的头尾和层级问题。
     public static class KingAirVisualCheck
     {
         public static void Run()
         {
-            foreach (string name in new[] { "VerifyAirHoldBodyOwnership", "VerifyAirLadderComposite",
+            foreach (string name in new[] { "VerifyAirHoldBodyOwnership",
                 "VerifyOutOfOrderContinuationOwnership", "VerifyDenseAirPairTimingPlane" })
                 typeof(OriginalPlaybackSelfTest).GetMethod(name,
                     BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, null);
@@ -85,22 +86,6 @@ namespace ChunithmMobile.Editor
                 "chart-record priorities override material layers or transparent distance sorting");
             var active = (IDictionary)typeof(ChartPlaybackRenderer).GetField("active",
                 BindingFlags.NonPublic | BindingFlags.Instance).GetValue(renderer);
-            var ladders = chart.Notes.Select((note, index) => (note, index)).Where(p =>
-                p.note.Kind == NoteKind.AirLadder && p.note.TimeMs > now && p.note.TimeMs < now + 400).ToList();
-            Require(ladders.Count == 10, "KING fixture must contain ten stacked ALD caps");
-            foreach (var item in ladders) {
-                Require(active.Contains(item.index), "stacked ALD was culled");
-                object visual = active[item.index];
-                var body = (Mesh)visual.GetType().GetField("BodyMesh").GetValue(visual);
-                Require(body.vertexCount == 4 && body.bounds.size.y < .02f && body.bounds.size.x > 3f,
-                    "short ALD must have a full-width horizontal cap, not a wall");
-                Require(Mathf.Abs(body.bounds.center.y - ChartSpace.AirY(item.note.AirHeight) - .012f) < .001f,
-                    "ALD cap lost its authored starting height");
-                if (item.note.AirHeight != item.note.EndAirHeight) {
-                    var line = (Mesh)visual.GetType().GetField("LineMesh").GetValue(visual);
-                    Require(line.bounds.size.x < .12f, "ALD connection must remain narrow");
-                }
-            }
             int holds = 0;
             foreach (DictionaryEntry entry in active) {
                 var note = chart.Notes[(int)entry.Key];

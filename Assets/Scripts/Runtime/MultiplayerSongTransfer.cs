@@ -12,6 +12,8 @@ using UnityEngine.Networking;
 
 namespace ChunithmMobile.Runtime
 {
+    // 联机歌曲传输：负责歌曲包清单、哈希校验、上传、下载、进度和本地联机目录。
+    // 完成回调必须只触发一次，并校验当前房间/歌曲身份，避免重复启动播放流程。
     public sealed class MultiplayerPreparedPackage
     {
         public string Path;
@@ -22,6 +24,9 @@ namespace ChunithmMobile.Runtime
 
     public sealed class MultiplayerSongTransfer : MonoBehaviour
     {
+        /// <summary>
+        /// 构建房主上传包和哈希。返回成功只表示本地包准备完成，不表示成员已经下载或校验完成。
+        /// </summary>
         public Task<MultiplayerPreparedPackage> PrepareHostPackageAsync(string songRoot, string chartPath,
             Action<float, string> progress = null)
         {
@@ -35,6 +40,9 @@ namespace ChunithmMobile.Runtime
             return Task.Run(() => ComputeSha256(filePath));
         }
 
+        /// <summary>
+        /// 上传歌曲包并逐帧报告进度。最终可用性以服务端哈希确认和房间同步状态为准。
+        /// </summary>
         public IEnumerator Upload(string serverAddress, string roomId, string sessionToken,
             MultiplayerPreparedPackage package, Action<float, string> progress, Action<bool, string> completed)
         {
@@ -67,6 +75,9 @@ namespace ChunithmMobile.Runtime
             completed?.Invoke(true, null);
         }
 
+        /// <summary>
+        /// 下载并导入联机专用歌曲目录。只有完整下载、哈希校验和导入完成后才能通知播放流程。
+        /// </summary>
         public IEnumerator DownloadAndImport(string serverAddress, string roomId, string sessionToken,
             MultiplayerSongDto song, string destinationRoot, Action<float, string> progress,
             Action<bool, string, SongImportResult> completed)

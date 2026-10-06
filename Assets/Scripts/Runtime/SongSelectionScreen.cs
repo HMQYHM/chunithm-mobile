@@ -5,6 +5,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 歌曲选择页面控制器：维护当前列表、歌曲、难度、搜索、排序和滚动位置。
+    // 页面重建时应恢复当前选择，而不是无条件跳到列表第一首。
     /// <summary>Functional song-select flow; visual skin will be refined separately.</summary>
     public sealed class SongSelectionScreen : MonoBehaviour
     {
@@ -53,7 +55,12 @@ namespace ChunithmMobile.Runtime
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = .5f;
 
-            RectTransform root = Panel("Root", screen.transform, background, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            var safeObject = new GameObject("Safe content root", typeof(RectTransform), typeof(SafeAreaCanvasFitter));
+            safeObject.transform.SetParent(screen.transform, false);
+            RectTransform safeRoot = (RectTransform)safeObject.transform;
+            safeRoot.anchorMin = Vector2.zero; safeRoot.anchorMax = Vector2.one;
+            safeRoot.offsetMin = Vector2.zero; safeRoot.offsetMax = Vector2.zero;
+            RectTransform root = Panel("Root", safeRoot, background, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
             Label("CHUNITHM Mobile   SONG SELECT", root, 34, TextAnchor.MiddleLeft,
                 new Vector2(.035f, .90f), new Vector2(.965f, .985f), accent);
 

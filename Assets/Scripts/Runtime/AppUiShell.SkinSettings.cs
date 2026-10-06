@@ -6,6 +6,7 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
+    // 皮肤设置页面：区分背景皮肤和游玩皮肤，负责导入、选择、缺失资源提示和跳转数据管理。
     public sealed partial class AppUiShell
     {
         private void SkinSection(string title, Color accent)

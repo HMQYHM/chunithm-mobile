@@ -12,6 +12,7 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // 开头音符回归测试：验证预备阶段结束后首个音符不会先被回收而只留下判定。
     public static class OpeningNoteRenderSelfTest
     {
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
