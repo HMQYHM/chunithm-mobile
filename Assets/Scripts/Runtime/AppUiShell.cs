@@ -3409,11 +3409,15 @@ namespace ChunithmMobile.Runtime
         private void SaveLayoutDraft()
         {
             if (draftSettings == null) return;
+            AppPage returnPage = currentPage;
             settings = CloneSettings(draftSettings);
             settings.Save();
             CloseLayoutEditorView();
             draftSettings = null;
-            RenderSettingsCategory(false);
+            if (returnPage == AppPage.MultiplayerRoom)
+                SwitchTo(AppPage.MultiplayerRoom, RenderMultiplayerRoomV2);
+            else
+                RenderSettingsCategory(false);
         }
 
         private void ResetLayoutDraft()

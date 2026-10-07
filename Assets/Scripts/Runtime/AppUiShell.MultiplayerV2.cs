@@ -107,6 +107,7 @@ namespace ChunithmMobile.Runtime
         private Button multiplayerRoomModeButton;
         private Button multiplayerRoomModsButton;
         private Button multiplayerRoomSelectionButton;
+        private Button multiplayerRoomLayoutButton;
         private Button multiplayerRoomVoteButton;
         private Button multiplayerRoomReadyButton;
         private Button multiplayerRoomLeaveButton;
@@ -127,6 +128,10 @@ namespace ChunithmMobile.Runtime
         private bool multiplayerDownloading;
         private Coroutine multiplayerSongPreparationCoroutine;
         private string multiplayerSongPreparationKey;
+        private readonly HashSet<string> multiplayerVerifiedSongKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private string multiplayerPersistentReadyKey;
+        private bool multiplayerPersistentPreparationSucceeded;
+        private bool multiplayerResultSubmitted;
         private Coroutine multiplayerRoundPreparationCoroutine;
         // The preparation and reveal coroutines have different jobs: the former
         // binds local resources, while the latter only reveals the already-bound
@@ -266,6 +271,8 @@ namespace ChunithmMobile.Runtime
             Label("房间设置", actions, 24, TextAnchor.MiddleLeft, new Vector2(.08f, .90f), new Vector2(.92f, .98f), cyan);
             multiplayerRoomModeButton = ButtonText("模式", actions, new Vector2(.08f, .73f), new Vector2(.92f, .84f), surfaceRaised,
                 ToggleMultiplayerRoomModeV2);
+            multiplayerRoomLayoutButton = ButtonText("可视化设置", actions, new Vector2(.08f, .73f), new Vector2(.92f, .84f), surfaceRaised,
+                OpenMultiplayerLayoutEditorV2);
             multiplayerRoomModsButton = ButtonText("MOD", actions, new Vector2(.08f, .60f), new Vector2(.92f, .71f), surfaceRaised,
                 ToggleMultiplayerRoomModsV2);
             multiplayerRoomSelectionButton = ButtonText("选歌方式", actions, new Vector2(.08f, .47f), new Vector2(.92f, .58f), surfaceRaised,
@@ -919,6 +926,8 @@ namespace ChunithmMobile.Runtime
                 case "roomCreated":
                 case "roomJoined":
                     activeMultiplayerRoom = message.room;
+                    multiplayerPersistentReadyKey = null;
+                    multiplayerResultSubmitted = false;
                     MultiplayerLog.Info(message.type == "roomCreated" ? "room-created" : "room-joined",
                         "roomId=" + (activeMultiplayerRoom?.roomId ?? message.roomId ?? "-") +
                         " name=" + (activeMultiplayerRoom?.roomName ?? "-"));
@@ -943,6 +952,8 @@ namespace ChunithmMobile.Runtime
                         " difficulty=" + (message.song?.difficulty ?? "-"));
                     if (activeMultiplayerRoom != null) activeMultiplayerRoom.song = message.song;
                     multiplayerSelectedSong = message.song;
+                    multiplayerPersistentReadyKey = null;
+                    multiplayerResultSubmitted = false;
                     ApplyPendingMultiplayerTransferV2(message.song);
                     RenderMultiplayerRoomV2();
                     StartPreparingMultiplayerSongV2(message.song);
@@ -967,6 +978,17 @@ namespace ChunithmMobile.Runtime
                         activeMultiplayerRoom.songChangeVote.count = 0;
                     }
                     SetMultiplayerRoomStatusV2("投票已通过，房间已返回选曲。", false);
+                    break;
+                case "readyCountdown":
+                    if (activeMultiplayerRoom != null)
+                    {
+                        activeMultiplayerRoom.state = "readyCountdown";
+                        activeMultiplayerRoom.roundId = message.roundId;
+                        activeMultiplayerRoom.startAt = message.startAt;
+                        if (message.song != null) activeMultiplayerRoom.song = message.song;
+                        if (message.mods != null) activeMultiplayerRoom.mods = message.mods;
+                        RenderMultiplayerRoomV2();
+                    }
                     break;
                 case "transferReady":
                     MultiplayerLog.Info("transfer-ready", "packageHash=" + (message.packageHash ?? "-") +
@@ -1037,6 +1059,7 @@ namespace ChunithmMobile.Runtime
                     }
                     multiplayerRoundPreparationToken++;
                     multiplayerRoundId = message.roundId;
+                    multiplayerResultSubmitted = false;
                     multiplayerRoundPlaybackPrepared = false;
                     if (!sameRound) {
                         multiplayerRoundStartPending = false;
@@ -1092,6 +1115,8 @@ namespace ChunithmMobile.Runtime
                 case "returnedToLobby":
                     CancelMultiplayerRoundPreparationV2();
                     activeMultiplayerRoom = message.room ?? activeMultiplayerRoom;
+                    multiplayerPersistentReadyKey = null;
+                    multiplayerResultSubmitted = false;
                     multiplayerInRound = false;
                     multiplayerRoundStarted = false;
                     multiplayerPersonalResultPending = false;
@@ -1232,7 +1257,7 @@ namespace ChunithmMobile.Runtime
             foreach (MultiplayerRoomMemberDto member in members)
             {
                 if (member == null) continue;
-                bool canManage = IsLocalMultiplayerHostV2() && !member.isHost && room.state == "lobby";
+                bool canManage = !persistent && IsLocalMultiplayerHostV2() && !member.isHost && room.state == "lobby";
                 string status = MultiplayerMemberStatusV2(member);
                 string score = member.bestScore > 0 ? "  " + member.bestScore.ToString("N0") + "  " + member.bestRank : "";
                 RectTransform rect = Panel("Member " + member.playerId, multiplayerRoomMemberContent,
@@ -1243,7 +1268,7 @@ namespace ChunithmMobile.Runtime
                 float top = count * 62f + 4f;
                 rect.offsetMin = new Vector2(6, -top - 56f); rect.offsetMax = new Vector2(-6, -top);
                 float textRight = canManage ? .55f : .95f;
-                Label(member.name + (member.isHost ? "  房主" : "") + score, rect, 16, TextAnchor.MiddleLeft,
+                Label(member.name + (!persistent && member.isHost ? "  房主" : "") + score, rect, 16, TextAnchor.MiddleLeft,
                     new Vector2(.035f, .47f), new Vector2(textRight, .94f), Color.white);
                 Label(status, rect, 13, TextAnchor.MiddleLeft,
                     new Vector2(.035f, .14f), new Vector2(textRight, .46f), muted);
@@ -1268,28 +1293,51 @@ namespace ChunithmMobile.Runtime
             }
             multiplayerRoomMemberContent.sizeDelta = new Vector2(0, count * 62f + 8f);
             bool host = IsLocalMultiplayerHostV2();
-            bool active = room.state == "loading" || room.state == "countdown" || room.state == "playing" ||
+            bool active = room.state == "readyCountdown" || room.state == "loading" || room.state == "countdown" || room.state == "playing" ||
                           room.state == "personalResults" || room.state == "groupResults";
             MultiplayerRoomMemberDto self = members.FirstOrDefault(value => value != null && value.playerId == multiplayerGameId);
             bool hasSong = room.song != null;
-            if (persistent) SetButtonLabel(multiplayerRoomSongButton, hasSong ? "同步服务器歌曲" : "等待服务端选歌");
-            else if (host) SetButtonLabel(multiplayerRoomSongButton, hasSong ? "切换歌曲" : "选择歌曲");
+            bool anyReady = members.Any(value => value != null && value.ready);
+            if (multiplayerRoomSongButton != null) multiplayerRoomSongButton.gameObject.SetActive(!persistent);
+            if (multiplayerRoomModeButton != null) multiplayerRoomModeButton.gameObject.SetActive(!persistent);
+            if (multiplayerRoomSelectionButton != null) multiplayerRoomSelectionButton.gameObject.SetActive(!persistent);
+            if (multiplayerRoomLayoutButton != null)
+            {
+                multiplayerRoomLayoutButton.gameObject.SetActive(persistent);
+                multiplayerRoomLayoutButton.interactable = !active && !anyReady;
+            }
+            if (!persistent && host) SetButtonLabel(multiplayerRoomSongButton, hasSong ? "切换歌曲" : "选择歌曲");
             else if (!hasSong) SetButtonLabel(multiplayerRoomSongButton, "等待房主选歌");
             else if (self != null && self.songReady) SetButtonLabel(multiplayerRoomSongButton, "同步成功");
             else if (multiplayerDownloading || multiplayerSongPreparationCoroutine != null) SetButtonLabel(multiplayerRoomSongButton,
                 "同步中 " + Mathf.RoundToInt((self == null ? 0f : self.syncProgress) * 100f) + "%");
             else if (!room.song.transferReady) SetButtonLabel(multiplayerRoomSongButton, "等待房主上传");
             else SetButtonLabel(multiplayerRoomSongButton, "同步当前歌曲");
-            multiplayerRoomSongButton.interactable = !active && hasSong && (persistent ? self != null && !self.songReady : host || self == null || !self.songReady);
-            multiplayerRoomModeButton.interactable = !active && host;
-            multiplayerRoomModsButton.interactable = !active && host;
-            multiplayerRoomSelectionButton.interactable = !active && host;
-            multiplayerRoomVoteButton.interactable = !active && hasSong && self != null;
-            multiplayerRoomReadyButton.interactable = !active && room.song != null && self != null && self.songReady;
-            SetButtonLabel(multiplayerRoomReadyButton, self != null && self.ready ? "取消准备" : "准备");
-            multiplayerRoomExitRoundButton.gameObject.SetActive(active);
+            if (multiplayerRoomSongButton != null)
+                multiplayerRoomSongButton.interactable = !persistent && !active && hasSong &&
+                    (host || self == null || !self.songReady);
+            if (multiplayerRoomModeButton != null) multiplayerRoomModeButton.interactable = !active && host && !anyReady;
+            multiplayerRoomModsButton.interactable = !active && host && !anyReady;
+            if (multiplayerRoomSelectionButton != null) multiplayerRoomSelectionButton.interactable = !active && host && !anyReady;
+            multiplayerRoomVoteButton.interactable = !active && hasSong && self != null && !anyReady;
+            bool preparingPersistentSong = persistent && multiplayerPersistentReadyKey != null;
+            multiplayerRoomReadyButton.interactable = !active && room.song != null && self != null &&
+                !preparingPersistentSong && (persistent || self.songReady);
+            if (active && (room.state == "readyCountdown" || room.state == "countdown")) SetButtonLabel(multiplayerRoomReadyButton,
+                "倒计时 " + MultiplayerReadyCountdownSecondsV2(room) + " 秒");
+            else if (preparingPersistentSong) SetButtonLabel(multiplayerRoomReadyButton, "正在校验歌曲");
+            else SetButtonLabel(multiplayerRoomReadyButton, self != null && self.ready ? "取消准备" : "准备");
+            multiplayerRoomExitRoundButton.gameObject.SetActive(active && room.state != "readyCountdown");
             multiplayerRoomLeaveButton.gameObject.SetActive(!active);
             if (room.state == "syncing") SetMultiplayerRoomStatusV2("正在等待所有成员下载并校验歌曲。", false);
+        }
+
+        private int MultiplayerReadyCountdownSecondsV2(MultiplayerRoomDto room)
+        {
+            if (room == null || room.startAt <= 0) return 3;
+            long serverNow = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() +
+                (long)Math.Round(multiplayerClient?.ServerClockOffsetMilliseconds ?? 0);
+            return Mathf.Clamp(Mathf.CeilToInt((float)Math.Max(0L, room.startAt - serverNow) / 1000f), 1, 3);
         }
 
         private void PlayMultiplayerRoomAudioV2(MultiplayerRoomDto room)
@@ -1619,10 +1667,10 @@ namespace ChunithmMobile.Runtime
             SetMultiplayerRoomStatusV2("选曲已提交，正在通知成员下载。", false);
         }
 
-        private void StartPreparingMultiplayerSongV2(MultiplayerSongDto song)
+        private void StartPreparingMultiplayerSongV2(MultiplayerSongDto song, bool userRequested = false)
         {
-            string key = song == null ? "" : ((song.packageHash ?? "") + "|" + (song.songId ?? "") + "|" +
-                (song.difficulty ?? ""));
+            if (activeMultiplayerRoom?.persistent == true && !userRequested) return;
+            string key = SongVerificationKeyV2(song);
             if (multiplayerSongPreparationCoroutine != null)
             {
                 if (string.Equals(multiplayerSongPreparationKey, key, StringComparison.OrdinalIgnoreCase)) return;
@@ -1637,9 +1685,50 @@ namespace ChunithmMobile.Runtime
 
         private IEnumerator RunMultiplayerSongPreparationV2(MultiplayerSongDto song)
         {
+            multiplayerPersistentPreparationSucceeded = false;
             yield return PrepareSelectedMultiplayerSongV2(song);
             multiplayerSongPreparationCoroutine = null;
             multiplayerSongPreparationKey = null;
+            if (activeMultiplayerRoom?.persistent == true &&
+                string.Equals(multiplayerPersistentReadyKey, SongVerificationKeyV2(song), StringComparison.OrdinalIgnoreCase))
+            {
+                if (multiplayerPersistentPreparationSucceeded)
+                {
+                    multiplayerPersistentReadyKey = null;
+                    multiplayerClient.SetReady(true);
+                }
+                else
+                {
+                    multiplayerPersistentReadyKey = null;
+                }
+            }
+        }
+
+        private static string SongVerificationKeyV2(MultiplayerSongDto song)
+        {
+            if (song == null) return "";
+            return (song.packageHash ?? "") + "|" + (song.songId ?? "") + "|" +
+                (song.difficulty ?? "") + "|" + (song.chartHash ?? "");
+        }
+
+        private void OpenMultiplayerLayoutEditorV2()
+        {
+            if (activeMultiplayerRoom == null || !activeMultiplayerRoom.persistent) return;
+            MultiplayerRoomMemberDto[] members = activeMultiplayerRoom.members ?? Array.Empty<MultiplayerRoomMemberDto>();
+            if (members.Any(value => value != null && value.ready) ||
+                activeMultiplayerRoom.state != "lobby" && activeMultiplayerRoom.state != "syncing")
+            {
+                SetMultiplayerRoomStatusV2("准备后不能打开可视化设置。", true);
+                return;
+            }
+            MultiplayerSongDto song = activeMultiplayerRoom.song;
+            if (song != null)
+            {
+                SongEntry localSong = catalog.FirstOrDefault(value => value != null && value.Id == song.songId);
+                selectedSong = localSong;
+                selectedChart = localSong?.Charts.FirstOrDefault(value => value.Difficulty == song.difficulty);
+            }
+            OpenLayoutEditor();
         }
 
         private void ApplyPendingMultiplayerTransferV2(MultiplayerSongDto song)
@@ -1693,13 +1782,20 @@ namespace ChunithmMobile.Runtime
                     });
                 yield break;
             }
-            Task<SongChartEntry> localTask = FindLocalMultiplayerChartV2(song);
+            Task<SongChartEntry> localTask = multiplayerVerifiedSongKeys.Contains(SongVerificationKeyV2(song))
+                ? Task.FromResult(FindLocalMultiplayerChartWithoutHashV2(song))
+                : FindLocalMultiplayerChartV2(song);
             while (!localTask.IsCompleted) yield return null;
             if (localTask.Status == TaskStatus.RanToCompletion && localTask.Result != null)
             {
                 selectedSong = catalog.FirstOrDefault(value => value.Id == song.songId);
                 selectedChart = localTask.Result;
-                multiplayerClient.SetSongSyncStatus(song.packageHash, true, 1f);
+                multiplayerVerifiedSongKeys.Add(SongVerificationKeyV2(song));
+                MultiplayerRoomMemberDto self = (activeMultiplayerRoom.members ?? Array.Empty<MultiplayerRoomMemberDto>())
+                    .FirstOrDefault(value => value != null && value.playerId == multiplayerGameId);
+                if (self == null || !self.songReady)
+                    multiplayerClient.SetSongSyncStatus(song.packageHash, true, 1f);
+                multiplayerPersistentPreparationSucceeded = true;
                 PlayMultiplayerRoomAudioV2(activeMultiplayerRoom);
                 SetMultiplayerRoomStatusV2("本地歌曲已校验完成。", false);
                 yield break;
@@ -1739,8 +1835,13 @@ namespace ChunithmMobile.Runtime
                 {
                     selectedSong = catalog.FirstOrDefault(value => value.Id == song.songId);
                     selectedChart = imported.Result;
+                    multiplayerVerifiedSongKeys.Add(SongVerificationKeyV2(song));
                     ReportMultiplayerTransferProgressV2(song.packageHash, "download", "completed", 1f, true);
-                    multiplayerClient.SetSongSyncStatus(song.packageHash, true, 1f);
+                    MultiplayerRoomMemberDto self = (activeMultiplayerRoom.members ?? Array.Empty<MultiplayerRoomMemberDto>())
+                        .FirstOrDefault(value => value != null && value.playerId == multiplayerGameId);
+                    if (self == null || !self.songReady)
+                        multiplayerClient.SetSongSyncStatus(song.packageHash, true, 1f);
+                    multiplayerPersistentPreparationSucceeded = true;
                     PlayMultiplayerRoomAudioV2(activeMultiplayerRoom);
                 }
                 else
@@ -1757,6 +1858,12 @@ namespace ChunithmMobile.Runtime
             SongChartEntry chart = local?.Charts.FirstOrDefault(value => value.Difficulty == song.difficulty);
             if (chart == null || string.IsNullOrWhiteSpace(song.chartHash)) return Task.FromResult<SongChartEntry>(null);
             return CheckChartHashV2(chart, song.chartHash);
+        }
+
+        private SongChartEntry FindLocalMultiplayerChartWithoutHashV2(MultiplayerSongDto song)
+        {
+            SongEntry local = catalog.FirstOrDefault(value => value != null && value.Id == song.songId);
+            return local?.Charts.FirstOrDefault(value => value != null && value.Difficulty == song.difficulty);
         }
 
         private async Task<SongChartEntry> CheckChartHashV2(SongChartEntry chart, string expectedHash)
@@ -1938,6 +2045,7 @@ namespace ChunithmMobile.Runtime
         private void FinishMultiplayerGameplayV2()
         {
             if (gameplaySession == null || activeMultiplayerRoom == null) return;
+            if (multiplayerResultSubmitted) return;
             GameplayScoreState score = gameplaySession.ScoreState;
             int total = gameplaySession.JudgeTotal;
             int scoreValue = score?.Score(total) ?? 0;
@@ -1953,6 +2061,7 @@ namespace ChunithmMobile.Runtime
                 LateAverageMs = playedDeltas.Where(value => value > 0).DefaultIfEmpty(0).Average(),
                 TotalAverageMs = playedDeltas.Count == 0 ? 0 : playedDeltas.Average(), ModLabel = CurrentMultiplayerModSummaryV2(roomMods)
             };
+            multiplayerResultSubmitted = true;
             multiplayerClient.SubmitResult(multiplayerRoundId, model.Score, model.JusticeCritical, model.Justice, model.Attack, model.Miss,
                 score?.MaxCombo ?? 0);
             CancelMultiplayerRoundPreparationV2();
@@ -1961,7 +2070,6 @@ namespace ChunithmMobile.Runtime
             SetGameplayScene(false);
             multiplayerPersonalResultPending = true;
             multiplayerPersonalResultDeadline = Time.unscaledTime + 10f;
-            multiplayerInRound = false;
             ShowResults(model, playedSong, playedChart, recordsScore);
             ConfigureMultiplayerPersonalResultV2();
         }
@@ -2083,7 +2191,24 @@ namespace ChunithmMobile.Runtime
         {
             if (activeMultiplayerRoom == null) return;
             MultiplayerRoomMemberDto self = (activeMultiplayerRoom.members ?? Array.Empty<MultiplayerRoomMemberDto>()).FirstOrDefault(value => value?.playerId == multiplayerGameId);
-            if (self != null) multiplayerClient.SetReady(!self.ready);
+            if (self == null || multiplayerClient == null) return;
+            if (activeMultiplayerRoom.persistent && !self.ready)
+            {
+                if (activeMultiplayerRoom.song == null)
+                {
+                    SetMultiplayerRoomStatusV2("等待服务端选择歌曲。", false);
+                    return;
+                }
+                if (!self.songReady)
+                {
+                    if (multiplayerPersistentReadyKey != null || multiplayerSongPreparationCoroutine != null) return;
+                    multiplayerPersistentReadyKey = SongVerificationKeyV2(activeMultiplayerRoom.song);
+                    StartPreparingMultiplayerSongV2(activeMultiplayerRoom.song, true);
+                    RenderMultiplayerRoomV2();
+                    return;
+                }
+            }
+            multiplayerClient.SetReady(!self.ready);
         }
 
         private void ToggleMultiplayerSongChangeVoteV2()
@@ -2198,6 +2323,7 @@ namespace ChunithmMobile.Runtime
             switch (state)
             {
                 case "syncing": return "同步歌曲";
+                case "readyCountdown": return "3 秒后开始";
                 case "loading": return "加载中";
                 case "countdown": return "即将开始";
                 case "playing": return "游玩中";
@@ -2432,6 +2558,7 @@ namespace ChunithmMobile.Runtime
         private void UpdateMultiplayerV2()
         {
             UpdateMultiplayerReentryUiV2();
+            RefreshMultiplayerReadyCountdownV2();
             if (multiplayerPersonalResultPending && currentPage == AppPage.Results)
             {
                 int seconds = Mathf.Max(0, Mathf.CeilToInt(multiplayerPersonalResultDeadline - Time.unscaledTime));
@@ -2445,6 +2572,18 @@ namespace ChunithmMobile.Runtime
             }
             if (multiplayerBackgroundAtMs > 0 && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - multiplayerBackgroundAtMs >= 10 * 60 * 1000)
                 HandleMultiplayerTimeoutV2();
+        }
+
+        private void RefreshMultiplayerReadyCountdownV2()
+        {
+            if (currentPage != AppPage.MultiplayerRoom || activeMultiplayerRoom == null || multiplayerRoomReadyButton == null)
+                return;
+            if (activeMultiplayerRoom.state == "readyCountdown" || activeMultiplayerRoom.state == "countdown")
+            {
+                SetButtonLabel(multiplayerRoomReadyButton,
+                    "倒计时 " + MultiplayerReadyCountdownSecondsV2(activeMultiplayerRoom) + " 秒");
+                multiplayerRoomReadyButton.interactable = false;
+            }
         }
 
         private int MultiplayerReentryRemainingSecondsV2()
