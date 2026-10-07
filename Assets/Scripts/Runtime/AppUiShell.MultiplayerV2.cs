@@ -17,6 +17,12 @@ namespace ChunithmMobile.Runtime
     // 网络回调可能晚于当前页面，所有异步回调都必须检查房间/回合身份后再更新 UI。
     public sealed partial class AppUiShell
     {
+        private static bool IsMultiplayerRoomVersionCompatibleV2(MultiplayerRoomDto room)
+        {
+            return room != null && (string.IsNullOrWhiteSpace(room.clientVersion) ||
+                string.Equals(room.clientVersion, Application.version, StringComparison.Ordinal));
+        }
+
         private MultiplayerSongTransfer multiplayerSongTransfer;
         private Button songSelectBackButton;
         private Text songSelectTitle;
@@ -641,7 +647,7 @@ namespace ChunithmMobile.Runtime
             {
                 used.Add(room.roomId);
                 string state = MultiplayerStateLabelV2(room.state);
-                Color color = room.clientVersion == Application.version
+                Color color = IsMultiplayerRoomVersionCompatibleV2(room)
                     ? surfaceRaised
                     : (HighContrastUi ? UiThemeContrast.Danger : new Color(.19f, .11f, .12f, .98f));
                 string song = room.song == null ? "未选歌" : (room.song.songName ?? room.song.songId) + " · " + room.song.difficulty;
@@ -745,7 +751,9 @@ namespace ChunithmMobile.Runtime
             selectedMultiplayerRoom = room;
             if (room == null || multiplayerBrowserDetails == null) return;
             MultiplayerLog.Info("room-selected", "roomId=" + room.roomId + " name=" + room.roomName);
-            string version = room.clientVersion == Application.version ? "版本一致，可加入" : "版本不一致，无法加入";
+            string version = string.IsNullOrWhiteSpace(room.clientVersion)
+                ? "尚未绑定客户端版本，可由当前版本首位玩家加入"
+                : (IsMultiplayerRoomVersionCompatibleV2(room) ? "版本一致，可加入" : "版本不一致，无法加入");
             string song = room.song == null ? "尚未选择" : (room.song.songName ?? room.song.songId) + "  " + room.song.difficulty + "  Lv." + room.song.level;
             string mods = CurrentMultiplayerModSummaryV2(room.mods);
             bool active = room.state == "loading" || room.state == "countdown" || room.state == "playing" ||
@@ -757,7 +765,7 @@ namespace ChunithmMobile.Runtime
                 (room.persistent ? "\n" + PersistentLibraryLabelV2(room.librarySelection) : "\n选歌：" + (room.selectionMode == "loop" ? "循环轮流" : "房主专选")) +
                 "\nMOD：" + mods + (room.persistent ? "" : "\n歌曲：" + song) + "\n状态：" + MultiplayerStateLabelV2(room.state) +
                 (active ? "\n正在游玩或结算，暂时禁止加入" : "") + "\n" + version;
-            multiplayerBrowserJoinButton.interactable = room.clientVersion == Application.version &&
+            multiplayerBrowserJoinButton.interactable = IsMultiplayerRoomVersionCompatibleV2(room) &&
                 !active && room.memberCount < room.maxPlayers;
         }
 
@@ -1257,14 +1265,15 @@ namespace ChunithmMobile.Runtime
                           room.state == "personalResults" || room.state == "groupResults";
             MultiplayerRoomMemberDto self = members.FirstOrDefault(value => value != null && value.playerId == multiplayerGameId);
             bool hasSong = room.song != null;
-            if (host) SetButtonLabel(multiplayerRoomSongButton, hasSong ? "切换歌曲" : "选择歌曲");
+            if (persistent) SetButtonLabel(multiplayerRoomSongButton, hasSong ? "同步服务器歌曲" : "等待服务端选歌");
+            else if (host) SetButtonLabel(multiplayerRoomSongButton, hasSong ? "切换歌曲" : "选择歌曲");
             else if (!hasSong) SetButtonLabel(multiplayerRoomSongButton, "等待房主选歌");
             else if (self != null && self.songReady) SetButtonLabel(multiplayerRoomSongButton, "同步成功");
             else if (multiplayerDownloading || multiplayerSongPreparationCoroutine != null) SetButtonLabel(multiplayerRoomSongButton,
                 "同步中 " + Mathf.RoundToInt((self == null ? 0f : self.syncProgress) * 100f) + "%");
             else if (!room.song.transferReady) SetButtonLabel(multiplayerRoomSongButton, "等待房主上传");
             else SetButtonLabel(multiplayerRoomSongButton, "同步当前歌曲");
-            multiplayerRoomSongButton.interactable = !active && hasSong && (host || self == null || !self.songReady);
+            multiplayerRoomSongButton.interactable = !active && hasSong && (persistent ? self != null && !self.songReady : host || self == null || !self.songReady);
             multiplayerRoomModeButton.interactable = !active && host;
             multiplayerRoomModsButton.interactable = !active && host;
             multiplayerRoomSelectionButton.interactable = !active && host;
