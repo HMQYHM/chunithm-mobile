@@ -1217,8 +1217,8 @@ namespace ChunithmMobile.Runtime
                     int percent = vote == null ? 50 : Mathf.RoundToInt(Mathf.Clamp01(vote.requiredRatio) * 100f);
                     int eligible = vote == null ? Mathf.Max(1, room.memberCount) : Mathf.Max(1, vote.eligible);
                     int threshold = vote == null ? Mathf.Max(1, Mathf.CeilToInt(eligible * percent / 100f)) : vote.threshold;
-                    int count = vote == null ? 0 : vote.count;
-                    SetButtonLabel(multiplayerRoomVoteButton, "投票换歌 " + count + "/" + threshold + "（" + percent + "%）");
+                    int voteCount = vote == null ? 0 : vote.count;
+                    SetButtonLabel(multiplayerRoomVoteButton, "投票换歌 " + voteCount + "/" + threshold + "（" + percent + "%）");
                 }
             }
             multiplayerRoomSongLabel.text = persistent ? PersistentLibraryLabelV2(room.librarySelection) + (room.song == null ? "\n等待服务端选择歌曲" : "\n当前：" + (room.song.songName ?? room.song.songId)) : (room.song == null ? "房主尚未选择歌曲" :
