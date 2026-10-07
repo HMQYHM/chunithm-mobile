@@ -258,8 +258,17 @@ namespace ChunithmMobile.Runtime
         private const string SkinStudioUrl = "https://github.com/HMQYHM/chunithm-mobile/tree/main/CHUNITHM-Mobile-Unity/tools/SkinStudio";
         private static readonly string[] SettingsCategories = { "延迟", "画面", "皮肤", "音频", "更多" };
         private readonly Dictionary<string, Button> settingsCategoryButtons = new Dictionary<string, Button>();
-        private static readonly string[] UpdateLogVersions = { "0.3.3", "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
+        private static readonly string[] UpdateLogVersions = { "0.3.4", "0.3.3", "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
         private static readonly string[][] UpdateLogLineKeys = {
+            new[] {
+                "0.3.4 更新日志",
+                "0.3.4 1. 优化谱面播放速度",
+                "0.3.4 2. 联机模式增加常驻房间",
+                "0.3.4 3. 皮肤系统与编辑器兼容性重制",
+                "0.3.4 4. 增加日语适配",
+                "0.3.4 5. 增加 Discord Bot",
+                "0.3.4 6. 增加 AJC、AJ、FC 的显示"
+            },
             new[] {
                 "0.3.3 更新日志",
                 "0.3.3 1. 增加日文界面翻译",

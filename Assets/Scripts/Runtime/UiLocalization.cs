@@ -11,6 +11,14 @@ namespace ChunithmMobile.Runtime
         public static AppLanguage Current { get; private set; } = AppLanguage.SimplifiedChinese;
 
         private static readonly Dictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.4 更新版本说明", "Version 0.3.4 update notes" },
+            { "0.3.4 更新日志", "Version 0.3.4 update log" },
+            { "0.3.4 1. 优化谱面播放速度", "1. Optimized chart playback speed" },
+            { "0.3.4 2. 联机模式增加常驻房间", "2. Added persistent rooms to multiplayer mode" },
+            { "0.3.4 3. 皮肤系统与编辑器兼容性重制", "3. Reworked skin system and editor compatibility" },
+            { "0.3.4 4. 增加日语适配", "4. Added Japanese language support" },
+            { "0.3.4 5. 增加 Discord Bot", "5. Added Discord Bot support" },
+            { "0.3.4 6. 增加 AJC、AJ、FC 的显示", "6. Added AJC, AJ, and FC indicators" },
             { "0.3.3 更新日志", "Version 0.3.3 update log" },
             { "0.3.3 1. 增加日文界面翻译", "1. Added Japanese interface translation" },
             { "0.3.3 2. 增加 GitHub 项目主页入口", "2. Added a GitHub project link" },
@@ -277,6 +285,14 @@ namespace ChunithmMobile.Runtime
         };
 
         private static readonly Dictionary<string, string> Japanese = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.4 更新版本说明", "バージョン 0.3.4 更新内容" },
+            { "0.3.4 更新日志", "バージョン 0.3.4 更新履歴" },
+            { "0.3.4 1. 优化谱面播放速度", "1. 譜面の再生速度を最適化" },
+            { "0.3.4 2. 联机模式增加常驻房间", "2. マルチプレイモードに常駐ルームを追加" },
+            { "0.3.4 3. 皮肤系统与编辑器兼容性重制", "3. スキンシステムとエディターの互換性を再構成" },
+            { "0.3.4 4. 增加日语适配", "4. 日本語に対応" },
+            { "0.3.4 5. 增加 Discord Bot", "5. Discord Bot に対応" },
+            { "0.3.4 6. 增加 AJC、AJ、FC 的显示", "6. AJC・AJ・FC の表示を追加" },
             { "0.3.3 更新日志", "バージョン 0.3.3 更新履歴" },
             { "0.3.3 1. 增加日文界面翻译", "1. 日本語インターフェースを追加" },
             { "0.3.3 2. 增加 GitHub 项目主页入口", "2. GitHub プロジェクトページへのリンクを追加" },
@@ -340,6 +356,14 @@ namespace ChunithmMobile.Runtime
         };
 
         private static readonly Dictionary<string, string> Traditional = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.4 更新版本说明", "0.3.4 更新版本說明" },
+            { "0.3.4 更新日志", "0.3.4 更新記錄" },
+            { "0.3.4 1. 优化谱面播放速度", "1. 最佳化譜面播放速度" },
+            { "0.3.4 2. 联机模式增加常驻房间", "2. 聯機模式增加常駐房間" },
+            { "0.3.4 3. 皮肤系统与编辑器兼容性重制", "3. 重製皮膚系統與編輯器相容性" },
+            { "0.3.4 4. 增加日语适配", "4. 增加日語支援" },
+            { "0.3.4 5. 增加 Discord Bot", "5. 增加 Discord Bot 支援" },
+            { "0.3.4 6. 增加 AJC、AJ、FC 的显示", "6. 增加 AJC、AJ、FC 的顯示" },
             { "0.3.2 更新版本说明", "0.3.2 更新版本說明" },
             { "0.3.2 更新日志", "0.3.2 更新記錄" },
             { "0.3.2 1. 增加多种分数与 combo 显示模式", "1. 增加多種分數與 combo 顯示模式" },
