@@ -94,15 +94,39 @@ namespace ChunithmMobile.Runtime
     public sealed class UiResizeHandle : MonoBehaviour, IBeginDragHandler, IDragHandler
     {
         public Action<float> Changed;
-        private Vector2 previous;
+        private RectTransform parent;
+        private Camera dragCamera;
+        private float previousRadius;
 
-        public void OnBeginDrag(PointerEventData eventData) { previous = eventData.position; }
+        public void OnBeginDrag(PointerEventData eventData)
+        {
+            eventData.eligibleForClick = false;
+            parent = transform.parent as RectTransform;
+            dragCamera = eventData.pressEventCamera;
+            previousRadius = PointerRadius(eventData.position);
+        }
 
         public void OnDrag(PointerEventData eventData)
         {
-            Vector2 delta = eventData.position - previous;
-            previous = eventData.position;
-            Changed?.Invoke((delta.x + delta.y) * .18f);
+            if (parent == null) return;
+            float radius = PointerRadius(eventData.position);
+            // The resize handle is at the element's lower-right corner. A
+            // radial move toward the element centre shrinks it; moving away
+            // grows it. Emit only the frame-to-frame difference because the
+            // editor applies the change incrementally and keeps the element
+            // centre fixed.
+            float delta = (radius - previousRadius) * .18f;
+            previousRadius = radius;
+            if (Mathf.Abs(delta) > .0001f) Changed?.Invoke(delta);
+        }
+
+        private float PointerRadius(Vector2 screenPosition)
+        {
+            if (parent == null) return 0f;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    parent, screenPosition, dragCamera, out Vector2 local))
+                return previousRadius;
+            return Vector2.Distance(local, parent.rect.center);
         }
     }
 

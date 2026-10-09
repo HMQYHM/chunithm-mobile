@@ -638,6 +638,21 @@ namespace ChunithmMobile.Runtime
             return "曲库：全部";
         }
 
+        private static string PersistentCurrentSongLabelV2(MultiplayerSongDto song)
+        {
+            if (song == null) return "";
+            string name = string.IsNullOrWhiteSpace(song.songName) ? song.songId : song.songName;
+            string difficulty = song.difficulty ?? "";
+            bool worldsEnd = difficulty.Equals("WORLDSEND", StringComparison.OrdinalIgnoreCase) ||
+                difficulty.Equals("WORLD'S END", StringComparison.OrdinalIgnoreCase) ||
+                difficulty.Equals("WD", StringComparison.OrdinalIgnoreCase);
+            string level = (song.level ?? "").Trim();
+            string levelLabel = worldsEnd
+                ? (string.IsNullOrWhiteSpace(level) || level.Equals("WD", StringComparison.OrdinalIgnoreCase) ? "WD" : "WD " + level)
+                : (string.IsNullOrWhiteSpace(level) ? difficulty : "Lv." + level);
+            return string.IsNullOrWhiteSpace(levelLabel) ? name : levelLabel + "  " + name;
+        }
+
         private void BuildRoomListContentV2(MultiplayerRoomDto[] rooms)
         {
             if (multiplayerBrowserRoomContent == null) return;
@@ -1246,7 +1261,7 @@ namespace ChunithmMobile.Runtime
                     SetButtonLabel(multiplayerRoomVoteButton, "投票换歌 " + voteCount + "/" + threshold + "（" + percent + "%）");
                 }
             }
-            multiplayerRoomSongLabel.text = persistent ? PersistentLibraryLabelV2(room.librarySelection) + (room.song == null ? "\n等待服务端选择歌曲" : "\n当前：" + (room.song.songName ?? room.song.songId)) : (room.song == null ? "房主尚未选择歌曲" :
+            multiplayerRoomSongLabel.text = persistent ? PersistentLibraryLabelV2(room.librarySelection) + (room.song == null ? "\n等待服务端选择歌曲" : "\n当前：" + PersistentCurrentSongLabelV2(room.song)) : (room.song == null ? "房主尚未选择歌曲" :
                 (room.song.songName ?? room.song.songId) + "\n" + room.song.difficulty + "  Lv." + room.song.level +
                 "\n" + MultiplayerSongTransferStatusV2(room.song));
             RefreshMultiplayerSongProgressV2(room.song);

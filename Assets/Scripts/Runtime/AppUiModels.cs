@@ -462,6 +462,10 @@ namespace ChunithmMobile.Runtime
         public float Y;
         public float Width;
         public float Height;
+        // The authored/default rectangle used to derive content scale. Older
+        // settings have zero values and are migrated to their current size.
+        public float ReferenceWidth;
+        public float ReferenceHeight;
         public bool Visible = true;
     }
 

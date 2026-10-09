@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,6 +8,91 @@ namespace ChunithmMobile.Runtime
 {
     public partial class AppUiShell
     {
+        // Keep this list in sync with GameplaySkinManager's allow-list. The
+        // editor uses it as the complete set of selectable runtime elements,
+        // even when a skin omits gameplay-ui.json or only declares a subset.
+        private static readonly string[] SkinEditorElementIds = {
+            "songInfo", "songCover", "scoreHud", "comboHud", "judgement", "judgementImage",
+            "pauseButton", "pausePanel", "progressBar", "fps", "countdown", "touchpad",
+            "airZone", "airBoundaryBottom", "airBoundaryTop", "airGuide", "trackMask", "touchFeedback"
+        };
+
+        private static readonly Dictionary<string, string> SkinEditorElementLabels =
+            new Dictionary<string, string>(StringComparer.Ordinal) {
+                { "songInfo", "歌曲信息" }, { "songCover", "歌曲封面" }, { "scoreHud", "分数详情" },
+                { "comboHud", "COMBO" }, { "judgement", "判定文字" }, { "judgementImage", "判定图片" },
+                { "pauseButton", "暂停按钮" }, { "pausePanel", "暂停面板" }, { "progressBar", "进度条" },
+                { "fps", "FPS" }, { "countdown", "倒计时" }, { "touchpad", "触控板" },
+                { "airZone", "AIR 区域" }, { "airBoundaryBottom", "AIR 下边界" },
+                { "airBoundaryTop", "AIR 上边界" }, { "airGuide", "AIR 引导线" },
+                { "trackMask", "轨道遮罩" }, { "touchFeedback", "触控反馈" }
+            };
+
+        private string SelectedLayoutElementId => string.IsNullOrEmpty(selectedLayoutElementId)
+            ? SkinEditorElementIds[0] : selectedLayoutElementId;
+
+        private static bool IsLegacyLayoutHandle(string id)
+        {
+            return id == "pauseButton" || id == "scoreHud" || id == "comboHud" ||
+                id == "judgement" || id == "songInfo";
+        }
+
+        private void BuildLayoutElementSelector(Transform parent)
+        {
+            layoutEditorPreviousElementButton = ButtonText("‹", parent,
+                new Vector2(.07f, .205f), new Vector2(.16f, .275f), surfaceRaised,
+                () => SelectLayoutElement(-1));
+            layoutEditorSelectedElementLabel = Label("编辑元素：歌曲信息", parent, 16,
+                TextAnchor.MiddleCenter, new Vector2(.18f, .205f), new Vector2(.82f, .275f),
+                Color.white);
+            layoutEditorNextElementButton = ButtonText("›", parent,
+                new Vector2(.84f, .205f), new Vector2(.93f, .275f), surfaceRaised,
+                () => SelectLayoutElement(1));
+        }
+
+        private void SelectLayoutElement(int delta)
+        {
+            int index = Array.IndexOf(SkinEditorElementIds, SelectedLayoutElementId);
+            if (index < 0) index = 0;
+            index = (index + delta + SkinEditorElementIds.Length) % SkinEditorElementIds.Length;
+            selectedLayoutElementId = SkinEditorElementIds[index];
+            RefreshLayoutEditor();
+        }
+
+        private void RefreshSelectedLayoutElement()
+        {
+            if (LayoutTarget(SelectedLayoutElementId) == null)
+            {
+                selectedLayoutElementId = SkinEditorElementIds.FirstOrDefault(id => LayoutTarget(id) != null) ?? SkinEditorElementIds[0];
+            }
+            string id = SelectedLayoutElementId;
+            if (layoutEditorSelectedElementLabel != null)
+            {
+                string displayLabel = SkinEditorElementLabels.TryGetValue(id, out string selectedLabel) ? selectedLabel : id;
+                if (id == "songCover" && !IsSkinLayoutEditable(id)) displayLabel += "（随歌曲信息）";
+                layoutEditorSelectedElementLabel.text = "编辑元素：" +
+                    displayLabel;
+            }
+            bool generic = !IsLegacyLayoutHandle(id) && IsSkinLayoutEditable(id);
+            if (editorSelectedElementHandle != null)
+            {
+                editorSelectedElementHandle.gameObject.SetActive(generic);
+                if (generic && EnsureDraftLayoutOverride(id) is GameplayLayoutOverride item)
+                {
+                    editorSelectedElementHandle.anchorMin = new Vector2(item.X, item.Y);
+                    editorSelectedElementHandle.anchorMax = new Vector2(item.X + item.Width, item.Y + item.Height);
+                    // This handle is sized by its normalized anchors. Clear
+                    // the legacy pixel size so it cannot cover neighbouring
+                    // elements when COMBO or another item is reduced.
+                    editorSelectedElementHandle.sizeDelta = Vector2.zero;
+                    editorSelectedElementHandle.offsetMin = editorSelectedElementHandle.offsetMax = Vector2.zero;
+                    UpdateEditorHandleLabel(editorSelectedElementHandle,
+                        (SkinEditorElementLabels.TryGetValue(id, out string label) ? label : id) +
+                        $"  {item.X:P0} / {item.Y:P0}");
+                }
+            }
+        }
+
         /// <summary>
         /// Applies only declarative overrides from the active skin. Buttons keep
         /// their game-owned callbacks; a skin can change their appearance and
@@ -17,6 +103,11 @@ namespace ChunithmMobile.Runtime
             if (style == null) return;
             if (!pages.TryGetValue(AppPage.Gameplay, out RectTransform canvas)) return;
             ClearGameplaySkinImageOverrides();
+            foreach (string id in SkinEditorElementIds)
+            {
+                RectTransform target = LayoutTarget(id);
+                if (target != null) target.localScale = Vector3.one;
+            }
             // Parent geometry must settle before child coordinates are converted.
             // Export order is a layer list, not a transform dependency order.
             foreach (GameplaySkinElementDefinition element in style.LayoutElements)
@@ -84,15 +175,34 @@ namespace ChunithmMobile.Runtime
             foreach (GameplayLayoutOverride item in source.GameplayLayoutOverrides)
             {
                 if (item == null || !string.Equals(item.SkinId, skinId, StringComparison.OrdinalIgnoreCase)) continue;
+                if (item.ElementId == "songCover" && style.LayoutElement("songCover") == null) continue;
                 RectTransform target = LayoutTarget(item.ElementId);
                 if (target == null || item.Width <= 0f || item.Height <= 0f) continue;
-                SetCanvasSkinRect(target, canvas, item.X, item.Y, item.Width, item.Height);
+                if (item.ReferenceWidth <= 0f || item.ReferenceHeight <= 0f)
+                {
+                    item.ReferenceWidth = item.Width;
+                    item.ReferenceHeight = item.Height;
+                }
+                float scaleX = Mathf.Clamp(item.Width / Mathf.Max(.001f, item.ReferenceWidth), .05f, 8f);
+                float scaleY = Mathf.Clamp(item.Height / Mathf.Max(.001f, item.ReferenceHeight), .05f, 8f);
+                // Keep the target's reference rectangle while scaling its
+                // contents. This prevents Text components and pixel offsets
+                // from being clipped when the editor rectangle is reduced.
+                float referenceX = item.X + (item.Width - item.ReferenceWidth) * .5f;
+                float referenceY = item.Y + (item.Height - item.ReferenceHeight) * .5f;
+                SetCanvasSkinRect(target, canvas, referenceX, referenceY,
+                    item.ReferenceWidth, item.ReferenceHeight);
+                target.localScale = new Vector3(scaleX, scaleY, 1f);
                 GameplaySkinElementDefinition definition = style.LayoutElement(item.ElementId);
                 if (definition != null)
                 {
                     ApplySkinVisual(target.gameObject, definition, IsDynamicLayoutElement(item.ElementId));
                 }
-                target.gameObject.SetActive(item.Visible);
+                // Panels such as pause/countdown/judgement are controlled by
+                // gameplay state. A seeded fallback override must not make an
+                // inactive runtime panel appear merely because it is editable.
+                if (!IsDynamicLayoutElement(item.ElementId) || !item.Visible)
+                    target.gameObject.SetActive(item.Visible);
             }
         }
 
@@ -102,11 +212,18 @@ namespace ChunithmMobile.Runtime
             if (target == null || canvas == null || !(target.parent is RectTransform parent) ||
                 parent.rect.width <= 0 || parent.rect.height <= 0) return;
             Rect bounds = canvas.rect;
+            // Keep the rectangle's centre even when the reference rectangle
+            // is larger than the edited rectangle and therefore extends past
+            // the canvas edge. Clamping the reference rectangle to [0, 1]
+            // moves its centre toward the opposite edge (the visible symptom
+            // was text and icons drifting to the upper-right while shrinking).
+            // Unity UI anchors may safely be outside the parent range; the
+            // canvas/parent clipping still controls what is visible.
             Vector3 min = parent.InverseTransformPoint(canvas.TransformPoint(new Vector3(
-                bounds.xMin + bounds.width * Mathf.Clamp01(x), bounds.yMin + bounds.height * Mathf.Clamp01(y))));
+                bounds.xMin + bounds.width * x, bounds.yMin + bounds.height * y)));
             Vector3 max = parent.InverseTransformPoint(canvas.TransformPoint(new Vector3(
-                bounds.xMin + bounds.width * Mathf.Clamp01(x + width),
-                bounds.yMin + bounds.height * Mathf.Clamp01(y + height))));
+                bounds.xMin + bounds.width * (x + width),
+                bounds.yMin + bounds.height * (y + height))));
             target.anchorMin = new Vector2((min.x - parent.rect.xMin) / parent.rect.width, (min.y - parent.rect.yMin) / parent.rect.height);
             target.anchorMax = new Vector2((max.x - parent.rect.xMin) / parent.rect.width, (max.y - parent.rect.yMin) / parent.rect.height);
             target.offsetMin = target.offsetMax = Vector2.zero;
@@ -116,36 +233,81 @@ namespace ChunithmMobile.Runtime
 
         private bool IsSkinLayoutEditable(string id)
         {
-            GameplaySkinInfo active = GameplaySkinManager.Active;
-            GameplaySkinElementDefinition element = GameplaySkinManager.Style != null
-                ? GameplaySkinManager.Style.LayoutElement(id) : null;
-            return active == null || active.BuiltIn ||
-                (element != null && element.X >= 0f && element.Y >= 0f &&
-                 element.Width > 0f && element.Height > 0f);
+            // A missing skin element means "use the game UI", not "lock the
+            // element". The runtime target is the source of the fallback
+            // rectangle and can therefore always be edited locally.
+            if (string.IsNullOrEmpty(id) || LayoutTarget(id) == null) return false;
+            // With no authored songCover rectangle, the cover is a child of
+            // songInfo and must follow its position and content scale.
+            if (id == "songCover" && GameplaySkinManager.Style.LayoutElement("songCover") == null)
+                return false;
+            return true;
         }
 
         private bool UseSkinEditorOverride(string id)
         {
-            GameplaySkinInfo active = GameplaySkinManager.Active;
-            GameplaySkinElementDefinition element = GameplaySkinManager.Style != null
-                ? GameplaySkinManager.Style.LayoutElement(id) : null;
-            return active != null && !active.BuiltIn && element != null &&
-                element.X >= 0f && element.Y >= 0f && element.Width > 0f && element.Height > 0f;
+            // Preserve an authored rectangle, or a previously saved local
+            // override. A missing element is seeded from the current runtime
+            // rectangle before this predicate becomes true.
+            if (!IsSkinLayoutEditable(id)) return false;
+            GameplaySkinElementDefinition element = GameplaySkinManager.Style?.LayoutElement(id);
+            bool authored = element != null && element.X >= 0f && element.Y >= 0f &&
+                element.Width > 0f && element.Height > 0f;
+            return authored || LayoutOverride(draftSettings ?? settings, id) != null;
+        }
+
+        private bool TryGetCanvasRect(string id, out Rect rect)
+        {
+            rect = default;
+            if (!pages.TryGetValue(AppPage.Gameplay, out RectTransform canvas)) return false;
+            RectTransform target = LayoutTarget(id);
+            if (target == null || canvas.rect.width <= 0f || canvas.rect.height <= 0f) return false;
+            Vector3[] corners = new Vector3[4];
+            target.GetWorldCorners(corners);
+            Vector3 min = canvas.InverseTransformPoint(corners[0]);
+            Vector3 max = canvas.InverseTransformPoint(corners[2]);
+            Rect bounds = canvas.rect;
+            float x = Mathf.InverseLerp(bounds.xMin, bounds.xMax, min.x);
+            float y = Mathf.InverseLerp(bounds.yMin, bounds.yMax, min.y);
+            float right = Mathf.InverseLerp(bounds.xMin, bounds.xMax, max.x);
+            float top = Mathf.InverseLerp(bounds.yMin, bounds.yMax, max.y);
+            rect = new Rect(Mathf.Clamp01(x), Mathf.Clamp01(y),
+                Mathf.Clamp(right - x, .001f, 1f), Mathf.Clamp(top - y, .001f, 1f));
+            return true;
+        }
+
+        private string ActiveLayoutSkinId => GameplaySkinManager.Active?.Id ?? GameplaySkinManager.BuiltinId;
+
+        private void EnsureAllDraftLayoutOverrides()
+        {
+            foreach (string id in SkinEditorElementIds) EnsureDraftLayoutOverride(id);
         }
 
         private GameplayLayoutOverride EnsureDraftLayoutOverride(string id)
         {
-            if (draftSettings == null || !UseSkinEditorOverride(id)) return null;
+            if (draftSettings == null || !IsSkinLayoutEditable(id)) return null;
             if (draftSettings.GameplayLayoutOverrides == null)
                 draftSettings.GameplayLayoutOverrides = new List<GameplayLayoutOverride>();
             GameplayLayoutOverride item = LayoutOverride(draftSettings, id);
-            if (item != null) return item;
+            if (item != null)
+            {
+                if (item.ReferenceWidth <= 0f || item.ReferenceHeight <= 0f)
+                {
+                    item.ReferenceWidth = item.Width;
+                    item.ReferenceHeight = item.Height;
+                }
+                return item;
+            }
             GameplaySkinElementDefinition source = GameplaySkinManager.Style.LayoutElement(id);
-            if (source == null || source.X < 0 || source.Y < 0 || source.Width <= 0 || source.Height <= 0) return null;
+            Rect fallback;
+            if (source != null && source.X >= 0f && source.Y >= 0f && source.Width > 0f && source.Height > 0f)
+                fallback = new Rect(source.X, source.Y, source.Width, source.Height);
+            else if (!TryGetCanvasRect(id, out fallback)) return null;
             item = new GameplayLayoutOverride {
-                SkinId = GameplaySkinManager.Active.Id, ElementId = id,
-                X = source.X, Y = source.Y, Width = source.Width, Height = source.Height,
-                Visible = source.Visible
+                SkinId = ActiveLayoutSkinId, ElementId = id,
+                X = fallback.x, Y = fallback.y, Width = fallback.width, Height = fallback.height,
+                ReferenceWidth = fallback.width, ReferenceHeight = fallback.height,
+                Visible = source == null || source.Visible
             };
             draftSettings.GameplayLayoutOverrides.Add(item);
             return item;
@@ -171,9 +333,21 @@ namespace ChunithmMobile.Runtime
             item.Width = width; item.Height = height;
         }
 
+        private void EditEditorTouchpadWidth(float normalizedX)
+        {
+            if (draftSettings == null) return;
+            int widthPercent = Mathf.Clamp(Mathf.RoundToInt((normalizedX - .5f) * 200f), 60, 100);
+            draftSettings.TouchpadWidth = widthPercent;
+
+            GameplayLayoutOverride item = EnsureDraftLayoutOverride("touchpad");
+            if (item == null) return;
+            float center = item.X + item.Width * .5f;
+            item.Width = widthPercent / 100f;
+            item.X = Mathf.Clamp(center - item.Width * .5f, 0f, 1f - item.Width);
+        }
+
         private void ApplySkinEditorVisibility()
         {
-            if (GameplaySkinManager.Active == null || GameplaySkinManager.Active.BuiltIn) return;
             editorPauseHandle?.gameObject.SetActive(IsSkinLayoutEditable("pauseButton"));
             editorHudHandle?.gameObject.SetActive(IsSkinLayoutEditable("scoreHud"));
             editorComboHandle?.gameObject.SetActive(IsSkinLayoutEditable("comboHud"));
@@ -217,22 +391,90 @@ namespace ChunithmMobile.Runtime
         }
 
         /// <summary>Match sensor bounds to authored region rectangles, without changing scoring rules.</summary>
-        private void ApplySkinInputAreas(GameplaySkinStyle style)
+        private void ApplySkinInputAreas(GameplaySkinStyle style, AppSettings source = null)
         {
             // The room's fullscreen MOD remains authoritative. A local skin
             // cannot restore AIR or shrink that MOD's full-screen ground area.
             if (IsFullscreenTouchpadActive() || inputRig == null || style == null) return;
+            source ??= settings;
             GameplaySkinElementDefinition ground = style.LayoutElement("touchpad");
-            GameplayLayoutOverride groundOverride = LayoutOverride(settings, "touchpad");
+            GameplayLayoutOverride groundOverride = LayoutOverride(source, "touchpad");
             Rect viewport = SkinCanvasViewport();
             if (groundOverride != null) inputRig.Ground?.SetPlayArea(MapSkinArea(
                 new Rect(groundOverride.X, groundOverride.Y, groundOverride.Width, groundOverride.Height), viewport));
             else if (TrySkinArea(ground, out Rect groundArea)) inputRig.Ground?.SetPlayArea(MapSkinArea(groundArea, viewport));
             GameplaySkinElementDefinition air = style.LayoutElement("airZone");
-            GameplayLayoutOverride airOverride = LayoutOverride(settings, "airZone");
+            GameplayLayoutOverride airOverride = LayoutOverride(source, "airZone");
             if (airOverride != null) inputRig.Air?.SetAirArea(MapSkinArea(
                 new Rect(airOverride.X, airOverride.Y, airOverride.Width, airOverride.Height), viewport));
             else if (TrySkinArea(air, out Rect airArea)) inputRig.Air?.SetAirArea(MapSkinArea(airArea, viewport));
+        }
+
+        private void SyncBoundaryLayoutOverrides(AppSettings source)
+        {
+            if (source == null) return;
+            int divider = Mathf.Clamp(source.TouchpadHeight, 8, 45);
+            int top = Mathf.Clamp(Mathf.Max(source.AirAreaTop, divider + 5), divider + 5, 100);
+            source.TouchpadHeight = divider;
+            source.GroundAreaHeight = divider;
+            source.AirAreaBottom = divider;
+            source.AirAreaTop = top;
+
+            float divider01 = divider / 100f;
+            float top01 = top / 100f;
+            GameplayLayoutOverride ground = LayoutOverride(source, "touchpad");
+            if (ground != null)
+            {
+                // Keep a skin's horizontal touchpad layout, but the touchpad
+                // always starts at the bottom and ends at the shared divider.
+                ground.X = Mathf.Clamp01(ground.X);
+                ground.Width = Mathf.Clamp(ground.Width, .01f, 1f - ground.X);
+                ground.Y = 0f;
+                ground.Height = divider01;
+            }
+            GameplayLayoutOverride air = LayoutOverride(source, "airZone");
+            if (air != null)
+            {
+                // AIR always begins at the same divider and ends at the AIR
+                // top boundary. Only its horizontal skin layout is retained.
+                air.X = Mathf.Clamp01(air.X);
+                air.Width = Mathf.Clamp(air.Width, .01f, 1f - air.X);
+                air.Y = divider01;
+                air.Height = Mathf.Max(.01f, top01 - divider01);
+            }
+            GameplayLayoutOverride bottomLine = LayoutOverride(source, "airBoundaryBottom");
+            if (bottomLine != null)
+            {
+                // The lower AIR boundary has its own line and follows only
+                // the touchpad/AIR divider value.
+                bottomLine.X = 0f;
+                bottomLine.Width = 1f;
+                bottomLine.Y = Mathf.Clamp01(divider01 - .002f);
+                bottomLine.Height = .004f;
+            }
+            GameplayLayoutOverride topLine = LayoutOverride(source, "airBoundaryTop");
+            if (topLine != null)
+            {
+                // The upper AIR boundary is a separate line and follows only
+                // the AIR top value; it must never share the lower line's Y.
+                topLine.X = 0f;
+                topLine.Width = 1f;
+                topLine.Y = Mathf.Clamp01(top01 - .002f);
+                topLine.Height = .004f;
+            }
+            GameplayLayoutOverride mask = LayoutOverride(source, "trackMask");
+            if (mask != null)
+            {
+                // Track mask geometry is controlled by the dedicated mask
+                // height setting. A stale generic override must not replace
+                // the configured top-of-track rectangle or re-enable it.
+                float maskHeight = Mathf.Clamp(source.TrackMaskHeight, 4, 45) / 100f;
+                mask.X = 0f;
+                mask.Y = 1f - maskHeight;
+                mask.Width = 1f;
+                mask.Height = maskHeight;
+                mask.Visible = source.TrackMaskEnabled;
+            }
         }
 
         // Sensor coordinates are screen-relative; Studio coordinates belong to

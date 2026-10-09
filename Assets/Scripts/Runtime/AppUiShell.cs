@@ -404,11 +404,16 @@ namespace ChunithmMobile.Runtime
         private RectTransform editorTrackWidthHandle;
         private RectTransform editorTrackTopWidthHandle;
         private RectTransform editorTrackMaskHandle;
+        private RectTransform editorSelectedElementHandle;
+        private string selectedLayoutElementId = "songInfo";
         private RectTransform layoutEditorFloatingButton;
         private RectTransform layoutEditorMenu;
         private RectTransform layoutEditorContent;
         private Button layoutEditorTouchpadButton;
         private Button layoutEditorBoundaryButton;
+        private Button layoutEditorPreviousElementButton;
+        private Button layoutEditorNextElementButton;
+        private Text layoutEditorSelectedElementLabel;
         private Slider editorBackgroundBrightnessSlider;
         private Slider editorTouchpadOpacitySlider;
         private Slider editorTouchHighlightSlider;
@@ -2914,14 +2919,13 @@ namespace ChunithmMobile.Runtime
             layoutEditorPreview.offsetMin = Vector2.zero; layoutEditorPreview.offsetMax = Vector2.zero;
 
             editorTouchpadHandle = EditorBoundary("触控板 / AIR 分界", new Color(.03f, .86f, .92f, .22f), value =>
-                EditSkinElementPosition("touchpad", new Vector2(.5f, value.y), () =>
-                    SetSharedInputBoundary(draftSettings, Percent(value.y, 8, 45))));
+                SetSharedInputBoundary(draftSettings, Percent(value.y, 8, 45)));
             editorTouchpadWidthHandle = EditorVerticalBoundary("触控板横向宽度", new Color(.08f, .92f, .72f, .22f), value =>
-                EditSkinElementSize("touchpad", Mathf.RoundToInt((value.x - .5f) * 200f), () =>
-                    draftSettings.TouchpadWidth = Mathf.Clamp(Mathf.RoundToInt((value.x - .5f) * 200f), 60, 100)));
+                EditEditorTouchpadWidth(value.x));
             editorAirTopHandle = EditorBoundary("AIR 区域上边界", new Color(.68f, .72f, 1f, .22f), value =>
-                EditSkinElementPosition("airZone", new Vector2(.5f, value.y), () =>
-                    draftSettings.AirAreaTop = Mathf.Max(Percent(value.y, 20, 100), draftSettings.AirAreaBottom + 5)));
+                draftSettings.AirAreaTop = Mathf.Clamp(
+                    Percent(value.y, draftSettings.TouchpadHeight + 5, 100),
+                    draftSettings.TouchpadHeight + 5, 100));
             editorTrackHandle = EditorBoundary("轨道整体上下位置", new Color(.22f, 1f, .62f, .20f), value =>
                 draftSettings.TrackVerticalOffset = Mathf.Clamp(Mathf.RoundToInt((value.y - .5f) * 100f), -40, 40));
             editorTrackWidthHandle = EditorVerticalBoundary("轨道下端宽度", new Color(1f, .48f, .20f, .24f), value =>
@@ -2964,6 +2968,10 @@ namespace ChunithmMobile.Runtime
                 });
             }, delta => EditSkinElementSize("songInfo", delta, () => draftSettings.GameplaySongInfoScale = Mathf.Clamp(
                 draftSettings.GameplaySongInfoScale + Mathf.RoundToInt(delta), 50, 180)));
+            editorSelectedElementHandle = EditorBox("选中元素", new Color(.20f, .78f, 1f, 1f), new Vector2(300, 120),
+                value => EditSkinElementPosition(SelectedLayoutElementId, value, null),
+                delta => EditSkinElementSize(SelectedLayoutElementId, delta, null));
+            editorSelectedElementHandle.gameObject.SetActive(false);
 
             Button menuButton = ButtonText("", layoutEditorLayer, Vector2.one, Vector2.one,
                 new Color(.02f, .36f, .44f, .98f), ToggleLayoutEditorMenu);
@@ -3009,6 +3017,7 @@ namespace ChunithmMobile.Runtime
 
             Label("拖动预览中的描边框调整位置，角点调整大小。指示线长度会统一按比例变化。",
                 layoutEditorContent, 16, TextAnchor.UpperLeft, new Vector2(.07f, .90f), new Vector2(.93f, .985f), muted);
+            BuildLayoutElementSelector(layoutEditorContent);
             editorBackgroundBrightnessSlider = LayoutEditorSliderRow("背景亮度", "%", 0, 100,
                 settings.BackgroundBrightness, .80f, value => {
                     if (draftSettings != null) draftSettings.BackgroundBrightness = Mathf.Clamp(value, 0, 100);
@@ -3174,9 +3183,6 @@ namespace ChunithmMobile.Runtime
             draftSettings = CloneSettings(settings);
             if (draftSettings.GameplayLayoutOverrides == null)
                 draftSettings.GameplayLayoutOverrides = new List<GameplayLayoutOverride>();
-            if (GameplaySkinManager.Active != null && !GameplaySkinManager.Active.BuiltIn)
-                foreach (string id in new[] { "pauseButton", "scoreHud", "comboHud", "judgement", "songInfo", "touchpad", "airZone" })
-                    EnsureDraftLayoutOverride(id);
             SetPageImmediate(pages[currentPage], false);
             SetPageImmediate(pages[AppPage.Gameplay], true);
             SetGameplayScene(true);
@@ -3215,6 +3221,10 @@ namespace ChunithmMobile.Runtime
             SetButtonLabel(layoutEditorBoundaryButton, UiLocalization.Translate("分界线显示") + "  " + OnOff(draftSettings.ShowInputBoundary));
             ApplyGameplaySkinLayout(GameplaySkinManager.Style);
             ApplyGameplayElementLayout(draftSettings, preserveSkinLayout: true);
+            EnsureAllDraftLayoutOverrides();
+            // Boundary guides are absolute vertical edges, not movable
+            // centres of the touchpad/AIR rectangles.
+            SyncBoundaryLayoutOverrides(draftSettings);
             ApplyGameplayLayoutOverrides(GameplaySkinManager.Style, draftSettings);
             PositionEditorBox(editorPauseHandle, draftSettings.GameplayPauseX, draftSettings.GameplayPauseY);
             PositionEditorBox(editorHudHandle, draftSettings.GameplayHudX, draftSettings.GameplayHudY);
@@ -3239,6 +3249,14 @@ namespace ChunithmMobile.Runtime
             ResizeEditorBox(editorComboHandle, new Vector2(320, 180), draftSettings.GameplayComboScale);
             ResizeEditorBox(editorJudgementHandle, new Vector2(430, 100), draftSettings.GameplayJudgementScale);
             ResizeEditorBox(editorSongInfoHandle, new Vector2(460, 132), draftSettings.GameplaySongInfoScale);
+            // Reapply normalized skin/local rectangles after the legacy pixel
+            // sizing above. Otherwise sizeDelta is added to the anchor span
+            // and makes the editor box much larger than its actual content.
+            PositionSkinEditorBox(editorPauseHandle, "pauseButton");
+            PositionSkinEditorBox(editorHudHandle, "scoreHud");
+            PositionSkinEditorBox(editorComboHandle, "comboHud");
+            PositionSkinEditorBox(editorJudgementHandle, "judgement");
+            PositionSkinEditorBox(editorSongInfoHandle, "songInfo");
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(true);
             bool skinTouchpadLayout = UseSkinEditorOverride("touchpad");
             bool skinAirLayout = UseSkinEditorOverride("airZone");
@@ -3265,10 +3283,10 @@ namespace ChunithmMobile.Runtime
                 draftSettings.TouchEffectOpacity / 100f);
             if (!skinAirLayout)
                 UpdateAirZone(gameplayAirZone, draftSettings.TouchpadHeight / 100f, draftSettings.AirAreaTop / 100f);
-            if (!skinTouchpadLayout)
-                PositionHorizontalLine(gameplayAirBoundaryBottom, draftSettings.TouchpadHeight / 100f);
-            if (!skinAirLayout)
-                PositionHorizontalLine(gameplayAirBoundaryTop, draftSettings.AirAreaTop / 100f);
+            // The two guide lines always reflect the shared boundary values,
+            // including when a skin supplies custom touchpad/AIR rectangles.
+            PositionHorizontalLine(gameplayAirBoundaryBottom, draftSettings.TouchpadHeight / 100f);
+            PositionHorizontalLine(gameplayAirBoundaryTop, draftSettings.AirAreaTop / 100f);
             gameplayAirBoundaryBottom.gameObject.SetActive(draftSettings.ShowInputBoundary);
             gameplayAirBoundaryTop.gameObject.SetActive(draftSettings.ShowInputBoundary);
             editorTouchpadHandle.gameObject.SetActive(draftSettings.ShowInputBoundary);
@@ -3300,11 +3318,14 @@ namespace ChunithmMobile.Runtime
             UpdateEditorHandleLabel(editorTrackTopWidthHandle, "轨道上端宽度  " + draftSettings.TrackTopWidth + "%");
             UpdateEditorHandleLabel(editorTrackMaskHandle, "遮罩高度  " + draftSettings.TrackMaskHeight + "%");
             UpdateEditorHandleLabel(editorPauseHandle, $"暂停按钮  {draftSettings.GameplayPauseX}% / {draftSettings.GameplayPauseY}%");
+            RefreshSelectedLayoutElement();
             ApplySkinEditorVisibility();
             // Reapply the package baseline after legacy preview controls. This
             // keeps authored skin rectangles stable while the editor is open.
+            SyncBoundaryLayoutOverrides(draftSettings);
             ApplyGameplaySkinLayout(GameplaySkinManager.Style);
             ApplyGameplayLayoutOverrides(GameplaySkinManager.Style, draftSettings);
+            ApplySkinInputAreas(GameplaySkinManager.Style, draftSettings);
         }
 
         private static void SetLayoutEditorSliderValue(Slider slider, Text valueLabel, float value,
@@ -3423,8 +3444,7 @@ namespace ChunithmMobile.Runtime
         private void ResetLayoutDraft()
         {
             if (draftSettings == null) return;
-            if (GameplaySkinManager.Active != null && !GameplaySkinManager.Active.BuiltIn &&
-                draftSettings.GameplayLayoutOverrides != null)
+            if (GameplaySkinManager.Active != null && draftSettings.GameplayLayoutOverrides != null)
                 draftSettings.GameplayLayoutOverrides.RemoveAll(item => item != null &&
                     string.Equals(item.SkinId, GameplaySkinManager.Active.Id, StringComparison.OrdinalIgnoreCase));
             AppSettings defaults = new AppSettings();
@@ -6276,6 +6296,7 @@ namespace ChunithmMobile.Runtime
             if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(settings.ShowGameplaySongInfo);
             ApplyGameplaySkinLayout(gameplaySkin);
+            SyncBoundaryLayoutOverrides(settings);
             ApplyGameplayLayoutOverrides(gameplaySkin, settings);
             ApplySkinInputAreas(gameplaySkin);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
@@ -6361,6 +6382,10 @@ namespace ChunithmMobile.Runtime
             if (item == null) return;
             handle.anchorMin = new Vector2(Mathf.Clamp01(item.X), Mathf.Clamp01(item.Y));
             handle.anchorMax = new Vector2(Mathf.Clamp01(item.X + item.Width), Mathf.Clamp01(item.Y + item.Height));
+            // Legacy editor boxes have a pixel size. Once a skin/local
+            // override supplies normalized bounds, retaining that sizeDelta
+            // expands the box beyond the element (most visible with COMBO).
+            handle.sizeDelta = Vector2.zero;
             handle.offsetMin = handle.offsetMax = Vector2.zero;
         }
 
