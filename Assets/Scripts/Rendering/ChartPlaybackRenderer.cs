@@ -1381,12 +1381,22 @@ namespace ChunithmMobile.Rendering
                 grounds.Add(ground);
             }
 
+            // Several AIR arrows can share one authored timing plane.  A
+            // nearest-neighbour lookup lets every arrow select the same
+            // ground note, which makes the arrows jump sideways when the
+            // chord is updated or when one of the ground notes is recycled.
+            // Reserve a ground note for the first best matching arrow in a
+            // timing plane; only reuse a note when the chart has more AIR
+            // arrows than compatible ground objects (the fallback preserves
+            // legacy behavior for malformed/incomplete charts).
+            var reservedGrounds = new HashSet<ChartNote>();
             for (int i = 0; i < notes.Count; i++) {
                 ChartNote air = notes[i];
                 if (air.Kind != NoteKind.Air) continue;
                 long key = AirPairTimeKey(air.TimeMs);
                 ChartNote best = null;
                 bool bestSourceMatch = false;
+                bool bestReserved = true;
                 int bestOverlap = 0;
                 float bestCenterDistance = float.PositiveInfinity;
                 // Query adjacent buckets because the same authored timestamp
@@ -1404,17 +1414,23 @@ namespace ChunithmMobile.Rendering
                         float centerDistance = Mathf.Abs(groundCenter - airCenter);
                         bool sourceMatch = !string.IsNullOrWhiteSpace(air.SourceType) &&
                             string.Equals(air.SourceType, ground.OriginalType, StringComparison.OrdinalIgnoreCase);
-                        if (best == null || sourceMatch && !bestSourceMatch ||
+                        bool reserved = reservedGrounds.Contains(ground);
+                        if (best == null || bestReserved && !reserved ||
+                            (reserved == bestReserved && (sourceMatch && !bestSourceMatch ||
                             (sourceMatch == bestSourceMatch && (overlap > bestOverlap ||
-                            (overlap == bestOverlap && centerDistance < bestCenterDistance)))) {
+                            (overlap == bestOverlap && centerDistance < bestCenterDistance)))))) {
                             best = ground;
                             bestSourceMatch = sourceMatch;
+                            bestReserved = reserved;
                             bestOverlap = overlap;
                             bestCenterDistance = centerDistance;
                         }
                     }
                 }
-                if (best != null) pairedGroundByAir[i] = best;
+                if (best != null) {
+                    pairedGroundByAir[i] = best;
+                    reservedGrounds.Add(best);
+                }
             }
         }
 
