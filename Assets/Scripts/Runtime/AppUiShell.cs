@@ -3432,8 +3432,14 @@ namespace ChunithmMobile.Runtime
             if (draftSettings == null) return;
             AppPage returnPage = currentPage;
             settings = CloneSettings(draftSettings);
-            settings.Save();
+            // Applying the runtime layout normalizes the shared touchpad/AIR
+            // boundary and may initialize skin override reference rectangles.
+            // Normalize before the first write, then persist once more after
+            // the runtime refresh so PlayerPrefs cannot retain the pre-refresh
+            // draft while the in-memory settings contain the normalized one.
+            SyncBoundaryLayoutOverrides(settings);
             CloseLayoutEditorView();
+            settings.Save();
             draftSettings = null;
             if (returnPage == AppPage.MultiplayerRoom)
                 SwitchTo(AppPage.MultiplayerRoom, RenderMultiplayerRoomV2);
