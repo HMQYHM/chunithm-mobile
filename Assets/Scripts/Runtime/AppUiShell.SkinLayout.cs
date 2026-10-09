@@ -8,6 +8,10 @@ namespace ChunithmMobile.Runtime
 {
     public partial class AppUiShell
     {
+        // Keep text-bearing gameplay elements above Unity's sub-pixel culling
+        // threshold. A 5% parent scale makes Text meshes lose strokes or vanish
+        // even though the layout rectangle is still present.
+        private const float MinimumReadableLayoutScale = .25f;
         // Keep this list in sync with GameplaySkinManager's allow-list. The
         // editor uses it as the complete set of selectable runtime elements,
         // even when a skin omits gameplay-ui.json or only declares a subset.
@@ -183,8 +187,8 @@ namespace ChunithmMobile.Runtime
                     item.ReferenceWidth = item.Width;
                     item.ReferenceHeight = item.Height;
                 }
-                float scaleX = Mathf.Clamp(item.Width / Mathf.Max(.001f, item.ReferenceWidth), .05f, 8f);
-                float scaleY = Mathf.Clamp(item.Height / Mathf.Max(.001f, item.ReferenceHeight), .05f, 8f);
+                float scaleX = Mathf.Clamp(item.Width / Mathf.Max(.001f, item.ReferenceWidth), MinimumReadableLayoutScale, 8f);
+                float scaleY = Mathf.Clamp(item.Height / Mathf.Max(.001f, item.ReferenceHeight), MinimumReadableLayoutScale, 8f);
                 // Keep the target's reference rectangle while scaling its
                 // contents. This prevents Text components and pixel offsets
                 // from being clipped when the editor rectangle is reduced.
@@ -326,8 +330,10 @@ namespace ChunithmMobile.Runtime
             GameplayLayoutOverride item = EnsureDraftLayoutOverride(id);
             if (item == null) { fallback?.Invoke(); return; }
             float scale = 1f + delta / 220f;
-            float width = Mathf.Clamp(item.Width * scale, .01f, 1f - item.X);
-            float height = Mathf.Clamp(item.Height * scale, .01f, 1f - item.Y);
+            float minimumWidth = Mathf.Min(item.ReferenceWidth > 0f ? item.ReferenceWidth * MinimumReadableLayoutScale : .01f, 1f - item.X);
+            float minimumHeight = Mathf.Min(item.ReferenceHeight > 0f ? item.ReferenceHeight * MinimumReadableLayoutScale : .01f, 1f - item.Y);
+            float width = Mathf.Clamp(item.Width * scale, minimumWidth, 1f - item.X);
+            float height = Mathf.Clamp(item.Height * scale, minimumHeight, 1f - item.Y);
             item.X = Mathf.Clamp01(item.X + (item.Width - width) * .5f);
             item.Y = Mathf.Clamp01(item.Y + (item.Height - height) * .5f);
             item.Width = width; item.Height = height;
