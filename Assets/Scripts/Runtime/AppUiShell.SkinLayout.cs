@@ -534,15 +534,19 @@ namespace ChunithmMobile.Runtime
         private void ApplySkinVisual(GameObject target, GameplaySkinElementDefinition element, bool dynamic)
         {
             if (target == null) return;
+            bool coreHud = element.Id == "scoreHud" || element.Id == "comboHud";
             if (dynamic) {
                 // Dynamic panels are activated by gameplay state. A hidden
                 // element stays disabled; a visible one keeps its runtime
                 // state (for example, the pause panel starts closed).
                 if (!element.Visible) target.SetActive(false);
-            } else target.SetActive(element.Visible);
+            } else target.SetActive(coreHud || element.Visible);
             CanvasGroup group = target.GetComponent<CanvasGroup>();
             if (group == null) group = target.AddComponent<CanvasGroup>();
-            group.alpha = element.Visible ? Mathf.Clamp01(element.Opacity) : 0f;
+            // Score and combo are game-owned HUDs. A skin may style them, but
+            // an omitted/false visibility flag must not hide the live score
+            // stream while the same elements remain visible in the editor.
+            group.alpha = coreHud || element.Visible ? Mathf.Clamp01(element.Opacity) : 0f;
             // Keep the original interaction contract for buttons and panels
             // containing buttons. A visual skin may restyle them, but must not
             // make the pause control or its confirmation buttons untappable.

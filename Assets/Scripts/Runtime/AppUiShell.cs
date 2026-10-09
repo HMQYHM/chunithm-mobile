@@ -6318,6 +6318,7 @@ namespace ChunithmMobile.Runtime
             ApplyGameplaySkinLayout(gameplaySkin);
             SyncBoundaryLayoutOverrides(settings);
             ApplyGameplayLayoutOverrides(gameplaySkin, settings);
+            EnsureCoreGameplayHudVisible();
             ApplySkinInputAreas(gameplaySkin);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
             FindObjectOfType<RuntimeLoadingOverlay>()?.SetHighContrastPalette(HighContrastUi);
@@ -6328,6 +6329,24 @@ namespace ChunithmMobile.Runtime
         private bool IsFullscreenTouchpadActive() => multiplayerInRound
             ? activeMultiplayerRoom?.mods?.fullscreenTouchpad == true
             : mods != null && mods.FullscreenTouchpad;
+
+        private void EnsureCoreGameplayHudVisible()
+        {
+            // The editor preview intentionally forces these handles visible so
+            // they can be edited. Re-assert the same contract after skin and
+            // local layout application, which may have changed the parent
+            // GameObject or CanvasGroup alpha.
+            if (gameplayHud != null) {
+                gameplayHud.gameObject.SetActive(true);
+                CanvasGroup group = gameplayHud.GetComponent<CanvasGroup>();
+                if (group != null && group.alpha <= 0f) group.alpha = 1f;
+            }
+            if (gameplayCombo != null) {
+                gameplayCombo.gameObject.SetActive(true);
+                CanvasGroup group = gameplayCombo.GetComponent<CanvasGroup>();
+                if (group != null && group.alpha <= 0f) group.alpha = 1f;
+            }
+        }
 
         private static void UpdateAirZone(RectTransform zone, float bottom, float top)
         {
