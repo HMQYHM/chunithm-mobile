@@ -1631,8 +1631,12 @@ namespace ChunithmMobile.Rendering
                         source.SegmentProfileIds.Length - 1)];
                 }
                 for (int i = 0; i < ribbon.Count; i++) {
+                    // FindProfile expects the left lane of the authored
+                    // interval. Passing the centre lane here shifted the
+                    // query and could select an unrelated SLA/SLP region on
+                    // merged curves.
                     ribbon.PointProfileIds[i] = playback.FindProfile(ribbon.AuthoredTimes[i],
-                        Mathf.RoundToInt(ribbon.Lanes[i] + ribbon.Widths[i] * .5f),
+                        Mathf.RoundToInt(ribbon.Lanes[i]),
                         Mathf.Max(1, Mathf.RoundToInt(ribbon.Widths[i])));
                 }
                 longChainGeometry[pair.Key] = new LongChainGeometry(ribbon, chainStart, chainEnd);

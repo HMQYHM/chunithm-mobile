@@ -77,6 +77,9 @@ namespace ChunithmMobile.Editor
                 VerifyVisualSpeedScale();
                 VerifyVisibleNoteSpeedRange();
                 VerifyIndependentLongHeadVisibility();
+                VerifyDeclaredSlideHeadBudget();
+                VerifyAirBudgetIsolation();
+                VerifyExplicitLongHeadPoints();
 
             Debug.Log("Original playback self-test passed: global reverse and local SLA/SLP are independent.");
             ValidateExternalChartIfRequested();
@@ -538,6 +541,72 @@ namespace ChunithmMobile.Editor
             foreach (ChartNote note in chart.Notes)
                 Require(note.VisibleHead && note.VisibleTail && !note.IsContinuation,
                     "touching independent SLD/HLD records lost their own head or tail");
+        }
+
+        private static void VerifyDeclaredSlideHeadBudget()
+        {
+            const string source =
+                "RESOLUTION\t384\nBPM_DEF\t120\n" +
+                "T_NOTE_SLD\t1\n" +
+                "SLD\t0\t0\t0\t4\t96\t0\t4\n" +
+                "SLD\t0\t96\t0\t4\t96\t0\t4\n";
+            ParsedChart chart;
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
+                chart = C2sParser.Parse(stream);
+            Require(chart.Notes.Count(n => n.VisibleHead) == 1,
+                "declared SLD head count did not suppress a geometric continuation");
+
+            const string independent =
+                "RESOLUTION\t384\nBPM_DEF\t120\n" +
+                "SLD\t0\t0\t0\t4\t24\t0\t4\n" +
+                "SLD\t0\t24\t0\t4\t24\t0\t4\n";
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(independent)))
+                chart = C2sParser.Parse(stream);
+            Require(chart.Notes.All(n => n.VisibleHead),
+                "SLD records without a declared head budget were merged unexpectedly");
+        }
+
+        private static void VerifyAirBudgetIsolation()
+        {
+            const string source =
+                "RESOLUTION\t384\nBPM_DEF\t120\n" +
+                "T_JUDGE_TAP\t0\nT_JUDGE_HLD\t0\nT_JUDGE_SLD\t0\n" +
+                "T_JUDGE_AIR\t10\nT_JUDGE_ALL\t10\n" +
+                "AHD\t0\t0\t8\t4\tTAP\t384\n";
+            ParsedChart airOnly;
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
+                airOnly = C2sParser.Parse(stream);
+            int airOnlyPoints = JudgePointScheduler.Build(airOnly).Count;
+
+            const string mixed =
+                "RESOLUTION\t384\nBPM_DEF\t120\n" +
+                "T_JUDGE_TAP\t1\nT_JUDGE_HLD\t4\nT_JUDGE_SLD\t0\n" +
+                "T_JUDGE_AIR\t10\nT_JUDGE_ALL\t15\n" +
+                "AHD\t0\t0\t8\t4\tTAP\t384\n" +
+                "HLD\t0\t0\t0\t4\t384\n";
+            ParsedChart mixedChart;
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(mixed)))
+                mixedChart = C2sParser.Parse(stream);
+            int mixedAirPoints = JudgePointScheduler.Build(mixedChart)
+                .Count(point => mixedChart.Notes[point.NoteIndex].Kind == NoteKind.AirHold);
+            Require(airOnlyPoints == 10 && mixedAirPoints == 10,
+                "ground long-note points still changed the AIR budget");
+        }
+
+        private static void VerifyExplicitLongHeadPoints()
+        {
+            const string source =
+                "RESOLUTION\t384\nBPM_DEF\t120\n" +
+                "T_JUDGE_TAP\t2\nT_JUDGE_HLD\t2\nT_JUDGE_SLD\t0\n" +
+                "T_JUDGE_AIR\t0\nT_JUDGE_ALL\t4\n" +
+                "HXD\t0\t0\t0\t4\t384\tUP\n";
+            ParsedChart chart;
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(source)))
+                chart = C2sParser.Parse(stream);
+            Require(chart.Notes[0].ExplicitJudgeTimesMs != null &&
+                    chart.Notes[0].ExplicitJudgeTimesMs.Count == 4 &&
+                    JudgePointScheduler.Build(chart).Count == 4,
+                "explicit long-note list dropped an extra head point");
         }
 
         private static void VerifyExHoldStyleAndVisualOwnership()

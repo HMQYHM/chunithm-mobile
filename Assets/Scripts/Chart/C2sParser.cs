@@ -65,6 +65,7 @@ namespace ChunithmMobile.Chart
             var rawNotes = new List<RawNote>();
             var rawGuidePaths = new List<RawGuidePath>();
             var totals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var noteTotals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             double explicitDurationMs = 0;
 
             using var reader = new StreamReader(stream, new UTF8Encoding(false, true), true, 65536, false);
@@ -103,6 +104,10 @@ namespace ChunithmMobile.Chart
                     case "T_JUDGE_TAP": case "T_JUDGE_HLD": case "T_JUDGE_SLD":
                     case "T_JUDGE_AIR": case "T_JUDGE_FLK": case "T_JUDGE_ALL":
                         totals[p[0][8..]] = IntAt(p, 1); break;
+                    case "T_NOTE_TAP": case "T_NOTE_CHR": case "T_NOTE_FLK": case "T_NOTE_MNE":
+                    case "T_NOTE_HLD": case "T_NOTE_SLD": case "T_NOTE_AIR": case "T_NOTE_AHD":
+                    case "T_NOTE_ALL":
+                        noteTotals[p[0][7..]] = IntAt(p, 1); break;
                     default:
                         if (ParseGuidePath(p, resolution) is { } guidePath) {
                             rawGuidePaths.Add(guidePath);
@@ -123,7 +128,7 @@ namespace ChunithmMobile.Chart
             if (bpms.All(x => x.Tick != 0)) bpms.Add(new RawBpm(0, defaultBpm));
             bpms.Sort((a, b) => a.Tick.CompareTo(b.Tick));
             var time = new TickTimeMapper(resolution, bpms);
-            ResolveSegmentVisibility(rawNotes);
+            ResolveSegmentVisibility(rawNotes, noteTotals);
             bool[] slideCheckpoints = ResolveSlideCheckpoints(rawNotes);
             var judgePoints = AllocateJudgePoints(rawNotes, totals, time);
             var notesAt = rawNotes.GroupBy(n => n.Tick).ToDictionary(g => g.Key, g => g.ToList());
@@ -267,7 +272,8 @@ namespace ChunithmMobile.Chart
             return 0;
         }
 
-        private static void ResolveSegmentVisibility(IReadOnlyList<RawNote> notes)
+        private static void ResolveSegmentVisibility(IReadOnlyList<RawNote> notes,
+            IReadOnlyDictionary<string, int> totals)
         {
             // Notes are sorted by start, not by end. A short TAP between a
             // curve and its endpoint must not terminate the ownership search.
@@ -309,6 +315,31 @@ namespace ChunithmMobile.Chart
                     {
                         current.VisibleHead = false;
                         break;
+                    }
+                }
+            }
+
+            // Some exporters write every geometric SLD fragment as an SLD
+            // record, while T_NOTE_SLD counts only the authored slide heads.
+            // Do not globally merge touching SLD records: hand-authored charts
+            // can intentionally place independent objects at a shared seam.
+            // When the file supplies a smaller SLD head count, consume only
+            // the exact end-to-start candidates needed to reach that count.
+            if (totals.TryGetValue("SLD", out int declaredSlides)) {
+                var slideRecords = notes.Where(n => n.OriginalType == "SLD").ToList();
+                int excess = slideRecords.Count - Math.Max(0, declaredSlides);
+                if (excess > 0) {
+                    foreach (RawNote current in slideRecords) {
+                        if (excess == 0) break;
+                        if (!current.VisibleHead) continue;
+                        bool continuation = slideRecords.Any(previous =>
+                            previous != current && previous.Duration > 0 &&
+                            previous.Tick + previous.Duration == current.Tick &&
+                            previous.EndLane < current.Lane + Math.Max(1, current.Width) &&
+                            current.Lane < previous.EndLane + Math.Max(1, previous.EndWidth));
+                        if (!continuation) continue;
+                        current.VisibleHead = false;
+                        excess--;
                     }
                 }
             }
@@ -564,12 +595,22 @@ namespace ChunithmMobile.Chart
             // records; spreading AIR totals over ASC moves judgments away
             // from the authored action planes.
             var airBodies = Where(n => n.OriginalType is "AHD" or "AHX" or "ASD");
-            int ladderPoints = notes.Sum(n => n.ExplicitJudgeTicks?.Count ?? 0);
+            // Explicit points from ground HOLD/SLIDE chains belong to their
+            // own judge totals. Counting them here steals AIR budget whenever
+            // a chart contains both a ground long note and an AIR long note.
+            int ladderPoints = notes.Where(n => n.Kind is NoteKind.AirHold or NoteKind.AirAction)
+                .Sum(n => n.ExplicitJudgeTicks?.Count ?? 0);
             int airTarget = Total("AIR",
                 ordinaryAirHeads.Count + airLongHeads.Count + airBodies.Count + ladderPoints);
             int bodyTarget = Math.Max(0,
                 airTarget - ordinaryAirHeads.Count - airLongHeads.Count - ladderPoints);
-            Distribute(airBodies, bodyTarget, airBodies.ToHashSet(), DurationMs);
+            // A damaged or synthetic chart can declare fewer AIR points than
+            // the number of body records. Requiring every body to receive a
+            // point would exceed T_JUDGE_AIR. Keep one point per body only
+            // while the remaining budget can support it; the remainder is
+            // then distributed by elapsed duration.
+            var mandatoryAirBodies = airBodies.Take(Math.Min(bodyTarget, airBodies.Count)).ToHashSet();
+            Distribute(airBodies, bodyTarget, mandatoryAirBodies, DurationMs);
 
             return result;
         }
@@ -685,13 +726,17 @@ namespace ChunithmMobile.Chart
             foreach (int index in chain.Members) {
                 RawNote note = notes[index];
                 var points = pointsByNote[index];
-                if (note.VisibleHead) points.Add(note.Tick);
+                // TAP allocation may give a wide/special head more than one
+                // same-time judge point. Preserve every one in the explicit
+                // list; adding only a single head used to drop points when a
+                // chain also had KEEP checkpoints.
+                int headPoints = note.VisibleHead ? Math.Max(0, result[index]) : 0;
+                for (int head = 0; head < headPoints; head++) points.Add(note.Tick);
                 points.Sort();
                 note.ExplicitJudgeTicks = points;
                 // The head is already allocated by T_JUDGE_TAP/ALL. Only add
                 // the continuous-body points here; replacing the value would
                 // erase the head contribution for the first chain segment.
-                int headPoints = note.VisibleHead ? 1 : 0;
                 result[index] += Math.Max(0, points.Count - headPoints);
             }
         }
