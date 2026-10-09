@@ -3494,9 +3494,23 @@ namespace ChunithmMobile.Runtime
         private void CloseLayoutEditor()
         {
             if (layoutEditorLayer == null || !layoutEditorLayer.gameObject.activeSelf) return;
-            bool changed = draftSettings != null && JsonUtility.ToJson(draftSettings) != JsonUtility.ToJson(settings);
+            bool changed = draftSettings != null && !EquivalentLayoutSettings(draftSettings, settings);
             if (changed) ShowModal("放弃未保存修改？", "当前可视化布局尚未保存。", DiscardLayoutDraft, true);
             else DiscardLayoutDraft();
+        }
+
+        private bool EquivalentLayoutSettings(AppSettings left, AppSettings right)
+        {
+            if (left == null || right == null) return left == right;
+            // The editor creates fallback overrides for editable elements and
+            // keeps the touchpad/AIR boundary shared. Compare the same
+            // normalized representation that SaveLayoutDraft persists, so
+            // those bookkeeping changes do not produce a false unsaved prompt.
+            AppSettings normalizedLeft = CloneSettings(left);
+            AppSettings normalizedRight = CloneSettings(right);
+            SyncBoundaryLayoutOverrides(normalizedLeft);
+            SyncBoundaryLayoutOverrides(normalizedRight);
+            return JsonUtility.ToJson(normalizedLeft) == JsonUtility.ToJson(normalizedRight);
         }
 
         private void DiscardLayoutDraft()
