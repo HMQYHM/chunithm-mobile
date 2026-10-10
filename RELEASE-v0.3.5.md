@@ -7,6 +7,7 @@
 1. 修复 Combo 和分数在实际游玩界面中的显示异常。
 2. 修复可视化布局调整保存后状态未正确持久化的问题。
 3. 修复部分谱面的判定数统计异常。
+4. 修复游玩界面歌曲信息封面上下倒置的问题。
 
 ### 文件说明
 
@@ -21,6 +22,7 @@
 1. 修復 Combo 與分數在實際遊玩介面中的顯示異常。
 2. 修復可視化佈局調整儲存後狀態未正確持久化的問題。
 3. 修復部分譜面的判定數統計異常。
+4. 修復遊玩介面歌曲資訊封面上下倒置的問題。
 
 ### 檔案說明
 
@@ -35,6 +37,7 @@
 1. 実際のプレイ画面で Combo とスコアが正しく表示されない問題を修正。
 2. ビジュアルレイアウト調整を保存しても状態が正しく保持されない問題を修正。
 3. 一部の譜面で判定数が正しく集計されない問題を修正。
+4. プレイ画面の曲情報ジャケットが上下反転する問題を修正。
 
 ### ファイルについて
 
@@ -49,6 +52,7 @@
 1. Fixed Combo and score display issues in the actual gameplay screen.
 2. Fixed visual layout edits not being persisted correctly after saving.
 3. Fixed incorrect judgement-count statistics on some charts.
+4. Fixed the gameplay song-information cover being upside down.
 
 ### Files
 
