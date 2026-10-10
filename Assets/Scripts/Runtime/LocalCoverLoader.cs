@@ -64,6 +64,11 @@ namespace ChunithmMobile.Runtime
         {
             if (target == null) return;
             ExpectedPaths.Remove(target.GetInstanceID());
+            // A target may have displayed a previous cover. Always restore the
+            // UI transform when clearing it so an old orientation cannot leak
+            // into the next song or the visual layout preview.
+            target.rectTransform.localRotation = Quaternion.identity;
+            target.rectTransform.localScale = Vector3.one;
             TrimCache();
         }
 
@@ -127,10 +132,12 @@ namespace ChunithmMobile.Runtime
             target.color = Color.white;
             target.type = Image.Type.Simple;
             target.preserveAspect = preserveAspect;
-            // Extracted jacket textures need a vertical correction for Unity UI,
-            // but must retain their original left/right orientation.
+            // Unity's texture loaders already return jacket pixels in display
+            // order. Keep the image upright for both the song-information card
+            // and the visual-layout preview; applying a negative Y scale here
+            // would turn the cover upside down after the async load completes.
             target.rectTransform.localRotation = Quaternion.identity;
-            target.rectTransform.localScale = new Vector3(1f, -1f, 1f);
+            target.rectTransform.localScale = Vector3.one;
         }
 
         private static void ApplyIfExpected(Image target, string path, Sprite sprite, bool preserveAspect)
