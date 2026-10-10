@@ -98,7 +98,14 @@ namespace ChunithmMobile.Editor
             string storePassword = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEYSTORE_PASS");
             string alias = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEY_ALIAS");
             string aliasPassword = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEY_PASS");
-            if (string.IsNullOrWhiteSpace(keystore) && string.IsNullOrWhiteSpace(alias)) return;
+            if (string.IsNullOrWhiteSpace(keystore) && string.IsNullOrWhiteSpace(alias))
+            {
+                // Do not inherit a stale machine-local keystore path from
+                // ProjectSettings. Unity will use its standard debug signing
+                // configuration for local test builds.
+                PlayerSettings.Android.useCustomKeystore = false;
+                return;
+            }
             if (string.IsNullOrWhiteSpace(keystore) || string.IsNullOrWhiteSpace(storePassword) ||
                 string.IsNullOrWhiteSpace(alias) || string.IsNullOrWhiteSpace(aliasPassword))
                 throw new BuildFailedException("Android signing requires CHUNITHM_ANDROID_KEYSTORE, CHUNITHM_ANDROID_KEYSTORE_PASS, CHUNITHM_ANDROID_KEY_ALIAS and CHUNITHM_ANDROID_KEY_PASS.");
