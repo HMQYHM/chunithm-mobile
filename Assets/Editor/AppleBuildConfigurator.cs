@@ -44,9 +44,9 @@ namespace ChunithmMobile.Editor
             PlayerSettings.companyName = "HMQYHM";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS,
                 AppleBundleIdentifier);
-            PlayerSettings.bundleVersion = "0.3.4";
-            // Increment the iOS build number for the 0.3.4 release.
-            PlayerSettings.iOS.buildNumber = "224";
+            PlayerSettings.bundleVersion = "0.3.5";
+            // Increment the iOS build number for the 0.3.5 release.
+            PlayerSettings.iOS.buildNumber = "225";
             // Current Xcode SDKs no longer accept deployment targets below iOS 15.
             // Keep Unity and both generated Xcode targets aligned so Xcode does not
             // report a version mismatch between Unity-iPhone and UnityFramework.
@@ -236,6 +236,8 @@ namespace ChunithmMobile.Editor
             project.SetBuildProperty(mainTarget, "ENABLE_BITCODE", "NO");
             project.SetBuildProperty(frameworkTarget, "ENABLE_BITCODE", "NO");
             project.AddFrameworkToProject(frameworkTarget,
+                "UniformTypeIdentifiers.framework", false);
+            project.AddFrameworkToProject(mainTarget,
                 "UniformTypeIdentifiers.framework", false);
 
             string teamId = Environment.GetEnvironmentVariable("APPLE_DEVELOPMENT_TEAM");

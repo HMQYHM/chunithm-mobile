@@ -546,7 +546,13 @@ namespace ChunithmMobile.Runtime
             // Score and combo are game-owned HUDs. A skin may style them, but
             // an omitted/false visibility flag must not hide the live score
             // stream while the same elements remain visible in the editor.
-            group.alpha = coreHud || element.Visible ? Mathf.Clamp01(element.Opacity) : 0f;
+            // scoreHud/comboHud are game-owned live counters.  Their source
+            // Text and digit-renderer layer must remain drawable even when an
+            // older skin omitted `opacity` (JsonUtility reads that missing
+            // field as 0) or authored a decorative zero-opacity value.  The
+            // visibility switch for these two counters is handled by the
+            // runtime HUD contract, so never let a skin CanvasGroup erase it.
+            group.alpha = coreHud ? 1f : (element.Visible ? Mathf.Clamp01(element.Opacity) : 0f);
             // Keep the original interaction contract for buttons and panels
             // containing buttons. A visual skin may restyle them, but must not
             // make the pause control or its confirmation buttons untappable.

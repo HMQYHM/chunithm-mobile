@@ -998,16 +998,19 @@ namespace ChunithmMobile.Runtime
                 result.ComboColor = ParseColor(manifest.combo?.color, result.ComboColor);
                 result.ScoreColor = ParseColor(manifest.score?.color, result.ScoreColor);
                 result.JudgementColor = ParseColor(manifest.judgements?.color, result.JudgementColor);
-                if (manifest.combo != null && manifest.combo.defaultSize > 0) result.ComboSize = manifest.combo.defaultSize;
-                if (manifest.score != null && manifest.score.defaultSize > 0) result.ScoreSize = manifest.score.defaultSize;
-                if (manifest.judgements != null && manifest.judgements.defaultSize > 0)
+                // Older built-in manifests used defaultSize as a normalized
+                // scale (1.0), while the runtime fields are pixel font sizes.
+                // Never turn that normalized value into a one-pixel HUD.
+                if (manifest.combo != null && manifest.combo.defaultSize >= 8) result.ComboSize = manifest.combo.defaultSize;
+                if (manifest.score != null && manifest.score.defaultSize >= 8) result.ScoreSize = manifest.score.defaultSize;
+                if (manifest.judgements != null && manifest.judgements.defaultSize >= 8)
                     result.JudgementSize = manifest.judgements.defaultSize;
-                result.ComboFontSize = manifest.combo != null && manifest.combo.fontSize > 0 ?
-                    Mathf.Clamp(manifest.combo.fontSize, 8, 256) : result.ComboSize;
-                result.ScoreFontSize = manifest.score != null && manifest.score.fontSize > 0 ?
-                    Mathf.Clamp(manifest.score.fontSize, 8, 256) : result.ScoreSize;
-                result.JudgementFontSize = manifest.judgements != null && manifest.judgements.fontSize > 0 ?
-                    Mathf.Clamp(manifest.judgements.fontSize, 8, 256) : result.JudgementSize;
+                result.ComboFontSize = manifest.combo != null && manifest.combo.fontSize >= 8 ?
+                    Mathf.Clamp(manifest.combo.fontSize, 8, 256) : Mathf.Max(8, result.ComboSize);
+                result.ScoreFontSize = manifest.score != null && manifest.score.fontSize >= 8 ?
+                    Mathf.Clamp(manifest.score.fontSize, 8, 256) : Mathf.Max(8, result.ScoreSize);
+                result.JudgementFontSize = manifest.judgements != null && manifest.judgements.fontSize >= 8 ?
+                    Mathf.Clamp(manifest.judgements.fontSize, 8, 256) : Mathf.Max(8, result.JudgementSize);
                 ApplyDigitManifest(manifest.combo, result.ComboDigitPaths);
                 ApplyDigitManifest(manifest.score, result.ScoreDigitPaths);
                 if (manifest.effects != null) {

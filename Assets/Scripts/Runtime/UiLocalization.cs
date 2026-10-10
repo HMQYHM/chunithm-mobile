@@ -11,6 +11,10 @@ namespace ChunithmMobile.Runtime
         public static AppLanguage Current { get; private set; } = AppLanguage.SimplifiedChinese;
 
         private static readonly Dictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.5 更新日志", "Version 0.3.5 update log" },
+            { "0.3.5 1. 修复 Combo 和分数显示异常", "1. Fixed abnormal Combo and score display" },
+            { "0.3.5 2. 修复可视化布局保存 bug", "2. Fixed the visual layout save bug" },
+            { "0.3.5 3. 修复部分谱面判定数 bug", "3. Fixed judgement-count bugs in some charts" },
             { "0.3.4 更新版本说明", "Version 0.3.4 update notes" },
             { "0.3.4 更新日志", "Version 0.3.4 update log" },
             { "0.3.4 1. 优化谱面播放速度", "1. Optimized chart playback speed" },
@@ -285,6 +289,10 @@ namespace ChunithmMobile.Runtime
         };
 
         private static readonly Dictionary<string, string> Japanese = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.5 更新日志", "バージョン 0.3.5 更新履歴" },
+            { "0.3.5 1. 修复 Combo 和分数显示异常", "1. Combo とスコアの表示異常を修正" },
+            { "0.3.5 2. 修复可视化布局保存 bug", "2. ビジュアルレイアウト保存の不具合を修正" },
+            { "0.3.5 3. 修复部分谱面判定数 bug", "3. 一部譜面の判定数の不具合を修正" },
             { "0.3.4 更新版本说明", "バージョン 0.3.4 更新内容" },
             { "0.3.4 更新日志", "バージョン 0.3.4 更新履歴" },
             { "0.3.4 1. 优化谱面播放速度", "1. 譜面の再生速度を最適化" },
@@ -443,6 +451,10 @@ namespace ChunithmMobile.Runtime
         };
 
         private static readonly Dictionary<string, string> Traditional = new Dictionary<string, string>(StringComparer.Ordinal) {
+            { "0.3.5 更新日志", "0.3.5 更新記錄" },
+            { "0.3.5 1. 修复 Combo 和分数显示异常", "1. 修正 Combo 與分數顯示異常" },
+            { "0.3.5 2. 修复可视化布局保存 bug", "2. 修正視覺化版面儲存問題" },
+            { "0.3.5 3. 修复部分谱面判定数 bug", "3. 修正部分譜面判定數問題" },
             { "0.3.4 更新版本说明", "0.3.4 更新版本說明" },
             { "0.3.4 更新日志", "0.3.4 更新記錄" },
             { "0.3.4 1. 优化谱面播放速度", "1. 最佳化譜面播放速度" },

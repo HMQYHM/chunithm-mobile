@@ -258,8 +258,14 @@ namespace ChunithmMobile.Runtime
         private const string SkinStudioUrl = "https://github.com/HMQYHM/chunithm-mobile/tree/main/CHUNITHM-Mobile-Unity/tools/SkinStudio";
         private static readonly string[] SettingsCategories = { "延迟", "画面", "皮肤", "音频", "更多" };
         private readonly Dictionary<string, Button> settingsCategoryButtons = new Dictionary<string, Button>();
-        private static readonly string[] UpdateLogVersions = { "0.3.4", "0.3.3", "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
+        private static readonly string[] UpdateLogVersions = { "0.3.5", "0.3.4", "0.3.3", "0.3.2", "0.3.1", "0.2.13", "0.2.12", "0.2.11", "0.2.10", "0.2.9", "0.2.8", "0.2.7", "0.2.6", "0.2.5", "0.2.4", "0.2.3", "0.2.2" };
         private static readonly string[][] UpdateLogLineKeys = {
+            new[] {
+                "0.3.5 更新日志",
+                "0.3.5 1. 修复 Combo 和分数显示异常",
+                "0.3.5 2. 修复可视化布局保存 bug",
+                "0.3.5 3. 修复部分谱面判定数 bug"
+            },
             new[] {
                 "0.3.4 更新日志",
                 "0.3.4 1. 优化谱面播放速度",
@@ -5374,7 +5380,24 @@ namespace ChunithmMobile.Runtime
             SetGameplayInputSuppressed(true);
             SetGameplayJudgementSuppressed(true);
             ConfigureMultiplayerPauseV2();
-            gameplayPausePanel?.gameObject.SetActive(GameplaySkinManager.Style.LayoutElementVisible("pausePanel"));
+            if (gameplayPausePanel != null) {
+                gameplayPausePanel.gameObject.SetActive(true);
+                gameplayPausePanel.SetAsLastSibling();
+                CanvasGroup group = gameplayPausePanel.GetComponent<CanvasGroup>();
+                if (group != null) {
+                    group.alpha = 1f;
+                    group.blocksRaycasts = true;
+                    group.interactable = true;
+                }
+                // A skin may hide the decorative pause panel, but the local
+                // pause action must remain usable. Reassert every child button
+                // after the panel is brought above gameplay overlays.
+                foreach (Button button in gameplayPausePanel.GetComponentsInChildren<Button>(true)) {
+                    button.gameObject.SetActive(true);
+                    button.interactable = true;
+                    button.transform.SetAsLastSibling();
+                }
+            }
         }
 
         private void CancelGameplayResume()
@@ -5969,7 +5992,7 @@ namespace ChunithmMobile.Runtime
                 gameplayScore.text = currentScore.ToString("D7");
                 gameplayCombo.text = metricMode == 0
                     ? score.Combo + "\nCOMBO"
-                    : remainingCombo > 0 ? remainingCombo + "\n剩余COMBO" : "";
+                    : remainingCombo + "\n剩余COMBO";
             } else {
                 // Score below the notes means the main HUD becomes the
                 // increasing combo counter. Mode 2 is increasing score; the
@@ -5980,7 +6003,7 @@ namespace ChunithmMobile.Runtime
                 else if (metricMode <= 8) {
                     int remainingScore = RemainingRankAllowance(score, gameplaySession.JudgeTotal,
                         metricMode - 3);
-                    gameplayCombo.text = remainingScore > 0 ? remainingScore + "\n剩余分数" : "";
+                    gameplayCombo.text = remainingScore + "\n剩余分数";
                 }
                 else if (metricMode == 9) {
                     int lostScore = LostScore(score, gameplaySession.JudgeTotal);
@@ -5991,7 +6014,7 @@ namespace ChunithmMobile.Runtime
                     if (playedSong != null && playedChart != null)
                         SongRecordStore.TryGet(playedSong.Root, playedChart.Difficulty, playedChart.Path, out bestScore);
                     int remaining = RemainingBestScoreAllowance(score, gameplaySession.JudgeTotal, bestScore);
-                    gameplayCombo.text = remaining > 0 ? remaining + "\n距离最好成绩" : "";
+                    gameplayCombo.text = remaining + "\n距离最好成绩";
                 }
             }
             gameplayJudgements.text = $"JC {score.JusticeCritical}   J {score.Justice}   AT {score.Attack}   MISS {score.Miss}";
@@ -6298,8 +6321,8 @@ namespace ChunithmMobile.Runtime
             if (gameplayCombo != null) gameplayCombo.color = gameplaySkin.ComboColor;
             gameplayScore?.GetComponent<GameplaySkinDigitRenderer>()?.RefreshSkin();
             gameplayCombo?.GetComponent<GameplaySkinDigitRenderer>()?.RefreshSkin();
-            if (gameplayScore != null) gameplayScore.fontSize = gameplaySkin.ScoreFontSize;
-            if (gameplayCombo != null) gameplayCombo.fontSize = gameplaySkin.ComboFontSize;
+            if (gameplayScore != null) gameplayScore.fontSize = Mathf.Clamp(gameplaySkin.ScoreFontSize, 8, 256);
+            if (gameplayCombo != null) gameplayCombo.fontSize = Mathf.Clamp(gameplaySkin.ComboFontSize, 8, 256);
             RefreshJudgementSkin();
             if (gameplayJudgements != null) gameplayJudgements.color = gameplaySkin.JudgementColor;
             if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
@@ -6311,8 +6334,8 @@ namespace ChunithmMobile.Runtime
             // App settings establish the baseline sizes first; the skin's
             // explicit number styling must be applied after that baseline or
             // a refresh would silently overwrite the skin's font choices.
-            if (gameplayScore != null) gameplayScore.fontSize = gameplaySkin.ScoreFontSize;
-            if (gameplayCombo != null) gameplayCombo.fontSize = gameplaySkin.ComboFontSize;
+            if (gameplayScore != null) gameplayScore.fontSize = Mathf.Clamp(gameplaySkin.ScoreFontSize, 8, 256);
+            if (gameplayCombo != null) gameplayCombo.fontSize = Mathf.Clamp(gameplaySkin.ComboFontSize, 8, 256);
             if (gameplayJudgements != null) gameplayJudgements.fontSize = gameplaySkin.JudgementFontSize;
             if (gameplaySongInfoBlock != null) gameplaySongInfoBlock.gameObject.SetActive(settings.ShowGameplaySongInfo);
             ApplyGameplaySkinLayout(gameplaySkin);
@@ -6339,13 +6362,71 @@ namespace ChunithmMobile.Runtime
             if (gameplayHud != null) {
                 gameplayHud.gameObject.SetActive(true);
                 CanvasGroup group = gameplayHud.GetComponent<CanvasGroup>();
-                if (group != null && group.alpha <= 0f) group.alpha = 1f;
+                if (group != null) {
+                    group.alpha = 1f;
+                    group.blocksRaycasts = false;
+                    group.interactable = false;
+                }
+                gameplayScore?.gameObject.SetActive(true);
+                gameplayJudgements?.gameObject.SetActive(true);
+                if (gameplayScore != null) {
+                    gameplayScore.enabled = true;
+                    gameplayScore.canvasRenderer.SetColor(new Color(
+                        gameplayScore.color.r, gameplayScore.color.g, gameplayScore.color.b, 1f));
+                    gameplayScore.canvasRenderer.cull = false;
+                }
+                if (gameplayJudgements != null) {
+                    gameplayJudgements.enabled = true;
+                    gameplayJudgements.canvasRenderer.cull = false;
+                }
             }
             if (gameplayCombo != null) {
                 gameplayCombo.gameObject.SetActive(true);
                 CanvasGroup group = gameplayCombo.GetComponent<CanvasGroup>();
-                if (group != null && group.alpha <= 0f) group.alpha = 1f;
+                if (group != null) {
+                    group.alpha = 1f;
+                    group.blocksRaycasts = false;
+                    group.interactable = false;
+                }
+                gameplayCombo.enabled = true;
+                gameplayCombo.canvasRenderer.SetColor(new Color(
+                    gameplayCombo.color.r, gameplayCombo.color.g, gameplayCombo.color.b, 1f));
+                gameplayCombo.canvasRenderer.cull = false;
             }
+            // Keep the live counters above decorative skin layers and overlays.
+            gameplayHud?.SetAsLastSibling();
+            gameplayCombo?.rectTransform.SetAsLastSibling();
+            ValidateCoreGameplayHudGeometry();
+        }
+
+        private void ValidateCoreGameplayHudGeometry()
+        {
+            if (!pages.TryGetValue(AppPage.Gameplay, out RectTransform canvas) || canvas == null) return;
+            // A stale built-in/no-skin layout override can leave the HUD fully
+            // outside the canvas. Preserve valid custom positions, but recover
+            // the original defaults when the element has no visible overlap.
+            if (gameplayHud != null && !HasCanvasOverlap(gameplayHud, canvas)) {
+                PositionGameplayElement(gameplayHud, 88, 89, new Vector2(350, 160));
+                gameplayHud.localScale = Vector3.one;
+                Debug.LogWarning("Gameplay score HUD was outside the canvas; restored default layout.");
+            }
+            if (gameplayCombo != null && !HasCanvasOverlap(gameplayCombo.rectTransform, canvas)) {
+                PositionGameplayElement(gameplayCombo.rectTransform, 50, 51, new Vector2(320, 180));
+                gameplayCombo.rectTransform.localScale = Vector3.one;
+                Debug.LogWarning("Gameplay combo HUD was outside the canvas; restored default layout.");
+            }
+        }
+
+        private static bool HasCanvasOverlap(RectTransform target, RectTransform canvas)
+        {
+            if (target == null || canvas == null || target.rect.width < 2f || target.rect.height < 2f) return false;
+            Vector3[] targetCorners = new Vector3[4];
+            target.GetWorldCorners(targetCorners);
+            Vector3 min = canvas.InverseTransformPoint(targetCorners[0]);
+            Vector3 max = canvas.InverseTransformPoint(targetCorners[2]);
+            Rect bounds = canvas.rect;
+            return max.x > bounds.xMin && min.x < bounds.xMax &&
+                max.y > bounds.yMin && min.y < bounds.yMax;
         }
 
         private static void UpdateAirZone(RectTransform zone, float bottom, float top)
@@ -6670,7 +6751,10 @@ namespace ChunithmMobile.Runtime
             result = model; resultSong.text = model.SongName + "\n" + model.Artist + "\n" + model.Difficulty + "  Lv." + model.Level;
             resultRank.text = model.Rank; resultScore.text = model.Score.ToString("N0");
             SongAchievement achievement = model.Achievement;
-            bool showAchievement = recordsScore && achievement != SongAchievement.None;
+            // AUTO and other non-recording mods still produce a complete
+            // judgement result.  Show FC/AJ/ACJ on the result page even when
+            // the result is intentionally excluded from persistent records.
+            bool showAchievement = achievement != SongAchievement.None;
             if (resultAchievement != null)
             {
                 ConfigureSongAchievement(resultAchievement, achievement);

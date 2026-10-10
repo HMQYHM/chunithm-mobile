@@ -548,10 +548,26 @@ namespace ChunithmMobile.Runtime
         private void Update()
         {
             if (loadedChart == null || !clock.Playing || completionRaised) return;
-            if (clock.TimeMs < loadedChart.DurationMs + (calibrationPlayback ? 0 : 1000)) return;
+            // The chart can legitimately end before the audio (for example,
+            // when the last note has a shorter tail than the song).  Ending
+            // from chart duration alone would open the result page while the
+            // song is still audible.  Convert the clip's real playback length
+            // into chart-clock time, including pitch/rate and the configured
+            // music offset, then wait two real seconds after the later end.
+            double playbackEndMs = loadedChart.DurationMs;
+            if (songSource != null && songSource.clip != null)
+            {
+                double pitch = Math.Max(.01, Math.Abs(songSource.pitch));
+                double audioDurationMs = songSource.clip.length * 1000.0 / pitch;
+                double audioEndChartMs = (audioDurationMs + preparedMusicOffsetMs) * clock.Rate;
+                playbackEndMs = Math.Max(playbackEndMs, audioEndChartMs);
+            }
+            double completionDelayMs = calibrationPlayback ? 0 : 2000.0 * clock.Rate;
+            if (clock.TimeMs < playbackEndMs + completionDelayMs) return;
             completionRaised = true;
             if (songSource != null) songSource.Stop();
-            Debug.Log("Chart playback completed.");
+            Debug.Log($"Chart playback completed: chartEnd={loadedChart.DurationMs:F1}ms, " +
+                $"audioEnd={playbackEndMs:F1}ms, delay={completionDelayMs:F1}ms, rate={clock.Rate:F2}");
             PlaybackCompleted?.Invoke();
         }
 
