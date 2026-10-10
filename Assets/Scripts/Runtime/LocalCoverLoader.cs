@@ -37,7 +37,7 @@ namespace ChunithmMobile.Runtime
             }
         }
 
-        public static void Load(MonoBehaviour host, string path, Image target, bool preserveAspect = false, bool flipVertical = true)
+        public static void Load(MonoBehaviour host, string path, Image target, bool preserveAspect = false, bool flipVertical = false)
         {
             if (host == null || target == null) return;
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -134,9 +134,11 @@ namespace ChunithmMobile.Runtime
             target.color = Color.white;
             target.type = Image.Type.Simple;
             target.preserveAspect = preserveAspect;
-            // Most imported jacket textures use Unity's inverted texture
-            // coordinate convention. The gameplay song-information card opts
-            // out because its source is already in display orientation.
+            // UnityWebRequestTexture and the DDS decoder expose jacket pixels
+            // in display order. Keep the UI upright by default. A caller may
+            // explicitly opt into a vertical flip only for a source format
+            // that is known to require it; ordinary jackets must not inherit
+            // a global negative Y scale.
             target.rectTransform.localRotation = Quaternion.identity;
             target.rectTransform.localScale = flipVertical ? new Vector3(1f, -1f, 1f) : Vector3.one;
         }

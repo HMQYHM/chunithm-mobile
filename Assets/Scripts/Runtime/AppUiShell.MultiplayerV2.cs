@@ -2113,7 +2113,7 @@ namespace ChunithmMobile.Runtime
             if (song == null) return;
             multiplayerGroupSong.text = (song.songName ?? song.songId) + "\n" + song.difficulty + "  Lv." + song.level;
             LocalCoverLoader.Reset(multiplayerGroupCover);
-            if (playedSong != null && !string.IsNullOrWhiteSpace(playedSong.JacketPath)) LocalCoverLoader.Load(this, playedSong.JacketPath, multiplayerGroupCover, false);
+            if (playedSong != null && !string.IsNullOrWhiteSpace(playedSong.JacketPath)) LocalCoverLoader.Load(this, playedSong.JacketPath, multiplayerGroupCover, false, false);
             foreach (Transform child in multiplayerGroupContent) Destroy(child.gameObject);
             int count = 0;
             foreach (MultiplayerLeaderboardEntryDto entry in leaderboard ?? Array.Empty<MultiplayerLeaderboardEntryDto>())

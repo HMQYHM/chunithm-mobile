@@ -4434,7 +4434,7 @@ namespace ChunithmMobile.Runtime
             visual.Art.rectTransform.localScale = Vector3.one;
             bool hasJacket = !string.IsNullOrWhiteSpace(song.JacketPath);
             visual.Placeholder.gameObject.SetActive(!hasJacket);
-            if (hasJacket) LocalCoverLoader.Load(this, song.JacketPath, visual.Art);
+            if (hasJacket) LocalCoverLoader.Load(this, song.JacketPath, visual.Art, false, false);
 
             visual.Title.text = song.Name ?? "";
             visual.Artist.text = song.Artist ?? "";
@@ -4640,7 +4640,7 @@ namespace ChunithmMobile.Runtime
             LocalCoverLoader.Reset(detailCover);
             detailCover.sprite = rounded; detailCover.type = Image.Type.Sliced; detailCover.color = new Color(.12f, .06f, .22f);
             detailCoverPlaceholder.SetActive(string.IsNullOrWhiteSpace(selectedSong.JacketPath));
-            if (!string.IsNullOrWhiteSpace(selectedSong.JacketPath)) LocalCoverLoader.Load(this, selectedSong.JacketPath, detailCover);
+            if (!string.IsNullOrWhiteSpace(selectedSong.JacketPath)) LocalCoverLoader.Load(this, selectedSong.JacketPath, detailCover, false, false);
             UpdateSongPinButton();
             float height = 1f / Mathf.Max(1, selectedSong.Charts.Count);
             for (int i = 0; i < selectedSong.Charts.Count; i++)
@@ -6744,7 +6744,7 @@ namespace ChunithmMobile.Runtime
             LocalCoverLoader.Reset(resultCover);
             resultCover.gameObject.SetActive(hasCover);
             resultCoverPlaceholder.SetActive(!hasCover);
-            if (hasCover) LocalCoverLoader.Load(this, playedSong.JacketPath, resultCover, false);
+            if (hasCover) LocalCoverLoader.Load(this, playedSong.JacketPath, resultCover, false, false);
             Image coverFrame = resultCover.transform.parent?.GetComponent<Image>();
             if (coverFrame != null) coverFrame.color = Color.Lerp(surfaceRaised,
                 DifficultyColor(playedChart.Difficulty), .36f);
