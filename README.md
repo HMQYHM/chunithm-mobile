@@ -4,7 +4,7 @@
 
 ## 简体中文
 
-CHUNITHM Mobile 是一个独立的 Unity 移动端项目，目标是把 CHUNITHM 的游玩体验带到移动端。当前 0.3.4 发布内容包括 Android APK、iOS 未签名 IPA、Skin Studio 源码、完整示例皮肤包，以及可公开的联机核心服务端归档。
+CHUNITHM Mobile 是一个独立的 Unity 移动端项目，目标是把 CHUNITHM 的游玩体验带到移动端。当前 0.3.5 发布内容包括 Android APK、iOS 未签名 IPA、Skin Studio 源码、完整示例皮肤包，以及可公开的联机核心服务端归档。
 
 ### 下载与文档
 
@@ -19,7 +19,7 @@ APK 与 IPA 请以 Release 中实际上传的文件为准。当前 IPA 为未签
 
 ### 当前已公开的内容
 
-- 游戏版本 0.3.4 的 Android 构建和 iOS 未签名构建。
+- 游戏版本 0.3.5 的 Android 构建和 iOS 未签名构建。
 - Skin Studio 的布局、资源、场景、规则和 Live2D 配置编辑能力及四语言完整说明。
 - 一个包含 Live2D、触控板、游玩 UI 和资源示例的完整示例皮肤包。
 - 仅包含联机核心所需文件的 Node.js 服务端归档；配置示例不含密钥、运行数据或 Bot 凭据。
