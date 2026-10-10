@@ -3723,7 +3723,7 @@ namespace ChunithmMobile.Runtime
                 GameplaySkinManager.LoadSkinSprite(GameplaySkinManager.Active, coverOverride.Image) != null;
             if (!skinOwnsCover) {
                 if (!string.IsNullOrWhiteSpace(song.JacketPath))
-                    LocalCoverLoader.Load(this, song.JacketPath, gameplaySongInfoCover, true);
+                    LocalCoverLoader.Load(this, song.JacketPath, gameplaySongInfoCover, true, false);
             }
             // LocalCoverLoader is asynchronous; apply the declarative layer last.
             // An absent or unreadable skin cover deliberately leaves the song's

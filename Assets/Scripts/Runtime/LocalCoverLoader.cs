@@ -27,15 +27,17 @@ namespace ChunithmMobile.Runtime
         {
             public readonly Image Target;
             public readonly bool PreserveAspect;
+            public readonly bool FlipVertical;
 
-            public PendingTarget(Image target, bool preserveAspect)
+            public PendingTarget(Image target, bool preserveAspect, bool flipVertical)
             {
                 Target = target;
                 PreserveAspect = preserveAspect;
+                FlipVertical = flipVertical;
             }
         }
 
-        public static void Load(MonoBehaviour host, string path, Image target, bool preserveAspect = false)
+        public static void Load(MonoBehaviour host, string path, Image target, bool preserveAspect = false, bool flipVertical = true)
         {
             if (host == null || target == null) return;
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -47,16 +49,16 @@ namespace ChunithmMobile.Runtime
             if (Cache.TryGetValue(path, out Sprite sprite))
             {
                 Touch(path);
-                ApplyIfExpected(target, path, sprite, preserveAspect);
+                ApplyIfExpected(target, path, sprite, preserveAspect, flipVertical);
                 return;
             }
             if (PendingLoads.TryGetValue(path, out List<PendingTarget> waiting))
             {
-                waiting.Add(new PendingTarget(target, preserveAspect));
+                waiting.Add(new PendingTarget(target, preserveAspect, flipVertical));
                 return;
             }
 
-            PendingLoads[path] = new List<PendingTarget> { new PendingTarget(target, preserveAspect) };
+            PendingLoads[path] = new List<PendingTarget> { new PendingTarget(target, preserveAspect, flipVertical) };
             host.StartCoroutine(LoadRoutine(path));
         }
 
@@ -122,30 +124,29 @@ namespace ChunithmMobile.Runtime
             if (loaded == null) return;
             Sprite sprite = Store(path, loaded);
             foreach (PendingTarget request in waiting)
-                ApplyIfExpected(request.Target, path, sprite, request.PreserveAspect);
+                ApplyIfExpected(request.Target, path, sprite, request.PreserveAspect, request.FlipVertical);
         }
 
-        private static void Apply(Image target, Sprite sprite, bool preserveAspect)
+        private static void Apply(Image target, Sprite sprite, bool preserveAspect, bool flipVertical)
         {
             if (target == null || sprite == null) return;
             target.sprite = sprite;
             target.color = Color.white;
             target.type = Image.Type.Simple;
             target.preserveAspect = preserveAspect;
-            // Unity's texture loaders already return jacket pixels in display
-            // order. Keep the image upright for both the song-information card
-            // and the visual-layout preview; applying a negative Y scale here
-            // would turn the cover upside down after the async load completes.
+            // Most imported jacket textures use Unity's inverted texture
+            // coordinate convention. The gameplay song-information card opts
+            // out because its source is already in display orientation.
             target.rectTransform.localRotation = Quaternion.identity;
-            target.rectTransform.localScale = Vector3.one;
+            target.rectTransform.localScale = flipVertical ? new Vector3(1f, -1f, 1f) : Vector3.one;
         }
 
-        private static void ApplyIfExpected(Image target, string path, Sprite sprite, bool preserveAspect)
+        private static void ApplyIfExpected(Image target, string path, Sprite sprite, bool preserveAspect, bool flipVertical)
         {
             if (target == null || sprite == null || string.IsNullOrWhiteSpace(path) ||
                 !ExpectedPaths.TryGetValue(target.GetInstanceID(), out string expected) ||
                 !string.Equals(expected, path, StringComparison.OrdinalIgnoreCase)) return;
-            Apply(target, sprite, preserveAspect);
+            Apply(target, sprite, preserveAspect, flipVertical);
         }
 
         private static Sprite Store(string path, Sprite sprite)
