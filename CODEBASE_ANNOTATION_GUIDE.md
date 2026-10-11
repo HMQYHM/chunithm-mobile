@@ -52,6 +52,8 @@
 
 `ChartPlaybackRenderer` 是游玩谱面的核心渲染器。它根据谱面时间筛选可见音符，使用对象池降低 GC，使用预计算几何体降低每帧 Mesh 分配，并把地面、AIR、装饰线、拖尾和音符头分到不同渲染队列。AIR 拖尾与谱面装饰线必须使用独立材质和生命周期。
 
+`OriginalNotePrecalculation` 是渲染器进入 Unity 对象层之前的稳定边界。它对应原版 Windows 客户端的 `NotesPreCalcManager`/`NotesManager` 分工：一次性确定音符的视觉类型、Head/Body/Tail 归属、长条链 owner、资源族和显示窗口。`ChartPlaybackRenderer` 只负责对象池、网格、材质和逐帧裁切，不应在渲染帧中重新推断谱面语义。该层不创建 GameObject、不推进时钟，也不参与判定。
+
 渲染器的重要边界：
 
 - `ChartPlaybackRenderer` 不执行判定。

@@ -87,6 +87,11 @@ namespace ChunithmMobile.Rendering
         private readonly Dictionary<string, Mesh> originalMeshes = new Dictionary<string, Mesh>();
         private readonly Dictionary<string, Mesh> mirroredAirMeshes = new Dictionary<string, Mesh>();
         private ParsedChart chart;
+        // Precomputed gameplay tracks mirror the original client's
+        // NotesPreCalcManager boundary. The legacy fields and methods remain
+        // available for editor tests while all new lifetime/ownership queries
+        // are routed through this cache.
+        private OriginalNotePrecalculation precomputed;
         private OriginalPlaybackMap playback;
         private RibbonGeometry[] geometry;
         private DspChartClock clock;
@@ -111,6 +116,7 @@ namespace ChunithmMobile.Rendering
             ClearActive();
             judgedHeads.Clear();
             chart = parsedChart;
+            precomputed = OriginalNotePrecalculation.Build(parsedChart);
             playback = new OriginalPlaybackMap(parsedChart, uniformSpeed);
             lastRenderTime = double.NegativeInfinity;
             guideVisualTime = double.NegativeInfinity;
@@ -136,6 +142,7 @@ namespace ChunithmMobile.Rendering
             guidePathGeometry.Clear();
             judgedHeads.Clear();
             chart = null;
+            precomputed = null;
             playback = null;
             geometry = null;
             longChainGeometry.Clear();
@@ -414,9 +421,12 @@ namespace ChunithmMobile.Rendering
         private void ProcessNote(int i, double now)
         {
             ChartNote note = chart.Notes[i];
-            bool longBody = note.EndTimeMs > note.TimeMs &&
-                note.Kind is (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
-                    NoteKind.AirHold or NoteKind.AirAction);
+            OriginalNoteTrack track = precomputed != null && i < precomputed.Tracks.Count
+                ? precomputed[i] : null;
+            bool longBody = track != null ? track.BodyVisibleUntilMs > note.TimeMs && track.BodyResource.Length > 0
+                : note.EndTimeMs > note.TimeMs &&
+                  note.Kind is (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
+                      NoteKind.AirHold or NoteKind.AirAction);
             double visualEndMs = note.EndTimeMs;
             if (note.LongChainId >= 0 && longChainGeometry.TryGetValue(note.LongChainId, out LongChainGeometry chain))
                 visualEndMs = chain.EndTimeMs;
@@ -735,9 +745,12 @@ namespace ChunithmMobile.Rendering
         private void UpdateVisual(NoteVisual visual, int noteIndex, ChartNote note, double now,
             float headZ, float visibilityGuardZ)
         {
+            OriginalNoteTrack track = precomputed != null && noteIndex < precomputed.Tracks.Count
+                ? precomputed[noteIndex] : null;
             bool longBody = (note.EndTimeMs > note.TimeMs && note.Kind is
                 (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
                  NoteKind.AirHold or NoteKind.AirAction));
+            if (track != null) longBody = track.IsBodyOwner && track.BodyResource.Length > 0;
             visual.Accent.SetActive(false);
             visual.Body.SetActive(longBody); visual.Line.SetActive(longBody);
             if (longBody) UpdateLongVisual(visual, noteIndex, geometry[noteIndex], note, now);
@@ -758,16 +771,24 @@ namespace ChunithmMobile.Rendering
             bool groundHead = note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or NoteKind.Mine or
                 NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide;
             bool airHead = note.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction;
-            bool airPending = airHead && now <= note.TimeMs +
-                JudgementEngine.MissWindowMs(note.Kind,
-                    note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight,
-                    note.AirFlick) * clock.Rate;
+            double headVisibleUntil = track != null
+                ? track.HeadVisibleUntilMs
+                : note.TimeMs + (airHead
+                    ? JudgementEngine.MissWindowMs(note.Kind,
+                        note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight,
+                        note.AirFlick)
+                    : JudgementEngine.MissWindowMs(note));
+            // The authored window is expressed in chart milliseconds. The
+            // clock's rate scales how quickly that window is traversed.
+            double scaledHeadVisibleUntil = note.TimeMs +
+                (headVisibleUntil - note.TimeMs) * Math.Max(.1, clock.Rate);
+            bool airPending = airHead && now <= scaledHeadVisibleUntil;
             bool showHead = note.HasVisualHead && !judged &&
                             (airHead
                                 ? (insideApproach || (hasReachedJudgementLine && now >= note.TimeMs)) && airPending
                                 : groundHead
                                     ? (insideApproach || (hasReachedJudgementLine && now >= note.TimeMs)) &&
-                                      now <= note.TimeMs + JudgementEngine.MissWindowMs(note) * clock.Rate
+                                      now <= scaledHeadVisibleUntil
                                     : insideApproach);
             // A standalone directional AIR is always an authored visual
             // layer. Keep it alive through its own AIR window even if damaged
@@ -812,7 +833,7 @@ namespace ChunithmMobile.Rendering
             float tailZ = 0f;
             // This cap is geometry, not a separate judgeable note. Its lifetime
             // ends at the authored tail; attached AIR/TAP records live separately.
-            bool tailPending = longBody && note.IsLongChainTail && note.VisibleTail;
+            bool tailPending = longBody && (track == null ? note.IsLongChainTail && note.VisibleTail : track.IsTailOwner);
             if (tailPending) {
                 int endProfile = geometry[noteIndex].EndProfileId;
                 tailZ = Distance(endProfile, note.EndTimeMs, now);
@@ -1105,6 +1126,8 @@ namespace ChunithmMobile.Rendering
 
         private void UpdateHead(GameObject target, MeshFilter filter, Mesh fallbackMesh, MeshRenderer renderer, int index, ChartNote note, float z, bool tail)
         {
+            OriginalNoteTrack track = precomputed != null && index < precomputed.Tracks.Count
+                ? precomputed[index] : null;
             int lane = tail ? note.EndLane : note.Lane;
             int width = Mathf.Clamp(tail ? note.EndWidth : note.Width, 1, 16);
             float x = ChartSpace.NoteCenterX(lane, width, z), half = ChartSpace.NoteHalfWidth(width, z);
@@ -1141,15 +1164,18 @@ namespace ChunithmMobile.Rendering
             }
             bool exHoldHead = !tail && note.Kind == NoteKind.Hold &&
                 string.Equals(note.OriginalType, "HXD", StringComparison.OrdinalIgnoreCase);
-            string key = note.Kind switch {
-                NoteKind.ExTap => "extap",
-                NoteKind.Flick => "flick",
-                NoteKind.Hold when exHoldHead => "extap",
-                NoteKind.Hold or NoteKind.HeavenHold => tail ? "holdend" : "hold",
-                NoteKind.Slide => tail ? "slideend" : "slide",
-                NoteKind.Mine => "dmg",
-                _ => "tap"
-            };
+            string key = track != null && !string.IsNullOrEmpty(track.HeadResource)
+                ? track.HeadResource
+                : note.Kind switch {
+                    NoteKind.ExTap => "extap",
+                    NoteKind.Flick => "flick",
+                    NoteKind.Hold when exHoldHead => "extap",
+                    NoteKind.Hold or NoteKind.HeavenHold => tail ? "holdend" : "hold",
+                    NoteKind.Slide => tail ? "slideend" : "slide",
+                    NoteKind.Mine => "dmg",
+                    _ => "tap"
+                };
+            if (tail && track != null && !string.IsNullOrEmpty(track.TailResource)) key = track.TailResource;
             if (note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or NoteKind.Hold or
                  NoteKind.HeavenHold or NoteKind.Slide or NoteKind.Mine) {
                 // These meshes are the extracted per-width original planes.

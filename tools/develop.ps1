@@ -58,6 +58,7 @@ $testMarkers = @{
     ModDialogSelfTest = 'MOD dialog regression passed:'
     OpeningNoteRenderSelfTest = 'Opening-note render integration passed:'
     OriginalPlaybackSelfTest = 'Original playback self-test passed:'
+    OriginalNotePrecalculationSelfTest = 'Original note pre-calculation self-test passed:'
     LongNoteJudgementStabilitySelfTest = 'Long-note judgement stability regression passed:'
     PreparationAndLongHeadSelfTest = 'Preparation/long-head/level regression passed:'
     DdsTextureDecoderSelfTest = 'DDS texture regression passed:'
