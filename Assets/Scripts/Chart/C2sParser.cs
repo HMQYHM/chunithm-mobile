@@ -43,6 +43,7 @@ namespace ChunithmMobile.Chart
             public int Lane, Width, EndLane, EndWidth, StyleInterval;
             public float AirHeight, EndAirHeight;
             public string Color, SecondaryColor;
+            public readonly List<(RawNote note, float lane, float width, float height, bool first)> Nodes = new();
         }
 
         /// <summary>
@@ -123,6 +124,16 @@ namespace ChunithmMobile.Chart
             // (HLD/SLD/AIR-HOLD sections) is temporal, so normalize note order
             // before resolving visibility and allocating judge points. Keep
             // command ordering for BPM/scroll records unchanged.
+            // ASD marks the exported segment endpoint (native C2S writer
+            // 0x011ED363..0x011ED492), not its start. Give that action plane an
+            // independent AIR checker; the source segment still owns geometry.
+            foreach (RawNote segment in rawNotes.ToArray())
+                if (segment.OriginalType == "ASD")
+                    rawNotes.Add(new RawNote(NoteKind.AirAction, segment.Tick + segment.Duration, 0,
+                        segment.EndLane, segment.EndWidth, segment.EndLane, segment.EndWidth,
+                        AirDirection.None, segment.EndAirHeight, segment.EndAirHeight, true,
+                        "ASD_NODE", ""));
+            ExpandLadderNodes(rawGuidePaths, rawNotes);
             rawNotes = rawNotes.OrderBy(note => note.Tick).ToList();
 
             if (bpms.All(x => x.Tick != 0)) bpms.Add(new RawBpm(0, defaultBpm));
@@ -180,13 +191,19 @@ namespace ChunithmMobile.Chart
                 time.ToMs(s.Tick + s.Duration), s.Lane, s.Width, s.ProfileId)).OrderBy(s => s.StartMs).ToList();
             foreach (var note in notes)
                 note.ScrollProfileId = FindScrollProfile(mappedAssignments, note.TimeMs, note.Lane, note.Width);
+            var noteIndices = rawNotes.Select((note, index) => (note, index)).ToDictionary(x => x.note, x => x.index);
             var guidePaths = rawGuidePaths.Select(raw => new VisualGuidePath {
                 TimeMs = time.ToMs(raw.Tick), EndTimeMs = time.ToMs(raw.Tick + raw.Duration),
                 Lane = raw.Lane, Width = Math.Max(1, raw.Width), EndLane = raw.EndLane,
                 EndWidth = Math.Max(1, raw.EndWidth), AirHeight = Math.Clamp(raw.AirHeight, -16, 32),
                 EndAirHeight = Math.Clamp(raw.EndAirHeight, -16, 32), StyleInterval = raw.StyleInterval,
                 StyleIntervalMilliseconds = time.ToMs(raw.Tick + raw.StyleInterval) - time.ToMs(raw.Tick),
-                Color = raw.Color, SecondaryColor = raw.SecondaryColor
+                Color = raw.Color, SecondaryColor = raw.SecondaryColor,
+                Nodes = raw.Nodes.Select((node, index) => new AirLadderNode {
+                    TimeMs = time.ToMs(node.note.Tick), Lane = node.lane, Width = node.width,
+                    Height = node.height, NoteIndex = noteIndices[node.note], IsFirst = node.first,
+                    ScrollProfileId = notes[noteIndices[node.note]].ScrollProfileId
+                }).ToList()
             }).OrderBy(item => item.TimeMs).ToList();
             foreach (VisualGuidePath guidePath in guidePaths)
                 guidePath.ScrollProfileId = FindScrollProfile(mappedAssignments, guidePath.TimeMs,
@@ -205,6 +222,57 @@ namespace ChunithmMobile.Chart
             double chartBpm = bpms.Count > 0 ? bpms[0].Bpm : defaultBpm;
             return new ParsedChart(notes, duration, chartBpm, scheduledTotal,
                 mappedScrolls, mappedProfiles, mappedAssignments, declaredTotal, guidePaths);
+        }
+
+        private static void ExpandLadderNodes(List<RawGuidePath> paths, List<RawNote> notes)
+        {
+            // ALD has no explicit chain id. Join only an unambiguous one-to-one
+            // exact endpoint with the same cadence/style. Interleaved layers
+            // and branching paths stay independent instead of stealing nodes.
+            var successors = new Dictionary<RawGuidePath, RawGuidePath>();
+            var predecessors = new Dictionary<RawGuidePath, List<RawGuidePath>>();
+            var starts = paths.Where(p => p.StyleInterval > 0).GroupBy(p => p.Tick)
+                .ToDictionary(g => g.Key, g => g.ToList());
+            foreach (RawGuidePath path in paths) {
+                if (path.StyleInterval <= 0 || path.Duration <= 0 ||
+                    !starts.TryGetValue(path.Tick + path.Duration, out var candidates)) continue;
+                var matching = candidates.Where(next => next != path &&
+                    next.StyleInterval == path.StyleInterval && next.Lane == path.EndLane &&
+                    next.Width == path.EndWidth && Math.Abs(next.AirHeight - path.EndAirHeight) < .00001f &&
+                    next.Color == path.Color && next.SecondaryColor == path.SecondaryColor).ToArray();
+                if (matching.Length != 1) continue;
+                successors[path] = matching[0];
+                if (!predecessors.TryGetValue(matching[0], out var owners))
+                    predecessors[matching[0]] = owners = new List<RawGuidePath>();
+                owners.Add(path);
+            }
+            foreach (var pair in successors.ToArray())
+                if (predecessors[pair.Value].Count != 1) successors.Remove(pair.Key);
+            var continued = successors.Values.ToHashSet();
+            foreach (RawGuidePath first in paths) {
+                if (first.StyleInterval <= 0 || continued.Contains(first)) continue;
+                var segments = new List<RawGuidePath> { first };
+                while (successors.TryGetValue(segments[segments.Count - 1], out var next)) segments.Add(next);
+                long end = segments[segments.Count - 1].Tick + segments[segments.Count - 1].Duration;
+                int segmentIndex = 0;
+                for (long tick = first.Tick; tick <= end; tick += first.StyleInterval) {
+                    // A seam belongs to the next piece; it is sampled once,
+                    // and the global cadence never restarts at that seam.
+                    while (segmentIndex + 1 < segments.Count &&
+                        tick >= segments[segmentIndex].Tick + segments[segmentIndex].Duration) segmentIndex++;
+                    RawGuidePath guide = segments[segmentIndex];
+                    float progress = guide.Duration == 0 ? 0 : (float)((double)(tick - guide.Tick) / guide.Duration);
+                    float lane = guide.Lane + (guide.EndLane - guide.Lane) * progress;
+                    float width = guide.Width + (guide.EndWidth - guide.Width) * progress;
+                    float height = guide.AirHeight + (guide.EndAirHeight - guide.AirHeight) * progress;
+                    var node = new RawNote(NoteKind.AirAction, tick, 0,
+                        (int)Math.Round(lane), (int)Math.Round(width), (int)Math.Round(lane), (int)Math.Round(width),
+                        AirDirection.None, height, height, true, "ALD", "");
+                    guide.Nodes.Add((node, lane, width, height, tick == first.Tick));
+                    notes.Add(node);
+                    if (end - tick < first.StyleInterval) break;
+                }
+            }
         }
 
         private static RawGuidePath ParseGuidePath(string[] p, long resolution)
@@ -260,7 +328,7 @@ namespace ChunithmMobile.Chart
                 NoteKind.AirHold or NoteKind.AirAction;
 
         private static bool CanRenderVisualTail(RawNote note) =>
-            note.OriginalType is not ("SLC" or "SXC");
+            note.OriginalType is not ("SLC" or "SXC" or "ASC" or "ASD");
 
         private static int FindScrollProfile(List<ScrollAssignment> assignments, double timeMs, int lane, int width)
         {
@@ -479,13 +547,13 @@ namespace ChunithmMobile.Chart
 
         private static void ResolveAirActionVisualHeads(IReadOnlyList<RawNote> notes, bool[] visualHeads)
         {
-            // ASD carries an authored action cap even inside a connected
-            // trail. ASC only shapes the curve unless it owns a starting head.
-            // Visual nodes must not introduce extra scoring heads.
+            // The segment owns only its entry cap. ASD_NODE owns the discrete
+            // endpoint cap/checker; ALD is drawn by AirLadderVisuals using the
+            // exact same indexed judge note, never by the generic AHACT layer.
             for (int i = 0; i < notes.Count; i++) {
                 RawNote note = notes[i];
                 if (note.Kind != NoteKind.AirAction) continue;
-                visualHeads[i] = note.OriginalType == "ASD" || note.VisibleHead;
+                visualHeads[i] = note.OriginalType != "ALD" && note.VisibleHead;
             }
         }
 
@@ -592,25 +660,16 @@ namespace ChunithmMobile.Chart
                 .ToList();
             foreach (int i in airLongHeads) result[i]++;
 
-            // ASC is curve geometry. AHD/AHX and ASD are checkpoint-bearing
-            // records; spreading AIR totals over ASC moves judgments away
-            // from the authored action planes.
+            // ALD and ASD_NODE are discrete authored AIR planes already counted
+            // in airLongHeads. Retain body points for sustained AIR-HOLD and
+            // AIR-SLIDE sections after reserving the discrete endpoint planes.
+            // The remaining AIR-SLIDE KEEP cadence is still a legacy allocator;
+            // geometry flags cannot replace those sustained checkpoints.
             var airBodies = Where(n => n.OriginalType is "AHD" or "AHX" or "ASD");
-            // Explicit points from ground HOLD/SLIDE chains belong to their
-            // own judge totals. Counting them here steals AIR budget whenever
-            // a chart contains both a ground long note and an AIR long note.
-            int ladderPoints = notes.Where(n => n.Kind is NoteKind.AirHold or NoteKind.AirAction)
-                .Sum(n => n.ExplicitJudgeTicks?.Count ?? 0);
-            int airTarget = Total("AIR",
-                ordinaryAirHeads.Count + airLongHeads.Count + airBodies.Count + ladderPoints);
-            int bodyTarget = Math.Max(0,
-                airTarget - ordinaryAirHeads.Count - airLongHeads.Count - ladderPoints);
-            // A damaged or synthetic chart can declare fewer AIR points than
-            // the number of body records. Requiring every body to receive a
-            // point would exceed T_JUDGE_AIR. Keep one point per body only
-            // while the remaining budget can support it; the remainder is
-            // then distributed by elapsed duration.
-            var mandatoryAirBodies = airBodies.Take(Math.Min(bodyTarget, airBodies.Count)).ToHashSet();
+            int airTarget = Total("AIR", ordinaryAirHeads.Count + airLongHeads.Count + airBodies.Count);
+            int bodyTarget = Math.Max(0, airTarget - ordinaryAirHeads.Count - airLongHeads.Count);
+            var mandatoryAirBodies = airBodies.Where(i => notes[i].OriginalType != "ASD")
+                .Take(bodyTarget).ToHashSet();
             Distribute(airBodies, bodyTarget, mandatoryAirBodies, DurationMs);
 
             return result;

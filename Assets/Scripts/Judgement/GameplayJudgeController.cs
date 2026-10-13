@@ -492,6 +492,19 @@ namespace ChunithmMobile.Judgement
             out JudgementResult result)
         {
             double pointTime = point.TimeMs;
+            if (note.OriginalType == "ALD") {
+                // Each ladder plane has an independent checker in the native
+                // AirLadderNote. Dense height layers can observe the same AIR
+                // sample; consuming a global directional pulse would make a
+                // 1-tick staircase impossible to hit beyond its first layer.
+                double window = JudgementEngine.MissWindowMs(NoteKind.AirAction) * clock.Rate;
+                bool motion = lastAirMotionMs >= pointTime - window && lastAirMotionMs <= pointTime + window;
+                bool covered = IsAirContactActive(now) && (motion || airLongNoMotion);
+                result = covered
+                    ? JudgementEngine.JudgeAirAction(motion ? lastAirMotionMs : now, pointTime, clock.Rate)
+                    : default;
+                return covered && result.Grade != Chart.Judgement.Miss;
+            }
             if (note.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction) {
                 bool down = note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight;
                 double activationWindow = JudgementEngine.Frames(6.0) * clock.Rate;

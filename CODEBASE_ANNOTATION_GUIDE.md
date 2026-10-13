@@ -132,3 +132,9 @@ Live2D 游玩皮肤的布局和参数映射由 `GameplaySkinCubismRenderer` 负�
 8. 不给每一行写无意义的“赋值/调用”注释；只有当代码意图不能从语法直接看出时才添加说明。
 
 提交前至少运行 `git diff --check`。如果改动了运行时逻辑，还应运行 Unity 编译或构建，并在无法完成时记录具体日志阶段和原因。
+
+### AIR 节点归属（2026-10-13）
+
+`C2sParser` 将 ASD 段的末端生成为独立 `ASD_NODE`，将正间隔 ALD 按整条不歧义链的谱面 tick（接缝只采样一次，包括整除时的终点）生成离散 `AirAction` 判定音符。原始 ASC/ASD 继续负责曲线几何与入口；两种节点都进入 `JudgePointScheduler`，不会根据渲染帧临时增加 Combo。AIR 总数中先扣除这些正式节点，剩余预算用于现有 AIR-HOLD / AIR-SLIDE 保持点分配；完整原生 KEEP 节奏尚未全部还原。
+
+`VisualGuidePath.Nodes` 保留 ALD 的分数几何、独立滚速与正式音符索引。`AirLadderVisuals` 使用这份数据渲染，收到 `MarkJudged` 后隐藏对应节点；没有节点时不会自行用毫秒重采样。`ChartMirror` 同时镜像正式音符和阶梯显示几何。ASD 的紫色动作图片由末端的独立音符负责，原始段不再在曲线接缝重复显示。

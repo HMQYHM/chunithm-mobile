@@ -44,6 +44,17 @@ namespace ChunithmMobile.Chart
         public int ScrollProfileId;
     }
 
+    // A spaced ALD plate references the official discrete AIR judge note.
+    // Geometry may be fractional; its timestamp is mapped from authored ticks.
+    [Serializable]
+    public sealed class AirLadderNode
+    {
+        public double TimeMs;
+        public float Lane, Width, Height;
+        public int NoteIndex, ScrollProfileId;
+        public bool IsFirst;
+    }
+
     [Serializable]
     public sealed class VisualGuidePath
     {
@@ -60,6 +71,7 @@ namespace ChunithmMobile.Chart
         public string SecondaryColor = "DEF";
         public int StyleInterval;
         public double StyleIntervalMilliseconds;
+        public List<AirLadderNode> Nodes = new List<AirLadderNode>();
     }
 
     [Serializable]

@@ -28,6 +28,13 @@ namespace ChunithmMobile.Chart
                     note.SourceType = "L";
             }
 
+            foreach (VisualGuidePath path in chart.GuidePaths) {
+                path.Lane = MirrorLane(path.Lane, path.Width);
+                path.EndLane = MirrorLane(path.EndLane, path.EndWidth);
+                foreach (AirLadderNode node in path.Nodes)
+                    node.Lane = LaneCount - node.Lane - node.Width;
+            }
+
             for (int index = 0; index < chart.ScrollAssignments.Count; index++)
             {
                 ScrollAssignment assignment = chart.ScrollAssignments[index];

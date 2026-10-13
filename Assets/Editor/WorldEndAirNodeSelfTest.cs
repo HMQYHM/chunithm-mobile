@@ -29,7 +29,9 @@ namespace ChunithmMobile.Editor
 
         public static void Run()
         {
-            string songRoot = Path.GetFullPath("../提取的歌曲/8311");
+            string songRoot = Environment.GetEnvironmentVariable("CHUNITHM_SONG_ROOT") ??
+                Path.GetFullPath("../提取的歌曲/8311");
+            if (!Directory.Exists(songRoot)) songRoot = Path.GetFullPath("Build/TestFixtures/songs/8311");
             SongEntry song = SongCatalog.ReadSongDirectory(songRoot);
             SongChartEntry entry = song.Charts.Single();
             Require(entry.Level == "狂", "8311 did not read worldsEndTagName");
@@ -55,7 +57,11 @@ namespace ChunithmMobile.Editor
             double measure = 240000d / chart.Bpm;
             var nodes = chart.Notes.Where(n => n.OriginalType == "ASD" && n.TimeMs >= 63 * measure - .01 && n.TimeMs < 64.25 * measure - .01).ToArray();
             Require(nodes.Length == 40, "real measure 63-64 fixture changed");
-            Require(nodes.All(n => n.HasVisualHead), "interior ASD caps hidden by parser");
+            Require(nodes.Skip(1).All(n => !n.HasVisualHead), "ASD endpoint cap moved to a segment start");
+            var actions = chart.Notes.Where(n => n.OriginalType == "ASD_NODE").ToArray();
+            Require(nodes.All(n => actions.Any(action => Math.Abs(action.TimeMs - n.EndTimeMs) < .001 &&
+                action.Lane == n.EndLane && action.Width == n.EndWidth && action.HasVisualHead &&
+                action.JudgePointCount == 1)), "WD ASD endpoint/checker missing");
             Require(nodes.Skip(1).All(n => !n.VisibleHead), "visual fix changed scoring head ownership");
             Require(nodes.Select(n => n.LongChainId).Distinct().Count() == 1, "interleaved SXC split AIR chain");
 
@@ -83,7 +89,7 @@ namespace ChunithmMobile.Editor
                 if (imported != null) GameplaySkinManager.DeleteSkin(imported);
                 File.Delete(package); UnityEngine.Object.DestroyImmediate(texture);
             }
-            Debug.Log("WD AIR regression passed: real 8311 metadata, WD aliases/selection, 40 ASD caps, unchanged scoring heads, connected chain, built-in/custom skin rendered pixels.");
+            Debug.Log("WD AIR regression passed: real 8311 metadata, WD aliases/selection, 40 ASD endpoint caps/checkers, connected entry ownership, connected chain, built-in/custom skin rendered pixels.");
         }
 
         private static void Render(ParsedChart chart, double now, string path, bool custom)
@@ -103,7 +109,7 @@ namespace ChunithmMobile.Editor
                 int shown = 0;
                 foreach (DictionaryEntry item in active) {
                     ChartNote note = chart.Notes[(int)item.Key];
-                    if (note.OriginalType != "ASD") continue;
+                    if (note.OriginalType != "ASD_NODE") continue;
                     var head = (GameObject)item.Value.GetType().GetField("Head").GetValue(item.Value);
                     if (!head.activeInHierarchy) continue;
                     shown++;

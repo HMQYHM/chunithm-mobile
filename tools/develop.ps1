@@ -52,6 +52,7 @@ $buildDir = Join-Path $buildRoot 'Android'
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $testMarkers = @{
+    OriginalAirNodeSelfTest = 'Original AIR node regression passed:'
     AirLadderAssetSelfTest = 'AirLadder asset regression passed:'
     AlterEgoAirVisualSelfTest = 'ALTER EGO AIR regression passed:'
     AirLayerSelfTest = 'AIR layer regression passed:'

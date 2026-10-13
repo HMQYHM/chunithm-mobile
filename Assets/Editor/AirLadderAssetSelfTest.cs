@@ -48,7 +48,8 @@ namespace ChunithmMobile.Editor
             Require(chart.GuidePaths.All(AirLadderVisuals.HasPlates), "KING spaced ALD was not classified as a plate");
             Require(chart.GuidePaths.All(path => path.StyleInterval == 384 && path.StyleIntervalMilliseconds > 0),
                 "KING ALD cadence was not converted to chart milliseconds");
-            Require(chart.Notes.Count == 0, "AirLadder rendering modified judgement notes");
+            Require(chart.Notes.Count == 10 && chart.Notes.All(n => n.OriginalType == "ALD" && n.JudgePointCount == 1),
+                "AirLadder plate/checker ownership was lost");
             Debug.Log("AirLadder asset regression passed: 128 meshes, 4 field textures, shader and 10 KING ALD plates.");
         }
 

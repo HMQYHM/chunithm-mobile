@@ -23,6 +23,7 @@ namespace ChunithmMobile.Editor
         {
             string path = Environment.GetEnvironmentVariable("CHUNITHM_CHART_PATH") ??
                 Path.GetFullPath("../提取的歌曲/2978/chart/2978_03.c2s");
+            if (!File.Exists(path)) path = Path.GetFullPath("Build/TestFixtures/songs/2978/chart/2978_03.c2s");
             ParsedChart chart = C2sParser.Parse(path);
             List<ScheduledJudgePoint> points = JudgePointScheduler.Build(chart)
                 .Where(point => point.IsScoring)
@@ -32,7 +33,10 @@ namespace ChunithmMobile.Editor
                 .ToList();
             Require(points.Count >= 532, "ALTER EGO fixture has fewer than 532 scoring points");
 
-            double focus = points[531].TimeMs;
+            // This regression targets ASC at measure 27 tick 0, lane 13/3.
+            // Combo indices move when missing AIR checkpoints are restored;
+            // locate the authored fixture rather than changing the target.
+            const double focus = 37121.58317059117;
             var nearbyAir = chart.Notes.Select((note, index) => (note, index))
                 .Where(item => item.note.Kind == NoteKind.Air &&
                     Math.Abs(item.note.TimeMs - focus) <= 1800)
@@ -96,8 +100,7 @@ namespace ChunithmMobile.Editor
                 }
 
 
-                // Combo 532 in the current score model lands on an ASC/TAP
-                // AIR-trail entry. The original presentation combines three
+                // The measure-27 ASC/TAP AIR-trail entry. The original presentation combines three
                 // layers at one plane: an upward AIR arrow from the ground,
                 // the green AHTAP connector and the green authored trail.
                 double focusNow = focus - 40;

@@ -452,8 +452,11 @@ namespace ChunithmMobile.Editor
             AirDirection[] directions = chart.Notes.Select(note => note.AirDirection).ToArray();
             Require(directions.SequenceEqual(new[] { AirDirection.Up, AirDirection.UpLeft,
                     AirDirection.UpRight, AirDirection.Down, AirDirection.DownLeft,
-                    AirDirection.DownRight, AirDirection.None, AirDirection.None }),
+                    AirDirection.DownRight, AirDirection.None, AirDirection.None, AirDirection.None }),
                 "C2S AIR opcode mapping changed or ASC/ASD gained a false direction");
+            Require(chart.Notes[8].OriginalType == "ASD_NODE" &&
+                Math.Abs(chart.Notes[8].TimeMs - chart.Notes[7].EndTimeMs) < .001,
+                "ASD generated its action node at the wrong timing plane");
 
             var mirrorMethod = typeof(ChartPlaybackRenderer).GetMethod("ShouldMirrorAirMesh",
                 BindingFlags.Static | BindingFlags.NonPublic);

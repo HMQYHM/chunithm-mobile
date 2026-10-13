@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
-$expectedAppleBuildNumber = '222'
+# Validate the configured build against the saved project, not a stale release.
+$settingsText = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'ProjectSettings/ProjectSettings.asset') -Raw
+$expectedAppleBuildNumber = [regex]::Match($settingsText, '(?m)^\s+iPhone:\s*(\d+)\s*$').Groups[1].Value
+if (-not $expectedAppleBuildNumber) { throw 'Saved iOS build number is missing.' }
 $project = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Raw | ConvertFrom-Json
 if (-not $manifest.dependencies) { throw 'Packages/manifest.json has no dependencies.' }
@@ -55,10 +58,10 @@ foreach ($needle in @('AndroidApiLevel24', 'AndroidArchitecture.ARM64', 'Graphic
 }
 
 $appleConfig = Get-Content -LiteralPath (Join-Path $project 'Assets\Editor\AppleBuildConfigurator.cs') -Raw
-if (-not $appleConfig.Contains(('"' + $expectedAppleBuildNumber + '"'))) { throw 'iOS build number is not 222.' }
+if (-not $appleConfig.Contains(('"' + $expectedAppleBuildNumber + '"'))) { throw "iOS build number does not match saved project ($expectedAppleBuildNumber)." }
 if (-not $appleConfig.Contains('CODE_SIGN_STYLE')) { throw 'iOS signing mode is not configured.' }
 if (-not $appleConfig.Contains('Apple Distribution')) { throw 'iOS Distribution identity is not configured.' }
-foreach ($needle in @('NamedBuildTarget.iOS', 'Build/iOS/CHUNITHM-Mobile-iOS', 'iOSTargetDevice.iPhoneAndiPad', 'IL2CPP', '"222"', 'UniformTypeIdentifiers.framework', 'UIApplicationSceneManifest')) {
+foreach ($needle in @('NamedBuildTarget.iOS', 'Build/iOS/CHUNITHM-Mobile-iOS', 'iOSTargetDevice.iPhoneAndiPad', 'IL2CPP', ('"' + $expectedAppleBuildNumber + '"'), 'UniformTypeIdentifiers.framework', 'UIApplicationSceneManifest')) {
     if (-not $appleConfig.Contains($needle)) { throw "iOS build setting not found: $needle" }
 }
 

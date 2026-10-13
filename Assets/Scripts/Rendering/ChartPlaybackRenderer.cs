@@ -427,7 +427,7 @@ namespace ChunithmMobile.Rendering
             foreach (var item in active) if (!keep.Contains(item.Key)) remove.Add(item.Key);
             foreach (int index in remove) { Return(active[index]); active.Remove(index); }
             UpdateGuidePathVisuals(AdvanceGuideVisualTime(now));
-            airLadderVisuals?.Render(now, Distance);
+            airLadderVisuals?.Render(now, Distance, clock.Rate);
         }
 
         private double AdvanceGuideVisualTime(double authoritativeNow)
@@ -462,6 +462,9 @@ namespace ChunithmMobile.Rendering
         private void ProcessNote(int i, double now)
         {
             ChartNote note = chart.Notes[i];
+            // ALD uses its extracted plate/frame renderer, but remains an
+            // ordinary scheduled AIR action for input, scoring and effects.
+            if (note.OriginalType == "ALD") return;
             OriginalNoteTrack track = precomputed != null && i < precomputed.Tracks.Count
                 ? precomputed[i] : null;
             bool longBody = track != null ? track.BodyVisibleUntilMs > note.TimeMs && track.BodyResource.Length > 0
@@ -532,7 +535,8 @@ namespace ChunithmMobile.Rendering
         // path. Keep a hard boundary from inventing a raised "head" when the
         // next record repeats the same instant with slightly different lane,
         // width, or height rounding. This is visual-only; ALD records remain
-        // untouched in the parser and never enter judgement.
+        // untouched here; spaced plates and their checkers use the parser's
+        // indexed node list, rather than this visual trace normalization.
         private static void WeldGuidePathStarts(IReadOnlyList<VisualGuidePath> paths)
         {
             if (paths == null || paths.Count < 2) return;
@@ -1305,7 +1309,7 @@ namespace ChunithmMobile.Rendering
 
         private static bool IsAirActionTrailEntry(ChartNote note) =>
             note != null && note.Kind == NoteKind.AirAction &&
-            note.OriginalType == "ASC" && note.HasVisualHead && !note.IsContinuation;
+            note.OriginalType is ("ASC" or "ASD") && note.HasVisualHead && !note.IsContinuation;
 
         private void UpdateDirectionalAirHead(GameObject target, MeshFilter filter, Mesh fallbackMesh,
             MeshRenderer renderer, int lane, int width, float z, float airHeight,
@@ -1606,6 +1610,7 @@ namespace ChunithmMobile.Rendering
         {
             if (chart == null || noteIndex < 0 || noteIndex >= chart.Notes.Count) return;
             ChartNote note = chart.Notes[noteIndex];
+            if (note.OriginalType == "ALD") airLadderVisuals?.MarkJudged(noteIndex);
             if (note.HasVisualHead && OwnsVisualHeadJudgement(note) && pointIndex == 0)
                 judgedHeads.Add(noteIndex);
         }

@@ -2,19 +2,22 @@ using System;
 using System.Collections.Generic;
 using ChunithmMobile.Chart;
 using ChunithmMobile.Runtime;
+using ChunithmMobile.Judgement;
 using UnityEngine;
 
 namespace ChunithmMobile.Rendering
 {
     /// <summary>
-    /// ALD has two visual layers: its authored connecting trace and spaced
-    /// AirLadder plates. An interval of zero is trace-only. Plates do not own
-    /// gameplay judgements; this class never adds or resolves score points.
+    /// ALD supplies trace-only paths (zero interval) or spaced AirLadder
+    /// plates (positive interval). Parser-generated
+    /// nodes share timestamps and note indices with the authoritative AIR
+    /// checker; this class only observes judgement, never decides the score.
     /// </summary>
     public sealed class AirLadderVisuals : IDisposable
     {
         private readonly Transform parent;
         private readonly List<Cell> cells = new List<Cell>();
+        private readonly HashSet<int> judged = new HashSet<int>();
         private readonly Dictionary<string, Mesh> meshes = new Dictionary<string, Mesh>();
         private readonly Dictionary<string, Material> materials = new Dictionary<string, Material>();
         private Mesh glowMesh;
@@ -31,32 +34,27 @@ namespace ChunithmMobile.Rendering
             Clear();
             foreach (var path in paths) {
                 if (!HasPlates(path)) continue;
-                // Retain tick-based cadence independently of BPM and the
-                // three-millisecond duration of an instantaneous KING ALD.
-                double interval = Math.Max(.001, path.StyleIntervalMilliseconds);
-                double duration = Math.Max(0, path.EndTimeMs - path.TimeMs);
-                int count = Math.Max(1, (int)Math.Ceiling(duration / interval - .000001));
-                for (int i = 0; i < count; i++) {
-                    double time = path.TimeMs + i * interval;
-                    float progress = duration <= .001 ? 0f : (float)((time - path.TimeMs) / duration);
-                    cells.Add(new Cell(path, time,
-                        Mathf.Lerp(path.Lane, path.EndLane, progress),
-                        Mathf.Lerp(path.Width, path.EndWidth, progress),
-                        Mathf.Lerp(path.AirHeight, path.EndAirHeight, progress), i == count - 1));
-                }
+                foreach (AirLadderNode node in path.Nodes)
+                    cells.Add(new Cell(path, node));
             }
             RefreshSkin();
         }
 
-        public void Render(double now, Func<int, double, double, float> distance)
+        public void MarkJudged(int noteIndex) => judged.Add(noteIndex);
+
+        public void Render(double now, Func<int, double, double, float> distance, double rate = 1)
         {
             VisibleCount = 0;
             foreach (Cell cell in cells) {
-                float z = distance(cell.Path.ScrollProfileId, cell.Time, now);
+                float z = distance(cell.Profile, cell.Time, now);
                 // A plate must live until its authored arrival, even when the
                 // underlying ALD ends almost immediately. Its geometry stays
                 // intact across frames; the camera clips the far edge.
-                bool visible = z >= ChartSpace.JudgementZ && z <= ChartSpace.FarZ + ChartSpace.JudgementZ + 12f;
+                bool pending = !judged.Contains(cell.NoteIndex) &&
+                    now <= cell.Time + JudgementEngine.MissWindowMs(NoteKind.AirAction) * Math.Max(.1, rate);
+                bool visible = pending && (z >= ChartSpace.JudgementZ || now >= cell.Time) &&
+                    z <= ChartSpace.FarZ + ChartSpace.JudgementZ + 12f;
+                if (now >= cell.Time) z = Mathf.Max(z, ChartSpace.JudgementZ);
                 if (!visible) { if (cell.Root != null) cell.Root.SetActive(false); continue; }
                 if (cell.Root == null) Create(cell);
                 cell.Root.SetActive(true);
@@ -97,7 +95,15 @@ namespace ChunithmMobile.Rendering
             cell.Frame = Layer(cell.Root.transform, "White frame", cell.FrameMesh, materials["airlad_waku"]);
             if (glowMesh == null) glowMesh = MeshFactory.Quad(new Vector3(-.5f, 0, -.5f),
                 new Vector3(.5f, 0, -.5f), new Vector3(.5f, 0, .5f), new Vector3(-.5f, 0, .5f));
-            cell.Glow = Layer(cell.Root.transform, "Purple glow", glowMesh, materials["airlad_glow"]);
+            cell.Glow = Layer(cell.Root.transform, "Purple glow", glowMesh, materials[kind + "_glow"]);
+            // Generic notes already carry an authored-index sorting order.
+            // Use that same order here: leaving plates at zero makes an
+            // overlapping green AHTAP cap paint over the purple top layer,
+            // even though the ladder material has a later render queue.
+            int order = Mathf.Clamp(cell.NoteIndex, 0, 30000) + 2;
+            cell.Bar.GetComponent<MeshRenderer>().sortingOrder = order;
+            cell.Frame.GetComponent<MeshRenderer>().sortingOrder = order + 1;
+            cell.Glow.GetComponent<MeshRenderer>().sortingOrder = order - 1;
         }
 
         private Mesh Mesh(string kind, string part, int width)
@@ -127,7 +133,8 @@ namespace ChunithmMobile.Rendering
             Material("airlad_bar", "airlad_bar", Color.white, false);
             Material("airladtop_bar", "airladtop_bar", Color.white, false);
             Material("airlad_waku", "airlad_waku", Color.white, false);
-            Material("airlad_glow", "airladtop_effEx", new Color(.8f, .35f, 1f, .35f), true);
+            Material("airlad_glow", "airlad_effEx", new Color(.8f, .35f, 1f, .35f), true);
+            Material("airladtop_glow", "airladtop_effEx", new Color(.8f, .35f, 1f, .35f), true);
             // SkinManager owns its mesh cache. Release references before a skin
             // change, and lazily reacquire geometry for visible cells.
             meshes.Clear();
@@ -154,7 +161,7 @@ namespace ChunithmMobile.Rendering
         public void Clear()
         {
             foreach (Cell cell in cells) if (cell.Root != null) Release(cell.Root);
-            cells.Clear(); VisibleCount = 0;
+            cells.Clear(); judged.Clear(); VisibleCount = 0;
         }
         public void Dispose()
         {
@@ -172,10 +179,18 @@ namespace ChunithmMobile.Rendering
             public readonly double Time;
             public readonly float Lane, Width, Height;
             public readonly bool Top;
+            public readonly int NoteIndex, Profile;
             public GameObject Root, Bar, Frame, Glow;
             public Mesh BarMesh, FrameMesh;
-            public Cell(VisualGuidePath path, double time, float lane, float width, float height, bool top)
-            { Path=path; Time=time; Lane=lane; Width=width; Height=height; Top=top; }
+            public Cell(VisualGuidePath path, AirLadderNode node)
+            {
+                Path = path; Time = node.TimeMs; Lane = node.Lane; Width = node.Width;
+                Height = node.Height; NoteIndex = node.NoteIndex; Profile = node.ScrollProfileId;
+                // Native first-node table 0x01C1E2E8 maps via ModelSet/Model
+                // records to ntt_airladtop; remaining nodes use ntt_airlad.
+                // This is a first-node distinction, not a last-node cap.
+                Top = node.IsFirst;
+            }
         }
     }
 }
