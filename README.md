@@ -11,7 +11,8 @@ This is the new, independent Unity implementation. The current release is **0.3.
 - Android 7.0 / API 24 minimum
 - IL2CPP, ARM64 only
 - Vulkan first, OpenGL ES 3 fallback
-- Package id: `com.zhongermate.chunithmmobile` (does not replace the old APK)
+- Application name: `ChuMobile`
+- Package id: `hmqyhm.chumobile`
 
 The GLES3 fallback is intentional: Android 7 is the OS minimum, but Vulkan support is a separate GPU/driver capability. A Vulkan-only APK would exclude some otherwise compatible Android 7 devices.
 
@@ -52,7 +53,7 @@ Install Unity 2022.3.62f3c1 with **Android Build Support**, **Android SDK & NDK 
 
 Output: `Build/Android/CHUNITHM-Mobile-0.3.3-unity-arm64.apk`
 
-No songs or charts are embedded in the APK. For an early playback test, use ADB to copy a song folder containing a `.c2s` file to `/sdcard/Android/data/com.zhongermate.chunithmmobile/files/Songs/`; the development bridge loads the first chart and logs all global/local scroll counts. Android's app-specific external directory needs no broad storage permission.
+No songs or charts are embedded in the APK. For an early playback test, use ADB to copy a song folder containing a `.c2s` file to `/sdcard/Android/data/hmqyhm.chumobile/files/Songs/`; the development bridge loads the first chart and logs all global/local scroll counts. Android's app-specific external directory needs no broad storage permission.
 
 All future imported songs use `audio/gameplay.mp3` for gameplay. Original
 ACB/AWB files are preview import sources: the importer generates

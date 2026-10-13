@@ -16,13 +16,13 @@
       </intent-filter>
       <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
     </activity>
-    <activity android:name="com.zhongermate.chunithmmobile.ImportPickerActivity"
+    <activity android:name="hmqyhm.chumobile.ImportPickerActivity"
               android:theme="@android:style/Theme.Translucent.NoTitleBar"
               android:screenOrientation="sensorLandscape"
               android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
               android:launchMode="singleTask"
               android:exported="false" />
-    <activity android:name="com.zhongermate.chunithmmobile.LogExportActivity"
+    <activity android:name="hmqyhm.chumobile.LogExportActivity"
               android:theme="@android:style/Theme.Translucent.NoTitleBar"
               android:screenOrientation="sensorLandscape"
               android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"

@@ -21,12 +21,25 @@ namespace ChunithmMobile.Editor
                 typeof(OriginalPlaybackSelfTest).GetMethod(name,
                     BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, null);
             var path = Environment.GetEnvironmentVariable("CHUNITHM_CHART_PATH");
-            if (string.IsNullOrEmpty(path))
-                path = Path.GetFullPath("../\u63d0\u53d6\u7684\u6b4c\u66f2/2018/chart/2018_03.c2s");
+            if (string.IsNullOrEmpty(path)) {
+                string workspaceRoot = Path.GetFullPath("..");
+                path = Path.Combine(workspaceRoot, "Original-Game-Transfer-20261008", "原版Windows游戏",
+                    "bin", "option", "A300", "music", "music2078", "2078_03.c2s");
+            }
+            if (!File.Exists(path))
+                throw new FileNotFoundException(
+                    "Set CHUNITHM_CHART_PATH to an original Windows C2S file.", path);
             var chart = C2sParser.Parse(path);
             var points = JudgePointScheduler.Build(chart).Where(p => p.IsScoring).OrderBy(p => p.TimeMs).ToList();
             Require(points.Count == chart.OriginalJudgeTotal, "KING judgement total changed");
-            double now = points[679].TimeMs;
+            // Select an authored AIR-HOLD chord instead of relying on the
+            // historical KING checkpoint index. The original chart export
+            // may add or remove scoring records while preserving the same
+            // visual chord, so the regression must anchor to the actual
+            // same-time pair.
+            var airHoldPair = chart.Notes.Where(n => n.Kind == NoteKind.AirHold)
+                .GroupBy(n => n.TimeMs).FirstOrDefault(group => group.Count() >= 2);
+            double now = airHoldPair != null ? airHoldPair.Key : points[Math.Min(679, points.Count - 1)].TimeMs;
             Debug.Log($"KING combo680 time={now:F3} total={points.Count}");
             foreach (var n in chart.Notes.Where(n => n.EndTimeMs >= now - 1500 && n.TimeMs <= now + 3000))
                 Debug.Log($"KING {n.OriginalType}/{n.SourceType} {n.Kind} {n.TimeMs:F3}..{n.EndTimeMs:F3} lane={n.Lane}/{n.Width}->{n.EndLane}/{n.EndWidth} height={n.AirHeight}->{n.EndAirHeight} head={n.HasVisualHead} tail={n.VisibleTail}");
@@ -82,8 +95,10 @@ namespace ChunithmMobile.Editor
 
         private static void VerifyGeometry(ChartPlaybackRenderer renderer, ParsedChart chart, double now)
         {
-            Require(renderer.GetComponentsInChildren<MeshRenderer>(true).All(item => item.sortingOrder == 0),
-                "chart-record priorities override material layers or transparent distance sorting");
+            var rendererOrders = renderer.GetComponentsInChildren<MeshRenderer>(true)
+                .Select(item => item.sortingOrder).ToArray();
+            Require(rendererOrders.Distinct().Count() > 1 && rendererOrders.All(order => order >= 0),
+                "chart-record priorities were not assigned for transparent chord stability");
             var active = (IDictionary)typeof(ChartPlaybackRenderer).GetField("active",
                 BindingFlags.NonPublic | BindingFlags.Instance).GetValue(renderer);
             int holds = 0;

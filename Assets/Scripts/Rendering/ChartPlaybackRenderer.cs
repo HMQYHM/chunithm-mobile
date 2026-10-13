@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ChunithmMobile.Chart;
 using ChunithmMobile.Judgement;
 using ChunithmMobile.Runtime;
@@ -78,6 +79,10 @@ namespace ChunithmMobile.Rendering
         private readonly HashSet<int> airActionEntriesWithDirectionalAir = new HashSet<int>();
         private readonly List<int> remove = new List<int>();
         private readonly Dictionary<int, ChartNote> pairedGroundByAir = new Dictionary<int, ChartNote>();
+        private readonly Dictionary<int, (int lane, int width)> pairedGroundPositionByAir =
+            new Dictionary<int, (int lane, int width)>();
+        private readonly Dictionary<int, int> pairedGroundProfileByAir = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> visualDuplicateOwnerByNote = new Dictionary<int, int>();
         private readonly Dictionary<int, LongChainGeometry> longChainGeometry = new Dictionary<int, LongChainGeometry>();
         private readonly Dictionary<int, int> longChainOwnerByNote = new Dictionary<int, int>();
         private readonly Dictionary<int, GuidePathVisual> activeGuidePaths = new Dictionary<int, GuidePathVisual>();
@@ -97,10 +102,10 @@ namespace ChunithmMobile.Rendering
         private DspChartClock clock;
         private double lastRenderTime = double.NegativeInfinity;
         private double guideVisualTime = double.NegativeInfinity;
-        private Material holdBody, slideBody, airHoldBody;
+        private Material holdBody, slideBody, airHoldBody, airHoldRoof;
         private Material heavenRoof, heavenRoofPink, heavenWall, heavenShadow;
         private Material airActionTrailGreenBody;
-        private Material holdLine, slideLine, airActionTrailGreenLine, defaultHead;
+        private Material holdLine, slideLine, airHoldLine, airActionTrailGreenLine, airLadderLine, defaultHead;
         private Material defaultAirHead, defaultAirArrow;
         private bool firstFrameHidden;
         private Transform notesRoot;
@@ -122,14 +127,22 @@ namespace ChunithmMobile.Rendering
             guideVisualTime = double.NegativeInfinity;
             geometry = new RibbonGeometry[parsedChart.Notes.Count];
             pairedGroundByAir.Clear();
+            pairedGroundPositionByAir.Clear();
+            pairedGroundProfileByAir.Clear();
+            visualDuplicateOwnerByNote.Clear();
             for (int i = 0; i < parsedChart.Notes.Count; i++) geometry[i] = BuildGeometry(parsedChart.Notes[i]);
             // Bind the clock before building independent visual tracks. This
             // keeps the decoration path safe if a future geometry prewarm
             // consults playback timing during construction.
             clock = chartClock;
+            // ALD records are exported as adjacent pieces. Normalize only
+            // their shared seam before allocating visual objects, so the
+            // renderer cannot show a one-frame gap or a doubled start cap.
+            WeldGuidePathStarts(parsedChart.GuidePaths ?? new List<VisualGuidePath>());
             BuildGuidePathVisuals(parsedChart.GuidePaths ?? new List<VisualGuidePath>());
             BuildLongChainGeometry(parsedChart.Notes);
             BuildAirPairs(parsedChart.Notes);
+            BuildVisualDuplicateOwners(parsedChart.Notes);
             BuildAirActionArrowOwnership(parsedChart.Notes);
         }
 
@@ -147,6 +160,10 @@ namespace ChunithmMobile.Rendering
             geometry = null;
             longChainGeometry.Clear();
             longChainOwnerByNote.Clear();
+            pairedGroundByAir.Clear();
+            pairedGroundPositionByAir.Clear();
+            pairedGroundProfileByAir.Clear();
+            visualDuplicateOwnerByNote.Clear();
             clock = null;
             airActionEntriesWithDirectionalAir.Clear();
             lastRenderTime = double.NegativeInfinity;
@@ -194,6 +211,10 @@ namespace ChunithmMobile.Rendering
             // an actual translucent surface, independent of the bright centre line.
             airHoldBody = TintedAirMaterial(GameplaySkinManager.LoadFieldTexture("field/air_hold_joint"),
                 new Color(1f, 1f, 1f, AirTrailOuterOpacity), AirBodyQueue);
+            // The Windows renderer has a separate thin AIR-HOLD roof strip.
+            // Keep it as an independent layer instead of tinting the body;
+            // this preserves the original body translucency and roof edge.
+            airHoldRoof = TextureMaterial("field/air_hold_roof", Color.white, AirTrailQueue);
             heavenRoof = TextureMaterial("field/heaven_roof", Color.white, AirBodyQueue);
             heavenRoofPink = TextureMaterial("field/heaven_roof_pink", Color.white, AirBodyQueue);
             heavenWall = TextureMaterial("field/heaven_wall", new Color(1f, 1f, 1f, .72f), AirWallQueue);
@@ -201,6 +222,11 @@ namespace ChunithmMobile.Rendering
             airActionTrailGreenBody = TintedAirMaterial(null, new Color(.12f, 1f, .34f, AirTrailOuterOpacity), AirBodyQueue);
             holdLine = MeshFactory.Material(new Color(1f, .94f, .44f, .98f), true); holdLine.renderQueue = 3040;
             slideLine = MeshFactory.Material(new Color(.68f, .96f, 1f, .98f), true); slideLine.renderQueue = 3040;
+            // The Windows client uses separate textured lines for AIR-HOLD
+            // and AIR-LADDER paths. Keep them independent from the solid
+            // green AIR-ACTION core so their authored strip pattern survives.
+            airHoldLine = TextureMaterial("field/air_hold_line", Color.white, AirTrailQueue);
+            airLadderLine = TextureMaterial("field/air_ladder_line", Color.white, AirTrailQueue);
             airActionTrailGreenLine = SolidAirTrailMaterial(null, new Color(.12f, 1f, .34f, 1f));
 
             BuildGuidePathMaterials();
@@ -263,6 +289,12 @@ namespace ChunithmMobile.Rendering
             if (holdBody != null) holdBody.mainTexture = GameplaySkinManager.LoadFieldTexture("field/hold_joint");
             if (slideBody != null) slideBody.mainTexture = GameplaySkinManager.LoadFieldTexture("field/slide_joint");
             if (airHoldBody != null) airHoldBody.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_hold_joint");
+            if (airHoldRoof != null) airHoldRoof.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_hold_roof");
+            if (airHoldLine != null) airHoldLine.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_hold_line");
+            if (airLadderLine != null) airLadderLine.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_ladder_line");
+            foreach (Material guideMaterial in guidePathMaterials.Values)
+                if (guideMaterial != null)
+                    guideMaterial.mainTexture = GameplaySkinManager.LoadFieldTexture("field/air_ladder_line");
             if (heavenRoof != null) heavenRoof.mainTexture = GameplaySkinManager.LoadFieldTexture("field/heaven_roof");
             if (heavenRoofPink != null) heavenRoofPink.mainTexture = GameplaySkinManager.LoadFieldTexture("field/heaven_roof_pink");
             if (heavenWall != null) heavenWall.mainTexture = GameplaySkinManager.LoadFieldTexture("field/heaven_wall");
@@ -284,7 +316,10 @@ namespace ChunithmMobile.Rendering
             foreach (string kind in new[] { "tap", "extap", "hold", "holdend", "slide", "slideend", "flick", "dmg" })
                 for (int width = 1; width <= 16; width++) {
                     string suffix = "_" + width.ToString("00");
-                    string geometryKey = (kind == "extap" ? "tap" : kind) + suffix;
+                    // EX TAP has its own arcade mesh. It is not a TAP mesh with
+                    // a different texture; keep the UV cache attached to the
+                    // authored EX geometry so the raised border is preserved.
+                    string geometryKey = kind + suffix;
                     string textureKey = (kind == "holdend" ? "hold" : kind == "slideend" ? "slide" : kind) + suffix;
                     if (originalMeshes.TryGetValue(geometryKey, out Mesh mesh) &&
                         headMaterials.TryGetValue(textureKey, out Material material) &&
@@ -432,8 +467,9 @@ namespace ChunithmMobile.Rendering
                 visualEndMs = chain.EndTimeMs;
             int headProfile = note.ScrollProfileId;
             if (note.Kind == NoteKind.Air &&
-                pairedGroundByAir.TryGetValue(i, out ChartNote pairedGround))
-                headProfile = pairedGround.ScrollProfileId;
+                pairedGroundProfileByAir.TryGetValue(i, out int pairedProfile))
+                headProfile = pairedProfile;
+            if (IsVisualDuplicate(i, note)) return;
             float headZ = Distance(headProfile, note.TimeMs, now);
             double min, max;
             GetVisualDistanceBounds(i, now, headZ, out min, out max);
@@ -642,13 +678,20 @@ namespace ChunithmMobile.Rendering
                 { "RED", new Color(1f, .12f, .12f) }, { "ORN", new Color(1f, .42f, .06f) },
                 { "YEL", new Color(1f, .90f, .08f) }, { "LIM", new Color(.55f, 1f, .08f) },
                 { "GRN", new Color(.08f, 1f, .38f) }, { "DGR", new Color(.02f, .58f, .20f) },
-                { "AQA", new Color(.06f, .95f, 1f) }, { "BLU", new Color(.12f, .40f, 1f) },
-                { "VLT", new Color(.68f, .18f, 1f) }, { "PNK", new Color(1f, .22f, .72f) },
+                { "AQA", new Color(.06f, .95f, 1f) }, { "CYN", new Color(.02f, .88f, .95f) },
+                { "BLU", new Color(.12f, .40f, 1f) }, { "VLT", new Color(.68f, .18f, 1f) },
+                { "PPL", new Color(.78f, .26f, 1f) }, { "PNK", new Color(1f, .22f, .72f) },
                 { "GRY", new Color(.68f, .72f, .78f) }, { "BLK", new Color(.15f, .16f, .20f) },
                 { "NON", new Color(.34f, .95f, .76f) }
             };
             foreach (var pair in colors) {
-                Material line = MeshFactory.Material(pair.Value, false);
+                // ALD/AIR-LADDER uses the original strip texture as the
+                // repeating base. Keep the authored colour as a tint so the
+                // CYN/PPL/etc. chart colour still comes from the ALD record.
+                Texture2D ladderTexture = GameplaySkinManager.LoadFieldTexture("field/air_ladder_line");
+                Material line = ladderTexture != null
+                    ? MeshFactory.Material(ladderTexture, pair.Value, true)
+                    : MeshFactory.Material(pair.Value, false);
                 line.renderQueue = AirTrailQueue;
                 guidePathMaterials[pair.Key] = line;
             }
@@ -662,7 +705,7 @@ namespace ChunithmMobile.Rendering
                 "6" => "AQA", "7" => "BLU", "8" => "VLT", "9" => "PNK", "10" => "GRY",
                 "11" => "BLK", "12" => "NON",
                 "RED" or "ORN" or "YEL" or "LIM" or "GRN" or "DGR" or "AQA" or "BLU" or
-                "VLT" or "PNK" or "GRY" or "BLK" or "NON" => key,
+                "CYN" or "VLT" or "PPL" or "PNK" or "GRY" or "BLK" or "NON" => key,
                 _ => "GRN"
             };
         }
@@ -745,13 +788,28 @@ namespace ChunithmMobile.Rendering
         private void UpdateVisual(NoteVisual visual, int noteIndex, ChartNote note, double now,
             float headZ, float visibilityGuardZ)
         {
+            // Unity's transparent sort falls back to creation order when
+            // renderQueue and camera distance are equal. Dense chords and
+            // long-note seams then reorder from frame to frame as pooled
+            // objects are reused. Keep every visual layer deterministic by
+            // using the authored note index as its secondary order key.
+            int order = Mathf.Clamp(noteIndex, 0, 30000);
+            visual.BodyRenderer.sortingOrder = order;
+            visual.LineRenderer.sortingOrder = order;
+            visual.RoofRenderer.sortingOrder = order;
+            visual.AccentRenderer.sortingOrder = order;
+            visual.TailRenderer.sortingOrder = order + 1;
+            visual.HeadRenderer.sortingOrder = order + 2;
             OriginalNoteTrack track = precomputed != null && noteIndex < precomputed.Tracks.Count
                 ? precomputed[noteIndex] : null;
-            bool longBody = (note.EndTimeMs > note.TimeMs && note.Kind is
+            bool longVisual = (note.EndTimeMs > note.TimeMs && note.Kind is
                 (NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
                  NoteKind.AirHold or NoteKind.AirAction));
-            if (track != null) longBody = track.IsBodyOwner && track.BodyResource.Length > 0;
+            bool longBody = track != null
+                ? track.IsBodyOwner && track.BodyResource.Length > 0
+                : longVisual;
             visual.Accent.SetActive(false);
+            visual.Roof.SetActive(false);
             visual.Body.SetActive(longBody); visual.Line.SetActive(longBody);
             if (longBody) UpdateLongVisual(visual, noteIndex, geometry[noteIndex], note, now);
 
@@ -833,7 +891,13 @@ namespace ChunithmMobile.Rendering
             float tailZ = 0f;
             // This cap is geometry, not a separate judgeable note. Its lifetime
             // ends at the authored tail; attached AIR/TAP records live separately.
-            bool tailPending = longBody && (track == null ? note.IsLongChainTail && note.VisibleTail : track.IsTailOwner);
+            // A merged linear chain has one body owner (the first segment)
+            // and a different tail owner (the final segment). Do not require
+            // the tail segment to also own the body, otherwise the original
+            // hold/slide cap disappears at the end of every welded chain.
+            bool tailPending = track == null
+                ? longVisual && note.IsLongChainTail && note.VisibleTail
+                : longVisual && track.IsTailOwner;
             if (tailPending) {
                 int endProfile = geometry[noteIndex].EndProfileId;
                 tailZ = Distance(endProfile, note.EndTimeMs, now);
@@ -889,7 +953,19 @@ namespace ChunithmMobile.Rendering
                     line = airActionTrailGreenLine;
                     air = true;
                     break;
-                case NoteKind.AirHold: body = airHoldBody; line = airActionTrailGreenLine; air = true; break;
+                case NoteKind.AirHold:
+                    body = airHoldBody; line = airHoldLine; air = true;
+                    // AIR-HOLD is a three-layer authored visual in the
+                    // original client: translucent sheet, centre line and a
+                    // narrow roof edge. Accent is otherwise unused by the
+                    // body path and is safe to reuse for this decoration.
+                    visual.Roof.SetActive(airHoldRoof != null);
+                    if (visual.Roof.activeSelf) {
+                        visual.RoofRenderer.sharedMaterial = airHoldRoof;
+                        UpdateRibbon(visual.RoofMesh, visual.RoofBuffers, ribbon, note, now, start,
+                            true, true, RibbonGameplayNearClipZ, .115f, .025f);
+                    }
+                    break;
                 default: body = holdBody; line = holdLine; break;
             }
             visual.BodyRenderer.sharedMaterial = body; visual.LineRenderer.sharedMaterial = line;
@@ -1004,7 +1080,8 @@ namespace ChunithmMobile.Rendering
         }
 
         private void UpdateRibbon(Mesh mesh, RibbonBuffers buffers, RibbonGeometry ribbon, ChartNote note,
-            double now, float start, bool air, bool line, float nearClip)
+            double now, float start, bool air, bool line, float nearClip,
+            float halfWidthOverride = float.NaN, float yOffset = 0f)
         {
             buffers.BeginFrame();
             buffers.EnsureCapacity(ribbon.SegmentCount);
@@ -1024,10 +1101,10 @@ namespace ChunithmMobile.Rendering
                 int profileB = ribbon.PointProfileIds[i + 1];
                 CalculateRibbonPoint(note, segmentStart, now, profileA, ribbon.Lanes[i], ribbon.Widths[i],
                     ribbon.AirHeights[i], ribbon.Uv[i], air, line,
-                    out Vector3 leftA, out Vector3 rightA, out float uvA);
+                    out Vector3 leftA, out Vector3 rightA, out float uvA, halfWidthOverride, yOffset);
                 CalculateRibbonPoint(note, segmentEnd, now, profileB, ribbon.Lanes[i + 1], ribbon.Widths[i + 1],
                     ribbon.AirHeights[i + 1], ribbon.Uv[i + 1], air, line,
-                    out Vector3 leftB, out Vector3 rightB, out float uvB);
+                    out Vector3 leftB, out Vector3 rightB, out float uvB, halfWidthOverride, yOffset);
                 if (!ClipRibbonSegment(ref leftA, ref rightA, ref uvA,
                         ref leftB, ref rightB, ref uvB,
                         nearClip, RibbonBodyFarClipZ))
@@ -1040,13 +1117,15 @@ namespace ChunithmMobile.Rendering
 
         private void CalculateRibbonPoint(ChartNote note, double authored, double now, int profile,
             float lane, float width, float airHeight, float uvValue, bool air, bool line,
-            out Vector3 left, out Vector3 right, out float uv)
+            out Vector3 left, out Vector3 right, out float uv,
+            float halfWidthOverride = float.NaN, float yOffset = 0f)
         {
             float z = Distance(profile, authored, now);
             float x = ChartSpace.NoteCenterX(lane, width, z);
             float half = line
                 ? FixedLineHalfWidth(air ? .115f : .032f)
                 : ChartSpace.NoteHalfWidth(width, z) * .93f;
+            if (!float.IsNaN(halfWidthOverride)) half = halfWidthOverride;
             if (air && !line) {
                 // AIR-HOLD has a full-width translucent sheet and a separate
                 // narrow centre line.
@@ -1054,6 +1133,7 @@ namespace ChunithmMobile.Rendering
                     : Mathf.Max(FixedLineHalfWidth(.115f), half * .34f);
             }
             float y = air ? ChartSpace.AirY(airHeight) : (line ? .085f : .055f);
+            y += yOffset;
             left = new Vector3(x - half, y, z);
             right = new Vector3(x + half, y, z);
             uv = uvValue;
@@ -1132,7 +1212,12 @@ namespace ChunithmMobile.Rendering
             int width = Mathf.Clamp(tail ? note.EndWidth : note.Width, 1, 16);
             float x = ChartSpace.NoteCenterX(lane, width, z), half = ChartSpace.NoteHalfWidth(width, z);
             if (note.Kind == NoteKind.Air) {
-                if (!tail && pairedGroundByAir.TryGetValue(index, out ChartNote ground)) { lane = ground.Lane; width = Mathf.Clamp(ground.Width, 1, 16); x = ChartSpace.NoteCenterX(lane, width, z); half = ChartSpace.NoteHalfWidth(width, z); }
+                if (!tail && pairedGroundPositionByAir.TryGetValue(index, out var pairPosition)) {
+                    lane = pairPosition.lane;
+                    width = Mathf.Clamp(pairPosition.width, 1, 16);
+                    x = ChartSpace.NoteCenterX(lane, width, z);
+                    half = ChartSpace.NoteHalfWidth(width, z);
+                }
                 UpdateDirectionalAirHead(target, filter, fallbackMesh, renderer, lane, width, z,
                     note.AirHeight, note.AirDirection, connectToCap: false);
                 return;
@@ -1182,12 +1267,10 @@ namespace ChunithmMobile.Rendering
                 // Their authored aspect ratio includes the original depth;
                 // scaling the mesh from its X bounds preserves that ratio and
                 // avoids the old one-size quad that made heads look too short.
-                // The extracted EXTAP model includes the arcade cabinet's
-                // raised side shell. On a perspective mobile playfield that
-                // shell looks like a bucket around the note. The playable
-                // surface is the same flat per-width plane as TAP; the gold
-                // EXTAP artwork remains an independent skin material.
-                string geometryKey = key == "extap" ? "tap" : key;
+                // CHR and HXD use the Windows client's independent EXTAP
+                // family. Keep that geometry separate from TAP: the two
+                // resources have different silhouettes and depth profiles.
+                string geometryKey = key;
                 if (!SetOriginalMesh(target, filter, geometryKey, width, x, ChartSpace.GroundY, z, false)) {
                     filter.sharedMesh = fallbackMesh;
                     SetGroundQuad(fallbackMesh, x, half, z, note.Kind == NoteKind.Mine ? .52f : .66f);
@@ -1390,75 +1473,102 @@ namespace ChunithmMobile.Rendering
 
         private void BuildAirPairs(IReadOnlyList<ChartNote> notes)
         {
-            // AIR is authored on the same timing plane as its ground partner.
-            // Looking only at nearby sorted records is not sufficient: a dense
-            // chord can put more than eight objects between the two records,
-            // and a nearby-but-different tick can then steal the AIR position.
-            var groundsByTime = new Dictionary<long, List<ChartNote>>();
-            for (int i = 0; i < notes.Count; i++) {
-                ChartNote ground = notes[i];
-                if (ground.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction)
-                    continue;
-                long key = AirPairTimeKey(ground.TimeMs);
-                if (!groundsByTime.TryGetValue(key, out List<ChartNote> grounds)) {
-                    grounds = new List<ChartNote>();
-                    groundsByTime.Add(key, grounds);
-                }
-                grounds.Add(ground);
-            }
-
-            // Several AIR arrows can share one authored timing plane.  A
-            // nearest-neighbour lookup lets every arrow select the same
-            // ground note, which makes the arrows jump sideways when the
-            // chord is updated or when one of the ground notes is recycled.
-            // Reserve a ground note for the first best matching arrow in a
-            // timing plane; only reuse a note when the chart has more AIR
-            // arrows than compatible ground objects (the fallback preserves
-            // legacy behavior for malformed/incomplete charts).
-            var reservedGrounds = new HashSet<ChartNote>();
+            // AIR can be attached to a ground head at the same timestamp or
+            // to the tail of a HOLD/SLIDE whose EndTime is the AIR timestamp.
+            // Resolve all candidates first, then assign them globally so a
+            // dense chord cannot let the first arrow steal the only compatible
+            // long-note tail from a later arrow.
+            var candidates = new List<(int air, ChartNote ground, int source, int endpoint,
+                int overlap, double timeDelta, float centerDistance)>();
             for (int i = 0; i < notes.Count; i++) {
                 ChartNote air = notes[i];
                 if (air.Kind != NoteKind.Air) continue;
-                long key = AirPairTimeKey(air.TimeMs);
-                ChartNote best = null;
-                bool bestSourceMatch = false;
-                bool bestReserved = true;
-                int bestOverlap = 0;
-                float bestCenterDistance = float.PositiveInfinity;
-                // Query adjacent buckets because the same authored timestamp
-                // can land on either side of a rounded millisecond boundary.
-                for (long bucket = key - 1; bucket <= key + 1; bucket++) {
-                    if (!groundsByTime.TryGetValue(bucket, out List<ChartNote> grounds)) continue;
-                    foreach (ChartNote ground in grounds) {
-                        double timeDelta = Math.Abs(ground.TimeMs - air.TimeMs);
-                        if (timeDelta > .1) continue;
-                        int overlap = Math.Max(0, Math.Min(ground.Lane + Math.Max(1, ground.Width),
-                            air.Lane + Math.Max(1, air.Width)) - Math.Max(ground.Lane, air.Lane));
-                        if (overlap <= 0 || !ground.VisibleHead) continue;
-                        float groundCenter = ground.Lane + Math.Max(1, ground.Width) * .5f;
-                        float airCenter = air.Lane + Math.Max(1, air.Width) * .5f;
-                        float centerDistance = Mathf.Abs(groundCenter - airCenter);
-                        bool sourceMatch = !string.IsNullOrWhiteSpace(air.SourceType) &&
-                            string.Equals(air.SourceType, ground.OriginalType, StringComparison.OrdinalIgnoreCase);
-                        bool reserved = reservedGrounds.Contains(ground);
-                        if (best == null || bestReserved && !reserved ||
-                            (reserved == bestReserved && (sourceMatch && !bestSourceMatch ||
-                            (sourceMatch == bestSourceMatch && (overlap > bestOverlap ||
-                            (overlap == bestOverlap && centerDistance < bestCenterDistance)))))) {
-                            best = ground;
-                            bestSourceMatch = sourceMatch;
-                            bestReserved = reserved;
-                            bestOverlap = overlap;
-                            bestCenterDistance = centerDistance;
-                        }
-                    }
-                }
-                if (best != null) {
-                    pairedGroundByAir[i] = best;
-                    reservedGrounds.Add(best);
+                float airCenter = air.Lane + Math.Max(1, air.Width) * .5f;
+                for (int g = 0; g < notes.Count; g++) {
+                    ChartNote ground = notes[g];
+                    if (ground.Kind is NoteKind.Air or NoteKind.AirHold or NoteKind.AirAction) continue;
+                    double headDelta = Math.Abs(ground.TimeMs - air.TimeMs);
+                    double tailDelta = Math.Abs(ground.EndTimeMs - air.TimeMs);
+                    bool atHead = headDelta <= .1;
+                    bool atTail = ground.EndTimeMs > ground.TimeMs && tailDelta <= .1 &&
+                        ground.Kind is NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide;
+                    if (!atHead && !atTail) continue;
+                    int lane = atTail ? ground.EndLane : ground.Lane;
+                    int width = Math.Max(1, atTail ? ground.EndWidth : ground.Width);
+                    int overlap = Math.Max(0, Math.Min(lane + width, air.Lane + Math.Max(1, air.Width)) -
+                        Math.Max(lane, air.Lane));
+                    if (overlap <= 0) continue;
+                    bool sourceMatch = !string.IsNullOrWhiteSpace(air.SourceType) &&
+                        string.Equals(air.SourceType, ground.OriginalType, StringComparison.OrdinalIgnoreCase);
+                    float centerDistance = Mathf.Abs(lane + width * .5f - airCenter);
+                    candidates.Add((i, ground, sourceMatch ? 1 : 0, atHead ? 1 : 0,
+                        overlap, Math.Min(headDelta, tailDelta), centerDistance));
                 }
             }
+            var reserved = new HashSet<ChartNote>();
+            foreach (var candidate in candidates
+                .OrderByDescending(c => c.source).ThenByDescending(c => c.endpoint)
+                .ThenByDescending(c => c.overlap).ThenBy(c => c.timeDelta)
+                .ThenBy(c => c.centerDistance)) {
+                if (pairedGroundByAir.ContainsKey(candidate.air) || reserved.Contains(candidate.ground)) continue;
+                pairedGroundByAir[candidate.air] = candidate.ground;
+                bool useTail = candidate.endpoint == 0 && candidate.ground.EndTimeMs > candidate.ground.TimeMs &&
+                    Math.Abs(candidate.ground.EndTimeMs - notes[candidate.air].TimeMs) <= .1;
+                pairedGroundPositionByAir[candidate.air] = useTail
+                    ? (candidate.ground.EndLane, Math.Max(1, candidate.ground.EndWidth))
+                    : (candidate.ground.Lane, Math.Max(1, candidate.ground.Width));
+                var position = pairedGroundPositionByAir[candidate.air];
+                pairedGroundProfileByAir[candidate.air] = playback.FindProfile(
+                    notes[candidate.air].TimeMs, position.lane, position.width);
+                reserved.Add(candidate.ground);
+            }
+            // Malformed charts can contain more AIR arrows than compatible
+            // ground records. Preserve the old renderer's useful fallback in
+            // that case, but only after every arrow with a unique candidate
+            // has received its stable owner.
+            foreach (int airIndex in Enumerable.Range(0, notes.Count)
+                .Where(i => notes[i].Kind == NoteKind.Air && !pairedGroundByAir.ContainsKey(i))) {
+                var fallback = candidates.Where(c => c.air == airIndex)
+                    .OrderByDescending(c => c.source).ThenByDescending(c => c.endpoint)
+                    .ThenByDescending(c => c.overlap).ThenBy(c => c.timeDelta)
+                    .ThenBy(c => c.centerDistance).FirstOrDefault();
+                if (fallback.ground == null) continue;
+                pairedGroundByAir[airIndex] = fallback.ground;
+                bool useTail = fallback.endpoint == 0 && fallback.ground.EndTimeMs > fallback.ground.TimeMs &&
+                    Math.Abs(fallback.ground.EndTimeMs - notes[airIndex].TimeMs) <= .1;
+                pairedGroundPositionByAir[airIndex] = useTail
+                    ? (fallback.ground.EndLane, Math.Max(1, fallback.ground.EndWidth))
+                    : (fallback.ground.Lane, Math.Max(1, fallback.ground.Width));
+                var position = pairedGroundPositionByAir[airIndex];
+                pairedGroundProfileByAir[airIndex] = playback.FindProfile(
+                    notes[airIndex].TimeMs, position.lane, position.width);
+            }
         }
+
+        private void BuildVisualDuplicateOwners(IReadOnlyList<ChartNote> notes)
+        {
+            visualDuplicateOwnerByNote.Clear();
+            var owners = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < notes.Count; i++) {
+                ChartNote note = notes[i];
+                if (!IsVisualControlRecord(note)) continue;
+                string key = string.Join("|", note.OriginalType ?? "", note.TimeMs.ToString("R"),
+                    note.EndTimeMs.ToString("R"), note.Lane, note.Width, note.EndLane, note.EndWidth,
+                    note.AirHeight.ToString("R"), note.EndAirHeight.ToString("R"));
+                if (owners.TryGetValue(key, out int owner)) visualDuplicateOwnerByNote[i] = owner;
+                else owners[key] = i;
+            }
+        }
+
+        private static bool IsVisualControlRecord(ChartNote note)
+        {
+            if (note == null) return false;
+            return note.OriginalType is "SLC" or "SXC" or "SLD" or "SXD" or
+                "ASC" or "ASD" or "AHD" or "AHX";
+        }
+
+        private bool IsVisualDuplicate(int index, ChartNote note) =>
+            IsVisualControlRecord(note) && visualDuplicateOwnerByNote.TryGetValue(index, out int owner) && owner != index;
 
         private void BuildAirActionArrowOwnership(IReadOnlyList<ChartNote> notes)
         {
@@ -1625,7 +1735,7 @@ namespace ChunithmMobile.Rendering
                 List<int> members = pair.Value;
                 members.Sort((a, b) => notes[a].TimeMs.CompareTo(notes[b].TimeMs));
                 foreach (int index in members) longChainOwnerByNote[index] = index;
-                if (members.Count < 2 || !IsLinearLongChain(notes, members)) continue;
+                if (members.Count < 2 || !OriginalNotePrecalculation.IsLinearLongChain(notes, members)) continue;
                 foreach (int index in members) longChainOwnerByNote[index] = members[0];
 
                 var times = new List<double>();
@@ -1683,28 +1793,6 @@ namespace ChunithmMobile.Rendering
                 }
                 longChainGeometry[pair.Key] = new LongChainGeometry(ribbon, chainStart, chainEnd);
             }
-        }
-
-        private static bool IsLinearLongChain(IReadOnlyList<ChartNote> notes, IReadOnlyList<int> members)
-        {
-            for (int i = 1; i < members.Count; i++) {
-                ChartNote previous = notes[members[i - 1]];
-                ChartNote current = notes[members[i]];
-                if (previous.Kind != current.Kind || Math.Abs(previous.EndTimeMs - current.TimeMs) > .1)
-                    return false;
-                int previousLeft = previous.EndLane;
-                int previousRight = previous.EndLane + Math.Max(1, previous.EndWidth);
-                int currentLeft = current.Lane;
-                int currentRight = current.Lane + Math.Max(1, current.Width);
-                if (currentLeft >= previousRight || previousLeft >= currentRight) return false;
-                float previousCenter = previous.EndLane + previous.EndWidth * .5f;
-                float currentCenter = current.Lane + current.Width * .5f;
-                if (Math.Abs(previousCenter - currentCenter) > .05f ||
-                    Math.Abs(previous.EndWidth - current.Width) > .05f ||
-                    (current.Kind is NoteKind.AirAction or NoteKind.AirHold &&
-                     Math.Abs(previous.EndAirHeight - current.AirHeight) > .01f)) return false;
-            }
-            return true;
         }
 
         private static int FindChainSegment(IReadOnlyList<ChartNote> notes, IReadOnlyList<int> members,
@@ -1831,17 +1919,18 @@ namespace ChunithmMobile.Rendering
 
         private sealed class NoteVisual
         {
-            public bool Valid => Root != null && Head != null && Body != null && Line != null && Tail != null && Accent != null;
+            public bool Valid => Root != null && Head != null && Body != null && Line != null && Tail != null && Accent != null && Roof != null;
             public void Dispose()
             {
                 ReleaseOwnedObject(HeadMesh); ReleaseOwnedObject(BodyMesh); ReleaseOwnedObject(LineMesh);
-                ReleaseOwnedObject(TailMesh); ReleaseOwnedObject(AccentMesh); ReleaseOwnedObject(Root);
+                ReleaseOwnedObject(TailMesh); ReleaseOwnedObject(AccentMesh); ReleaseOwnedObject(RoofMesh); ReleaseOwnedObject(Root);
             }
-            public readonly GameObject Root,Head,Body,Line,Tail,Accent; public readonly Mesh HeadMesh,BodyMesh,LineMesh,TailMesh,AccentMesh; public readonly MeshFilter HeadFilter,BodyFilter,LineFilter,TailFilter,AccentFilter; public readonly MeshRenderer HeadRenderer,BodyRenderer,LineRenderer,TailRenderer,AccentRenderer;
+            public readonly GameObject Root,Head,Body,Line,Tail,Accent,Roof; public readonly Mesh HeadMesh,BodyMesh,LineMesh,TailMesh,AccentMesh,RoofMesh; public readonly MeshFilter HeadFilter,BodyFilter,LineFilter,TailFilter,AccentFilter,RoofFilter; public readonly MeshRenderer HeadRenderer,BodyRenderer,LineRenderer,TailRenderer,AccentRenderer,RoofRenderer;
             public readonly RibbonBuffers BodyBuffers = new RibbonBuffers();
             public readonly RibbonBuffers LineBuffers = new RibbonBuffers();
             public readonly RibbonBuffers AccentBuffers = new RibbonBuffers();
-            public NoteVisual(Transform parent) { Root=new GameObject("Pooled original note"); Root.transform.SetParent(parent,false); Create(Root.transform,"Accent",out Accent,out AccentMesh,out AccentFilter,out AccentRenderer); Create(Root.transform,"Body",out Body,out BodyMesh,out BodyFilter,out BodyRenderer); Create(Root.transform,"Centre line",out Line,out LineMesh,out LineFilter,out LineRenderer); Create(Root.transform,"Tail",out Tail,out TailMesh,out TailFilter,out TailRenderer); Create(Root.transform,"Head",out Head,out HeadMesh,out HeadFilter,out HeadRenderer); }
+            public readonly RibbonBuffers RoofBuffers = new RibbonBuffers();
+            public NoteVisual(Transform parent) { Root=new GameObject("Pooled original note"); Root.transform.SetParent(parent,false); Create(Root.transform,"Accent",out Accent,out AccentMesh,out AccentFilter,out AccentRenderer); Create(Root.transform,"AIR-HOLD roof",out Roof,out RoofMesh,out RoofFilter,out RoofRenderer); Create(Root.transform,"Body",out Body,out BodyMesh,out BodyFilter,out BodyRenderer); Create(Root.transform,"Centre line",out Line,out LineMesh,out LineFilter,out LineRenderer); Create(Root.transform,"Tail",out Tail,out TailMesh,out TailFilter,out TailRenderer); Create(Root.transform,"Head",out Head,out HeadMesh,out HeadFilter,out HeadRenderer); }
             private static void Create(Transform p,string n,out GameObject go,out Mesh mesh,out MeshFilter filter,out MeshRenderer renderer) { go=new GameObject(n); go.transform.SetParent(p,false); mesh=new Mesh{name="Dynamic "+n}; mesh.MarkDynamic(); filter=go.AddComponent<MeshFilter>(); filter.sharedMesh=mesh; renderer=go.AddComponent<MeshRenderer>(); renderer.sortingOrder=0; }
         }
 

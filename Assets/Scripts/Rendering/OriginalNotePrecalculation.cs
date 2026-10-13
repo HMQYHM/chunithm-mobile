@@ -111,10 +111,23 @@ namespace ChunithmMobile.Rendering
                 throw new ArgumentNullException(nameof(chart));
 
             var ownerByChain = new Dictionary<int, int>();
+            var membersByChain = new Dictionary<int, List<int>>();
             for (int i = 0; i < chart.Notes.Count; i++) {
                 int chain = chart.Notes[i].LongChainId;
                 if (chain < 0) continue;
-                if (!ownerByChain.ContainsKey(chain)) ownerByChain[chain] = i;
+                if (!membersByChain.TryGetValue(chain, out List<int> members))
+                    membersByChain[chain] = members = new List<int>();
+                members.Add(i);
+            }
+            // The renderer welds only a proven one-to-one continuation. Keep
+            // the same rule here; otherwise a branch would have its body
+            // hidden by pre-calculation even though the renderer intentionally
+            // leaves that branch as an independent ribbon.
+            foreach (var pair in membersByChain) {
+                List<int> members = pair.Value;
+                members.Sort((a, b) => chart.Notes[a].TimeMs.CompareTo(chart.Notes[b].TimeMs));
+                if (members.Count >= 2 && IsLinearLongChain(chart.Notes, members))
+                    ownerByChain[pair.Key] = members[0];
             }
 
             var result = new OriginalNoteTrack[chart.Notes.Count];
@@ -146,6 +159,32 @@ namespace ChunithmMobile.Rendering
         private static bool IsLong(ChartNote note) => note.EndTimeMs > note.TimeMs &&
             note.Kind is NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or
             NoteKind.AirHold or NoteKind.AirAction;
+
+        // Shared by pre-calculation and the mesh builder so ownership cannot
+        // diverge between the semantic and rendering stages.
+        public static bool IsLinearLongChain(IReadOnlyList<ChartNote> notes, IReadOnlyList<int> members)
+        {
+            for (int i = 1; i < members.Count; i++) {
+                ChartNote previous = notes[members[i - 1]];
+                ChartNote current = notes[members[i]];
+                if (previous.Kind != current.Kind || Math.Abs(previous.EndTimeMs - current.TimeMs) > .1)
+                    return false;
+
+                int previousLeft = previous.EndLane;
+                int previousRight = previous.EndLane + Math.Max(1, previous.EndWidth);
+                int currentLeft = current.Lane;
+                int currentRight = current.Lane + Math.Max(1, current.Width);
+                if (currentLeft >= previousRight || previousLeft >= currentRight)
+                    return false;
+
+                // A genuine SLC/SLD continuation is allowed to move and to
+                // change width. The authored endpoints are the curve; the
+                // renderer interpolates them with bounded segments. Treating
+                // these changes as a branch split the original Windows
+                // curves into separate ribbons and produced visible seams.
+            }
+            return true;
+        }
 
         private static void ResolveResources(ChartNote note, out string head, out string body, out string tail)
         {

@@ -53,8 +53,15 @@ namespace ChunithmMobile.Editor
             Require(dense.Notes[0].HasVisualHead && !dense.Notes[2].HasVisualHead && dense.Notes[3].HasVisualHead,
                 "out-of-order/dense records broke endpoint ownership or hid another lane's root");
 
-            string path = Environment.GetEnvironmentVariable("CHUNITHM_CHART_PATH") ??
-                Path.GetFullPath("../\u63d0\u53d6\u7684\u6b4c\u66f2/2018/chart/2018_03.c2s");
+            string path = Environment.GetEnvironmentVariable("CHUNITHM_CHART_PATH");
+            if (string.IsNullOrWhiteSpace(path)) {
+                string workspaceRoot = Path.GetFullPath("..");
+                path = Path.Combine(workspaceRoot, "Original-Game-Transfer-20261008", "原版Windows游戏",
+                    "bin", "option", "A300", "music", "music2078", "2078_03.c2s");
+            }
+            if (!File.Exists(path))
+                throw new FileNotFoundException(
+                    "Set CHUNITHM_CHART_PATH to an original Windows C2S file.", path);
             ParsedChart king = C2sParser.Parse(path);
             int index = king.Notes.FindIndex(n => n.Kind == NoteKind.Slide);
             ChartNote rootNote = king.Notes[index];

@@ -62,7 +62,7 @@ namespace ChunithmMobile.Runtime
         public static void OpenSongImportPicker()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.ImportPickerActivity");
+            using var bridge = new AndroidJavaClass("hmqyhm.chumobile.ImportPickerActivity");
             bridge.CallStatic("openPicker");
 #elif UNITY_IOS && !UNITY_EDITOR
             ChunithmOpenDocumentPicker("zip");
@@ -74,7 +74,7 @@ namespace ChunithmMobile.Runtime
         public static void OpenBackgroundImagePicker()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.ImportPickerActivity");
+            using var bridge = new AndroidJavaClass("hmqyhm.chumobile.ImportPickerActivity");
             bridge.CallStatic("openBackgroundImagePicker");
 #elif UNITY_IOS && !UNITY_EDITOR
             ChunithmOpenDocumentPicker("images");
@@ -86,7 +86,7 @@ namespace ChunithmMobile.Runtime
         public static void OpenGameplaySkinPicker()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.ImportPickerActivity");
+            using var bridge = new AndroidJavaClass("hmqyhm.chumobile.ImportPickerActivity");
             bridge.CallStatic("openGameplaySkinPicker");
 #elif UNITY_IOS && !UNITY_EDITOR
             ChunithmOpenDocumentPicker("skin");
@@ -98,7 +98,7 @@ namespace ChunithmMobile.Runtime
         public static bool TryShareFile(string path)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            using var bridge = new AndroidJavaClass("com.zhongermate.chunithmmobile.LogExportActivity");
+            using var bridge = new AndroidJavaClass("hmqyhm.chumobile.LogExportActivity");
             bridge.CallStatic("exportFile", path);
             return true;
 #elif UNITY_IOS && !UNITY_EDITOR

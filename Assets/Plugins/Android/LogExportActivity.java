@@ -1,4 +1,4 @@
-package com.zhongermate.chunithmmobile;
+package hmqyhm.chumobile;
 
 import android.app.Activity;
 import android.content.Intent;

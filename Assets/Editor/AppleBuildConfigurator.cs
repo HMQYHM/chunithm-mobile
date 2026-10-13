@@ -27,7 +27,7 @@ namespace ChunithmMobile.Editor
         private const string ScenePath = "Assets/Scenes/Bootstrap.unity";
         private const string DefaultOutput = "Build/iOS/CHUNITHM-Mobile-iOS";
         private const string DefaultSimulatorOutput = "Build/iOS/CHUNITHM-Mobile-iOS-Simulator";
-        private const string AppleBundleIdentifier = "com.hmqyhm.chunithmmobile";
+        private const string AppleBundleIdentifier = "hmqyhm.chumobile";
         private const string DefaultAppleTeam = "L2N2FK3BD5";
 
         static AppleBuildConfigurator()
@@ -40,7 +40,7 @@ namespace ChunithmMobile.Editor
         [MenuItem("CHUNITHM Mobile/Apply iOS Settings")]
         public static void Apply()
         {
-            PlayerSettings.productName = "CHUNITHM Mobile";
+            PlayerSettings.productName = "ChuMobile";
             PlayerSettings.companyName = "HMQYHM";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS,
                 AppleBundleIdentifier);

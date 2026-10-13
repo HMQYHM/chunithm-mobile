@@ -179,7 +179,6 @@ namespace ChunithmMobile.Runtime
             foreach (GameplayLayoutOverride item in source.GameplayLayoutOverrides)
             {
                 if (item == null || !string.Equals(item.SkinId, skinId, StringComparison.OrdinalIgnoreCase)) continue;
-                if (item.ElementId == "songCover" && style.LayoutElement("songCover") == null) continue;
                 RectTransform target = LayoutTarget(item.ElementId);
                 if (target == null || item.Width <= 0f || item.Height <= 0f) continue;
                 if (item.ReferenceWidth <= 0f || item.ReferenceHeight <= 0f)
@@ -241,10 +240,6 @@ namespace ChunithmMobile.Runtime
             // element". The runtime target is the source of the fallback
             // rectangle and can therefore always be edited locally.
             if (string.IsNullOrEmpty(id) || LayoutTarget(id) == null) return false;
-            // With no authored songCover rectangle, the cover is a child of
-            // songInfo and must follow its position and content scale.
-            if (id == "songCover" && GameplaySkinManager.Style.LayoutElement("songCover") == null)
-                return false;
             return true;
         }
 
@@ -369,7 +364,12 @@ namespace ChunithmMobile.Runtime
             switch (id)
             {
                 case "songInfo": return gameplaySongInfoBlock;
-                case "songCover": return gameplaySongInfoCover?.rectTransform;
+                // The mask is the layout owner. Editing the Image child itself
+                // leaves its parent rectangle unchanged, so an override could
+                // appear saved while the runtime cover remained attached to
+                // the song-info block. The mask also keeps the cover centered
+                // and preserves clipping for both built-in and skin images.
+                case "songCover": return gameplaySongInfoCoverMask;
                 case "scoreHud": return gameplayHud;
                 case "comboHud": return gameplayCombo?.rectTransform;
                 case "judgement": return gameplayJudgementBlock;

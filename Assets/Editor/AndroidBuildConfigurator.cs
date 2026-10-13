@@ -33,9 +33,9 @@ namespace ChunithmMobile.Editor
         {
             ConfigureExternalTools();
             ConfigureAndroidSigning();
-            PlayerSettings.productName = "CHUNITHM Mobile";
+            PlayerSettings.productName = "ChuMobile";
             PlayerSettings.companyName = "HMQYHM";
-            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.zhongermate.chunithmmobile");
+            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "hmqyhm.chumobile");
             PlayerSettings.bundleVersion = "0.3.5";
             PlayerSettings.Android.bundleVersionCode = 305;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
