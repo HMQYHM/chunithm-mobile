@@ -59,6 +59,7 @@ namespace ChunithmMobile.Chart
         public string Color = "DEF";
         public string SecondaryColor = "DEF";
         public int StyleInterval;
+        public double StyleIntervalMilliseconds;
     }
 
     [Serializable]

@@ -92,6 +92,7 @@ namespace ChunithmMobile.Rendering
         private readonly Dictionary<string, Mesh> originalMeshes = new Dictionary<string, Mesh>();
         private readonly Dictionary<string, Mesh> mirroredAirMeshes = new Dictionary<string, Mesh>();
         private ParsedChart chart;
+        private AirLadderVisuals airLadderVisuals;
         // Precomputed gameplay tracks mirror the original client's
         // NotesPreCalcManager boundary. The legacy fields and methods remain
         // available for editor tests while all new lifetime/ownership queries
@@ -140,6 +141,8 @@ namespace ChunithmMobile.Rendering
             // renderer cannot show a one-frame gap or a doubled start cap.
             WeldGuidePathStarts(parsedChart.GuidePaths ?? new List<VisualGuidePath>());
             BuildGuidePathVisuals(parsedChart.GuidePaths ?? new List<VisualGuidePath>());
+            if (airLadderVisuals == null) airLadderVisuals = new AirLadderVisuals(notesRoot != null ? notesRoot : transform);
+            airLadderVisuals.Bind(parsedChart.GuidePaths);
             BuildLongChainGeometry(parsedChart.Notes);
             BuildAirPairs(parsedChart.Notes);
             BuildVisualDuplicateOwners(parsedChart.Notes);
@@ -152,6 +155,7 @@ namespace ChunithmMobile.Rendering
             firstFrameHidden = false;
             ClearActive();
             ClearGuidePathVisuals();
+            airLadderVisuals?.Clear();
             guidePathGeometry.Clear();
             judgedHeads.Clear();
             chart = null;
@@ -308,6 +312,7 @@ namespace ChunithmMobile.Rendering
             if (airActionTrailGreenBody != null) airActionTrailGreenBody.color = trail;
             trail.a = 1f;
             if (airActionTrailGreenLine != null) airActionTrailGreenLine.color = trail;
+            airLadderVisuals?.RefreshSkin();
             PrepareNoteSkinUvs();
         }
 
@@ -422,6 +427,7 @@ namespace ChunithmMobile.Rendering
             foreach (var item in active) if (!keep.Contains(item.Key)) remove.Add(item.Key);
             foreach (int index in remove) { Return(active[index]); active.Remove(index); }
             UpdateGuidePathVisuals(AdvanceGuideVisualTime(now));
+            airLadderVisuals?.Render(now, Distance);
         }
 
         private double AdvanceGuideVisualTime(double authoritativeNow)
@@ -498,6 +504,7 @@ namespace ChunithmMobile.Rendering
         private void BuildGuidePathVisuals(IReadOnlyList<VisualGuidePath> paths)
         {
             ClearGuidePathVisuals();
+            airLadderVisuals?.Clear();
             guidePathGeometry.Clear();
             // Editor self-tests and a few lightweight preview hosts can bind
             // the renderer before Unity has dispatched Awake. Keep Bind
@@ -564,6 +571,8 @@ namespace ChunithmMobile.Rendering
 
         private void UpdateGuidePathVisual(GuidePathVisual visual, VisualGuidePath path, double now, int index)
         {
+            // Spaced ALD records own plates, not a tiny green centre trace.
+            if (AirLadderVisuals.HasPlates(path)) { visual.Root.SetActive(false); return; }
             if (!guidePathGeometry.TryGetValue(index, out GuidePathGeometry authored)) return;
             int samples = authored.Times.Length;
             bool visible = false;
@@ -1824,6 +1833,7 @@ namespace ChunithmMobile.Rendering
 
         private void OnDestroy()
         {
+            airLadderVisuals?.Dispose();
             foreach (var visual in active.Values) visual.Dispose();
             foreach (var visual in pool) visual.Dispose();
             foreach (var visual in activeGuidePaths.Values) visual.Dispose();

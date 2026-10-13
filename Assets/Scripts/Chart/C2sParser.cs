@@ -185,6 +185,7 @@ namespace ChunithmMobile.Chart
                 Lane = raw.Lane, Width = Math.Max(1, raw.Width), EndLane = raw.EndLane,
                 EndWidth = Math.Max(1, raw.EndWidth), AirHeight = Math.Clamp(raw.AirHeight, -16, 32),
                 EndAirHeight = Math.Clamp(raw.EndAirHeight, -16, 32), StyleInterval = raw.StyleInterval,
+                StyleIntervalMilliseconds = time.ToMs(raw.Tick + raw.StyleInterval) - time.ToMs(raw.Tick),
                 Color = raw.Color, SecondaryColor = raw.SecondaryColor
             }).OrderBy(item => item.TimeMs).ToList();
             foreach (VisualGuidePath guidePath in guidePaths)

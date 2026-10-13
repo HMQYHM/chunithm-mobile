@@ -32,16 +32,19 @@ if (Get-Process Unity -ErrorAction SilentlyContinue) {
 }
 
 function Invoke-UnityBatch([string]$Method, [string]$LogPath, [switch]$NoGraphics) {
-    # Unity.exe is a Windows GUI executable; PowerShell's call operator may return
-    # before the editor exits, so wait on the actual process before reading its log.
     $arguments = @('-batchmode', '-quit')
     if ($NoGraphics) { $arguments += @('-nographics', '-force-no-audio') }
-    $arguments += @('-projectPath', "`"$project`"",
-        '-executeMethod', $Method, '-logFile', "`"$LogPath`"")
-    $process = Start-Process -FilePath $UnityExe -ArgumentList $arguments -PassThru -WindowStyle Hidden
-    # Wait for Unity itself, not its long-lived licensing subprocess tree.
-    $process.WaitForExit()
-    return $process.ExitCode
+    $arguments += @('-projectPath', $project, '-executeMethod', $Method, '-logFile', $LogPath)
+    if ($IsWindows) {
+        # Unity.exe is a Windows GUI executable; wait for the editor itself.
+        $process = Start-Process -FilePath $UnityExe -ArgumentList $arguments -PassThru -WindowStyle Hidden
+        $process.WaitForExit()
+        return $process.ExitCode
+    }
+    # On macOS Unity is a native executable. Calling it directly preserves the
+    # exit code and avoids Start-Process argument quoting differences.
+    & $UnityExe @arguments
+    return $LASTEXITCODE
 }
 
 $buildRoot = Join-Path $project 'Build'
