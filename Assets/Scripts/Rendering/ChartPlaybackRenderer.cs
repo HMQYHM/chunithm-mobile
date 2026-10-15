@@ -321,9 +321,9 @@ namespace ChunithmMobile.Rendering
             foreach (string kind in new[] { "tap", "extap", "hold", "holdend", "slide", "slideend", "flick", "dmg" })
                 for (int width = 1; width <= 16; width++) {
                     string suffix = "_" + width.ToString("00");
-                    // EX TAP has its own arcade mesh. It is not a TAP mesh with
-                    // a different texture; keep the UV cache attached to the
-                    // authored EX geometry so the raised border is preserved.
+                    // EX TAP retains its own extracted base plane and UVs.
+                    // Its upright rim is omitted in the built-in asset; cache
+                    // skin UVs against this base rather than another family.
                     string geometryKey = kind + suffix;
                     string textureKey = (kind == "holdend" ? "hold" : kind == "slideend" ? "slide" : kind) + suffix;
                     if (originalMeshes.TryGetValue(geometryKey, out Mesh mesh) &&
@@ -1260,8 +1260,8 @@ namespace ChunithmMobile.Rendering
                 // scaling the mesh from its X bounds preserves that ratio and
                 // avoids the old one-size quad that made heads look too short.
                 // CHR and HXD use the Windows client's independent EXTAP
-                // family. Keep that geometry separate from TAP: the two
-                // resources have different silhouettes and depth profiles.
+                // family. Keep its base geometry and gold texture together;
+                // the built-in asset intentionally omits the upright rim.
                 string geometryKey = key;
                 if (!SetOriginalMesh(target, filter, geometryKey, width, x, ChartSpace.GroundY, z, false)) {
                     filter.sharedMesh = fallbackMesh;
@@ -1377,8 +1377,9 @@ namespace ChunithmMobile.Rendering
             // notes to overlap the judgement line by several visual lanes.
             float targetDepth = kind == "dmg" ? .54f : .66f;
             float scaleZ = targetDepth / Mathf.Max(.0001f, bounds.size.z);
-            // EXTap and mine resources contain a small vertical silhouette;
+            // Mines and custom models can have a vertical silhouette;
             // normalize it while keeping its bottom on the ground plane.
+            // Built-in EXTap is base-only and must remain flat.
             float scaleY = bounds.size.y > .0001f ? .66f / bounds.size.y : 1f;
             filter.sharedMesh = mesh;
             // Imported arcade planes are not centered on their transform

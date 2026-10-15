@@ -62,6 +62,8 @@
 - 已过自己的可见生命周期、且没有视觉尾部职责的对象必须回收。
 - 长条中间或头尾插入的其他音符不能覆盖或删除长条本身的必要段。
 
+内置 `OriginalMeshes/ntt_extap_01..16.obj` 仅保留原始金色底面的顶点、UV 和两个三角面，移除竖直围边；`CHR` 和 `HXD` 头部共用这些 EX 底面资源。外部皮肤的纹理仍通过 `NoteSkinUvCache` 适配，独立 Mesh 保持皮肤自己的定义。`ExTapVisualSelfTest` 覆盖所有宽度、EX 长条头部、判定后隐藏和渲染预览。
+
 `PlayfieldRenderer` 负责轨道和判定线，`ChartSpace` 负责谱面坐标到世界坐标的转换，`MeshFactory` 负责材质和 Mesh 的基础创建，`NoteSkinUvCache` 缓存外部皮肤在不同宽度 Mesh 上的 UV 适配。
 
 ## 6. 音频层
