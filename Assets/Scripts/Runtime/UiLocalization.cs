@@ -31,10 +31,6 @@ namespace ChunithmMobile.Runtime
             { "- 改变音乐与谱面播放速度\n- 可再次点击恢复 1.0x", "- Changes music and chart playback speed\n- Tap again to restore 1.0x" },
             { "- 可再次点击关闭\n- 当前局立即生效", "- Select again to disable\n- Applies to the current round" },
 
-            { "帧数上限", "Frame rate limit" },
-            { "垂直同步帧率", "Vertical sync" },
-            { "移动端由系统控制同步", "Mobile synchronization is managed by the OS" },
-            { "无上限", "Uncapped" },
             { "正在重新加载歌曲…", "Reloading song…" },
             { "正在重新读取谱面…", "Reloading chart…" },
 
@@ -340,10 +336,6 @@ namespace ChunithmMobile.Runtime
             { "- 改变音乐与谱面播放速度\n- 可再次点击恢复 1.0x", "- 楽曲と譜面の再生速度を変更\n- もう一度選ぶと 1.0x に戻る" },
             { "- 可再次点击关闭\n- 当前局立即生效", "- もう一度選ぶとオフ\n- 現在のラウンドに適用" },
 
-            { "帧数上限", "フレームレート上限" },
-            { "垂直同步帧率", "垂直同期" },
-            { "移动端由系统控制同步", "モバイル端末の同期は OS が管理します" },
-            { "无上限", "上限なし" },
             { "正在重新加载歌曲…", "楽曲を再読み込み中…" },
             { "正在重新读取谱面…", "譜面を再読み込み中…" },
 
@@ -533,10 +525,6 @@ namespace ChunithmMobile.Runtime
             { "- 改变音乐与谱面播放速度\n- 可再次点击恢复 1.0x", "- 改變音樂與譜面播放速度\n- 可再次點擊恢復 1.0x" },
             { "- 可再次点击关闭\n- 当前局立即生效", "- 可再次點擊關閉\n- 套用於目前回合" },
 
-            { "帧数上限", "幀率上限" },
-            { "垂直同步帧率", "垂直同步幀率" },
-            { "移动端由系统控制同步", "行動裝置由系統控制同步" },
-            { "无上限", "無上限" },
             { "正在重新加载歌曲…", "正在重新載入歌曲…" },
             { "正在重新读取谱面…", "正在重新讀取譜面…" },
 

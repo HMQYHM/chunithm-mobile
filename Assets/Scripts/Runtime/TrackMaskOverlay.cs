@@ -3,8 +3,8 @@ using UnityEngine.UI;
 
 namespace ChunithmMobile.Runtime
 {
-    // 轨道遮罩和边界显示层：绘制触控板、触控范围线、AIR 分界线及相关透明度。
-    // 显示开关只影响 Graphic，不影响输入读取和判定。
+    // Game-owned upper-track cover. Skin styling cannot multiply away the
+    // saved mask opacity; zero is still an intentional user-selected value.
     [RequireComponent(typeof(CanvasRenderer))]
     public sealed class TrackMaskOverlay : MaskableGraphic
     {
@@ -21,12 +21,27 @@ namespace ChunithmMobile.Runtime
             gameObject.SetActive(enabled);
             if (!enabled) return;
 
+            // A previous skin can leave a transparent CanvasGroup or material
+            // behind. Restore UI alpha blending without changing the saved value
+            // or moving this layer above the gameplay HUD/controls.
+            this.enabled = true;
+            color = Color.white;
+            material = null;
+            canvasRenderer.SetAlpha(1f);
+            raycastTarget = false;
+            CanvasGroup group = GetComponent<CanvasGroup>();
+            if (group != null) {
+                group.alpha = 1f;
+                group.blocksRaycasts = group.interactable = false;
+            }
+            rectTransform.localScale = Vector3.one;
+            rectTransform.localRotation = Quaternion.identity;
             float height = Mathf.Clamp(heightPercent, 4, 45) / 100f;
             rectTransform.anchorMin = new Vector2(0f, 1f - height);
             rectTransform.anchorMax = Vector2.one;
             rectTransform.offsetMin = Vector2.zero;
             rectTransform.offsetMax = Vector2.zero;
-            opacity = Mathf.Clamp(opacityPercent, 20, 100) / 100f;
+            opacity = Mathf.Clamp(opacityPercent, 0, 100) / 100f;
             SetVerticesDirty();
         }
 

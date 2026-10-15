@@ -380,11 +380,6 @@ namespace ChunithmMobile.Runtime
 
         private void SchedulePreparedPlaybackAtDsp(int musicOffsetMs, double baseDsp)
         {
-            // This is the single scheduling gate for normal, delayed,
-            // restarted, calibration and multiplayer playback. Apply the cap
-            // here so loading screens and menus remain uncapped, while every
-            // actual chart run uses the saved gameplay limit.
-            FrameRateSettings.ApplyGameplayFrameRate(AppSettings.Load());
             preparedMusicOffsetMs = Mathf.Clamp(musicOffsetMs, -500, 500);
             preparationEndDsp = baseDsp;
             double chartStartDsp = baseDsp;

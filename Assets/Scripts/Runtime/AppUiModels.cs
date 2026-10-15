@@ -134,9 +134,6 @@ namespace ChunithmMobile.Runtime
         public int AnswerSoundVolume = 80;
         public int AnswerSoundOffsetMs;
         public int DspBufferSize = 512;
-        // 0 follows the display refresh rate without an application cap.
-        public int FrameRateLimit;
-        public bool VerticalSync;
         public bool ShowGameplayFps = true;
         // MusicOffsetMs moves the song audio relative to the chart clock.
         // JudgeOffsetMs moves only the input judgement reference point.
@@ -215,6 +212,10 @@ namespace ChunithmMobile.Runtime
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
             try {
                 AppSettings value = UnityEngine.JsonUtility.FromJson<AppSettings>(json) ?? new AppSettings();
+                // Missing JSON fields are defaults; an explicitly saved zero is
+                // intentional transparency and must survive every load/save.
+                if (json.IndexOf("\"TrackMaskOpacity\"", StringComparison.Ordinal) < 0)
+                    value.TrackMaskOpacity = 90;
                 int loadedSettingsVersion = value.SettingsVersion;
                 if (value.SettingsVersion < 2) {
                     value.NoteSpeedOption = OriginalNoteSpeed.FromLegacyPercent(value.NoteSpeed <= 0 ? 100 : value.NoteSpeed);
@@ -232,7 +233,6 @@ namespace ChunithmMobile.Runtime
                     value.TrackTopWidth = 100;
                     value.TrackMaskEnabled = false;
                     value.TrackMaskHeight = 16;
-                    value.TrackMaskOpacity = 90;
                 }
                 if (value.SettingsVersion < 6) value.EmojiBackground = false;
                 if (value.SettingsVersion < 7) value.BackgroundMusicVolume = 100;
@@ -277,10 +277,6 @@ namespace ChunithmMobile.Runtime
                     value.GameplayBelowNoteMetricMode = 3;
                 }
                 if (value.SettingsVersion < 24) value.GameplayBelowNoteMetricMode = 3;
-                if (value.SettingsVersion < 26) {
-                    value.FrameRateLimit = 0;
-                    value.VerticalSync = false;
-                }
                 value.SettingsVersion = 26;
                 value.BackgroundBrightness = UnityEngine.Mathf.Clamp(value.BackgroundBrightness, 0, 100);
                 value.GameplayJudgementX = UnityEngine.Mathf.Clamp(value.GameplayJudgementX, 5, 95);
@@ -293,7 +289,6 @@ namespace ChunithmMobile.Runtime
                 value.KeySoundVolume = UnityEngine.Mathf.Clamp(value.KeySoundVolume, 0, 100);
                 value.AnswerSoundVolume = UnityEngine.Mathf.Clamp(value.AnswerSoundVolume, 0, 100);
                 value.DspBufferSize = NormalizeDspBufferSize(value.DspBufferSize);
-                value.FrameRateLimit = FrameRateSettings.NormalizeLimit(value.FrameRateLimit);
                 if (value.NoteSpeed <= 0) {
                     value.NoteSpeed = 100;
                     value.TrackVerticalOffset = 12;
@@ -302,14 +297,13 @@ namespace ChunithmMobile.Runtime
                 if (value.TrackWidth <= 0) value.TrackWidth = 100;
                 if (value.TrackTopWidth <= 0) value.TrackTopWidth = 100;
                 if (value.TrackMaskHeight <= 0) value.TrackMaskHeight = 16;
-                if (value.TrackMaskOpacity <= 0) value.TrackMaskOpacity = 90;
                 if (value.GameplayScoreScale <= 0) value.GameplayScoreScale = 100;
                 if (value.GameplayComboScale <= 0) value.GameplayComboScale = 100;
                 if (value.GameplaySongInfoScale <= 0) value.GameplaySongInfoScale = 100;
                 value.TrackWidth = UnityEngine.Mathf.Clamp(value.TrackWidth, 60, 140);
                 value.TrackTopWidth = UnityEngine.Mathf.Clamp(value.TrackTopWidth, 45, 160);
                 value.TrackMaskHeight = UnityEngine.Mathf.Clamp(value.TrackMaskHeight, 4, 45);
-                value.TrackMaskOpacity = UnityEngine.Mathf.Clamp(value.TrackMaskOpacity, 20, 100);
+                value.TrackMaskOpacity = UnityEngine.Mathf.Clamp(value.TrackMaskOpacity, 0, 100);
                 value.GameplayScoreScale = UnityEngine.Mathf.Clamp(value.GameplayScoreScale, 50, 180);
                 value.GameplayComboScale = UnityEngine.Mathf.Clamp(value.GameplayComboScale, 50, 180);
                 value.GameplaySongInfoScale = UnityEngine.Mathf.Clamp(value.GameplaySongInfoScale, 50, 180);

@@ -140,11 +140,17 @@ Live2D 游玩皮肤的布局和参数映射由 `GameplaySkinCubismRenderer` 负�
 `VisualGuidePath.Nodes` 保留 ALD 的分数几何、独立滚速与正式音符索引。`AirLadderVisuals` 使用这份数据渲染，收到 `MarkJudged` 后隐藏对应节点；没有节点时不会自行用毫秒重采样。`ChartMirror` 同时镜像正式音符和阶梯显示几何。ASD 的紫色动作图片由末端的独立音符负责，原始段不再在曲线接缝重复显示。
 
 ### 判定反馈与 Full AUTO 合成（2026-10-15）
-- `GameplayJudgementAudio.cs`：原版 cue 表、每局 PCM bank、手动反馈和三类长条循环。KEEP 点只更新覆盖/音级，不重复发短音。皮肤可选 `audio/cue_<CRI ID>.wav`；缺失继续使用内置 PCM。
+- `GameplayJudgementAudio.cs`：cue 表、每局 PCM bank、手动反馈和 Full AUTO 共用每 cue / 1 毫秒谱面时间窗最多 4 次的准入规则，不改变评分。长条按 family + LongChainId 聚合，独立对象不合并；每条仅选择一次持续音，直到整条末端，不在 KEEP、转弯或尾端重发。暂停恢复按谱面时间恢复循环相位。皮肤可选 `audio/cue_<CRI ID>.wav`；缺失继续使用内置 PCM。
 - `GameplayAudioMixLayer.cs`：单轨预合成的声道、重采样、循环相位与共享 PCM 数据。Full AUTO 将音乐、ANSWER、成功判定与持续音按各自开关/音量合成；成功后禁止实时重复。音轨和皮肤外部音效由当前加载 generation 持有和释放。
 - `MobileAudioDiagnostics.cs` / `ChunithmAudioSession.mm`：仅查询 Android 能力/输出路线；iOS 只申请 preferred I/O duration，不抢 Unity 会话的 category、activation 或蓝牙路由。日志必须区分 Unity 队列估计和真实设备输出延迟。
 - Windows CRI 的 AISAC、随机音色和 DSP 效果未移植；cue 与默认 PCM 对齐不能称为最终听感完全一致。
 
-### 帧率、重开与 MOD 说明（2026-10-15）
+### 重开与 MOD 说明（2026-10-15）
 
-`FrameRateSettings` 统一启动与画面设置的帧率应用，0 使用 `int.MaxValue` 表示无应用上限。桌面垂直同步优先于 targetFrameRate；移动端由系统刷新周期控制，vSyncCount 不改变移动端调度。设置版本 26 迁移保持版本 25 的流速选项不变。单人暂停重开先停止旧会话，显示加载遮罩，再执行相同的谱面、音频和首帧准备；遮罩退出后才启动 DSP 预备阶段。MOD 说明使用逻辑面板宽度适配字号、自动换行和滚动内容，避免长翻译缩到不可读字号。
+项目不再提供帧率上限或垂直同步控制，菜单和游玩均由 Unity 默认策略处理。旧 JSON 中的未知字段不会读取，下一次保存会移除。单人暂停重开先停止旧会话，显示加载遮罩，再执行相同的谱面、音频和首帧准备；遮罩退出后才启动 DSP 预备阶段。MOD 说明使用逻辑面板宽度适配字号、自动换行和滚动内容，避免长翻译缩到不可读字号。
+
+### 遮罩与长条裁剪（2026-10-15）
+
+`TrackMaskOverlay` 拥有设置中的启用、高度和透明度，透明度 0 是合法用户选择。皮肤通用布局不再改写这层 alpha/显示状态；Configure 清除旧皮肤留下的 CanvasGroup、材质及颜色透明度，恢复 UI 默认混合，不调整 HUD 的排序或输入。
+
+`ChartPlaybackRenderer` 在 Bind 固定普通、变形与 AIR 长条的采样点、宽度、高度、UV 和滚速归属。逐帧仅投影缓存与裁剪；两端交点从同一组原始端点插值，已通过的段直接丢弃，禁止压平到判定线或重新拟合剩余曲线。反向滚速仍按当前投影可见区裁剪，不做永久删除标记。

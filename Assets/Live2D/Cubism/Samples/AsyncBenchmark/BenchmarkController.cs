@@ -70,14 +70,10 @@ namespace Live2D.Cubism.Samples.AsyncBenchmark
         private ModelSpawner ModelSpawner { get; set; }
 
         /// <summary>
-        /// Called by Unity. Setting vsync and target frame rate.
+        /// Called by Unity. Fetch benchmark components without changing engine pacing.
         /// </summary>
         private void Awake()
         {
-            // Setting vsync and targetFrameRate.
-            QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = TargetFrameRate + 1;
-
             // Getting the component.
             FpsCounter = GetComponent<FpsCounter>();
             ModelSpawner = GetComponent<ModelSpawner>();

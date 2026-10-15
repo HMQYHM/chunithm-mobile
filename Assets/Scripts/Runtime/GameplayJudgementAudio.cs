@@ -11,7 +11,7 @@ using Grade = ChunithmMobile.Chart.Judgement;
 namespace ChunithmMobile.Runtime
 {
     /// <summary>One shared cue policy for actual results and Full AUTO PCM rendering.
-    /// KEEP scoring ticks update sustained coverage; they are not repeated one-shot sounds.
+    /// KEEP scoring ticks never restart a sustained lifetime or emit extra shots.
     /// Cue IDs follow the verified Windows table. CRI AISAC/DSP is not a Unity effect.</summary>
     public static class JudgementAudioPolicy
     {
@@ -25,15 +25,9 @@ namespace ChunithmMobile.Runtime
                 note.AirDirection is AirDirection.Down or AirDirection.DownLeft or AirDirection.DownRight ? 306 : 58;
             if (note.Kind == NoteKind.AirAction && note.EndTimeMs <= note.TimeMs + .001)
                 return miss ? 0 : note.OriginalType == "ALD" ? 578 : 89;
-            if (IsLong(note)) {
-                if (note.Kind is NoteKind.AirHold or NoteKind.AirAction) return 0;
-                if (note.Kind == NoteKind.Slide && note.IsSlideCheckpoint)
-                    return ResultCue(note.Kind, grade);
-                if (!note.VisibleHead || note.IsContinuation) return 0;
-                // A ground-long head belongs to the TAP checker; its body owns
-                // the HOLD/SLIDE loop, and the independently timed tail owns its end cue.
-                return ResultCue(NoteKind.Tap, grade);
-            }
+            // One lifetime owns the sustained feedback, including its head.
+            // Geometric junctions and KEEP/tail results never create extra sounds.
+            if (IsLong(note)) return 0;
             return ResultCue(note.Kind, grade);
         }
         public static bool IsLong(ChartNote note) => note.EndTimeMs > note.TimeMs + .001 &&
@@ -100,54 +94,92 @@ namespace ChunithmMobile.Runtime
         { Cue = cue; StartMs = start; EndMs = end; Loop = loop; }
     }
 
-    public static class AutoJudgementAudioPlan
+    /// <summary>Same cue in the same 1 ms chart-time window admits four voices.
+    /// Authored timestamps keep chords grouped even if judgements arrive on
+    /// different render frames. Categories and scoring are completely separate.</summary>
+    public sealed class JudgementAudioLimiter
     {
-        public static List<JudgementAudioEvent> Build(ParsedChart chart)
+        private readonly Dictionary<(int cue, long window), int> counts = new Dictionary<(int, long), int>();
+        public bool TryAccept(int cue, double chartMs)
         {
-            var result = new List<JudgementAudioEvent>();
-            var unique = new HashSet<string>();
-            foreach (ScheduledJudgePoint point in JudgePointScheduler.Build(chart)) {
-                int cue = JudgementAudioPolicy.OneShot(chart.Notes[point.NoteIndex], point.PointIndex, Grade.JusticeCritical);
-                if (cue != 0 && unique.Add(cue + ":" + point.TimeMs.ToString("R", System.Globalization.CultureInfo.InvariantCulture)))
-                    result.Add(new JudgementAudioEvent(cue, point.TimeMs));
-            }
-            var spans = new Dictionary<int, List<JudgementAudioEvent>>();
-            foreach (ChartNote note in chart.Notes) {
+            if (cue == 0) return false;
+            var key = (cue, (long)Math.Floor(chartMs));
+            counts.TryGetValue(key, out int count);
+            if (count >= 4) return false;
+            counts[key] = count + 1;
+            return true;
+        }
+        public void Clear() => counts.Clear();
+    }
+
+    /// <summary>A parsed chain, not a ribbon segment, owns one feedback lifetime.
+    /// Families prevent unrelated ground/AIR records from sharing an owner.</summary>
+    public sealed class LongJudgementAudioLifetime
+    {
+        public int Family;
+        public double StartMs = double.PositiveInfinity, EndMs;
+        public readonly List<int> Members = new List<int>();
+        public static List<LongJudgementAudioLifetime> Build(ParsedChart chart)
+        {
+            var result = new List<LongJudgementAudioLifetime>();
+            var chains = new Dictionary<(int family, int chain), LongJudgementAudioLifetime>();
+            for (int i = 0; i < chart.Notes.Count; i++) {
+                ChartNote note = chart.Notes[i];
                 if (!JudgementAudioPolicy.IsLong(note)) continue;
                 int family = JudgementAudioPolicy.Family(note);
-                int cue = JudgementAudioPolicy.LoopCue(family, Grade.JusticeCritical);
-                if (!spans.TryGetValue(cue, out var list)) spans[cue] = list = new List<JudgementAudioEvent>();
-                list.Add(new JudgementAudioEvent(cue, note.TimeMs, note.EndTimeMs, true));
-                if (family == 2 && !note.IsContinuation && unique.Add("84:" + note.TimeMs.ToString("R")))
-                    result.Add(new JudgementAudioEvent(84, note.TimeMs));
-                if (family != 2 && (note.LongChainId < 0 || note.IsLongChainTail) &&
-                    unique.Add("tail:" + family + ":" + note.EndTimeMs.ToString("R")))
-                    result.Add(new JudgementAudioEvent(JudgementAudioPolicy.ResultCue(note.Kind, Grade.JusticeCritical), note.EndTimeMs));
-            }
-            // The original has shared family channels. Union overlapping body
-            // spans so chords/continuation records do not amplify a loop repeatedly.
-            foreach (var pair in spans) {
-                pair.Value.Sort((a,b) => a.StartMs.CompareTo(b.StartMs));
-                double start = pair.Value[0].StartMs, end = pair.Value[0].EndMs;
-                foreach (var span in pair.Value) {
-                    if (span.StartMs <= end + .001) end = Math.Max(end, span.EndMs);
-                    else { result.Add(new JudgementAudioEvent(pair.Key, start, end, true)); start = span.StartMs; end = span.EndMs; }
+                // Negative chain IDs describe independent objects, not one shared chain.
+                var key = (family, note.LongChainId >= 0 ? note.LongChainId : -i - 1);
+                if (!chains.TryGetValue(key, out var life)) {
+                    life = new LongJudgementAudioLifetime { Family = family };
+                    chains.Add(key, life); result.Add(life);
                 }
-                result.Add(new JudgementAudioEvent(pair.Key, start, end, true));
+                life.Members.Add(i);
+                life.StartMs = Math.Min(life.StartMs, note.TimeMs);
+                life.EndMs = Math.Max(life.EndMs, note.EndTimeMs);
             }
+            result.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
             return result;
         }
     }
 
-    /// <summary>Preloaded, bounded realtime voices. Full AUTO uses only the baked
-    /// song source. Manual feedback follows actual grades and live long coverage.</summary>
+    public static class AutoJudgementAudioPlan
+    {
+        public static List<JudgementAudioEvent> Build(ParsedChart chart)
+        {
+            var candidates = new List<JudgementAudioEvent>();
+            foreach (ScheduledJudgePoint point in JudgePointScheduler.Build(chart)) {
+                int cue = JudgementAudioPolicy.OneShot(chart.Notes[point.NoteIndex], point.PointIndex, Grade.JusticeCritical);
+                if (cue != 0) candidates.Add(new JudgementAudioEvent(cue, point.TimeMs));
+            }
+            foreach (var life in LongJudgementAudioLifetime.Build(chart))
+                candidates.Add(new JudgementAudioEvent(JudgementAudioPolicy.LoopCue(life.Family,
+                    Grade.JusticeCritical), life.StartMs, life.EndMs, true));
+            candidates.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
+            var result = new List<JudgementAudioEvent>();
+            var limiter = new JudgementAudioLimiter();
+            foreach (var sound in candidates)
+                if (limiter.TryAccept(sound.Cue, sound.StartMs)) result.Add(sound);
+            return result;
+        }
+    }
+
+    /// <summary>Full AUTO uses only the baked track. Manual feedback owns pooled
+    /// voices and one sustained source per admitted chain, until its authored end.</summary>
     public sealed class GameplayJudgementAudio : MonoBehaviour
     {
+        private sealed class LongVoice
+        {
+            public LongJudgementAudioLifetime Life;
+            public bool Started;
+            public int Cue;
+            public AudioSource Source;
+            public Grade? HeadGrade;
+        }
         private readonly List<AudioSource> shots = new List<AudioSource>();
-        private readonly AudioSource[] loops = new AudioSource[3];
-        private readonly Dictionary<int, Grade> grades = new Dictionary<int, Grade>();
-        private readonly HashSet<int> entered = new HashSet<int>(), ended = new HashSet<int>();
-        private readonly Dictionary<int, double> lastCueMs = new Dictionary<int, double>();
+        private readonly List<AudioSource> loops = new List<AudioSource>();
+        private readonly List<LongVoice> longs = new List<LongVoice>();
+        private readonly Dictionary<int, LongVoice> longByNote = new Dictionary<int, LongVoice>();
+        private readonly JudgementAudioLimiter limiter = new JudgementAudioLimiter();
         private LocalChartPlaybackSession session;
         private GameplayJudgeController judge;
         private ParsedChart chart;
@@ -162,7 +194,11 @@ namespace ChunithmMobile.Runtime
             judge = GetComponent<GameplayJudgeController>();
             if (judge != null) judge.Judged += OnJudged;
             for (int i = 0; i < 12; i++) shots.Add(CreateSource(false));
-            for (int i = 0; i < loops.Length; i++) loops[i] = CreateSource(true);
+            foreach (var life in LongJudgementAudioLifetime.Build(chart)) {
+                var voice = new LongVoice { Life = life };
+                longs.Add(voice);
+                foreach (int index in life.Members) longByNote[index] = voice;
+            }
         }
         private AudioSource CreateSource(bool loop)
         {
@@ -173,49 +209,80 @@ namespace ChunithmMobile.Runtime
         private void OnJudged(ScheduledJudgePoint point, JudgementResult result)
         {
             if (baked || chart == null || volume <= 0 || !session.Clock.Playing) return;
-            grades[point.NoteIndex] = result.Grade;
-            PlayCue(JudgementAudioPolicy.OneShot(chart.Notes[point.NoteIndex], point.PointIndex, result.Grade));
+            if (longByNote.TryGetValue(point.NoteIndex, out var voice)) {
+                // Only the head verdict selects the lifetime cue. Intermediate
+                // misses/checkpoints still score normally, but cannot restart it.
+                if (!voice.Started && point.PointIndex == 0 &&
+                    Math.Abs(chart.Notes[point.NoteIndex].TimeMs - voice.Life.StartMs) < .001)
+                    voice.HeadGrade = result.Grade;
+                return;
+            }
+            PlayCue(JudgementAudioPolicy.OneShot(chart.Notes[point.NoteIndex], point.PointIndex, result.Grade), point.TimeMs);
         }
-        private void PlayCue(int cue)
+        private void PlayCue(int cue, double chartMs)
         {
-            if (cue == 0 || bank == null) return;
-            // Shared same-cue chord feedback is emitted once per DSP timestamp.
-            double now = session.Clock.TimeMs;
-            if (lastCueMs.TryGetValue(cue, out double previous) && Math.Abs(previous - now) < .01) return;
-            lastCueMs[cue] = now;
-            AudioSource target = null;
-            foreach (var source in shots) if (!source.isPlaying) { target = source; break; }
-            if (target == null && shots.Count > 0) target = shots[0];
+            if (bank == null || !limiter.TryAccept(cue, chartMs)) return;
+            AudioSource target = shots.Find(source => !source.isPlaying);
+            // Grow only when necessary; never stop a different cue to reuse its voice.
+            if (target == null && shots.Count < JudgementAudioPolicy.Cues.Length * 4) {
+                target = CreateSource(false); shots.Add(target);
+            }
             if (target == null) return;
-            target.Stop(); target.clip = bank.Get(cue); target.Play();
+            target.clip = bank.Get(cue); target.Play();
         }
         private void Update()
         {
             if (chart == null || baked || bank == null || session == null || judge == null || volume <= 0) return;
             if (!session.Clock.Playing || session.Clock.Preparing) { Silence(); return; }
-            double now = session.Clock.TimeMs;
-            int[] activeCue = {0,0,0};
-            for (int i = 0; i < chart.Notes.Count; i++) {
-                ChartNote note = chart.Notes[i];
-                if (!JudgementAudioPolicy.IsLong(note) || now < note.TimeMs) continue;
-                int family = JudgementAudioPolicy.Family(note);
-                if (now >= note.EndTimeMs) {
-                    if (ended.Add(i) && family != 2 && (note.LongChainId < 0 || note.IsLongChainTail))
-                        PlayCue(JudgementAudioPolicy.ResultCue(note.Kind, grades.TryGetValue(i, out Grade tail) ? tail : Grade.Miss));
+            UpdateLongVoices(session.Clock.TimeMs);
+        }
+        private void UpdateLongVoices(double now)
+        {
+            foreach (var voice in longs) {
+                var life = voice.Life;
+                if (now >= life.EndMs) {
+                    if (voice.Source != null) { voice.Source.Stop(); voice.Source = null; }
+                    voice.Started = true;
                     continue;
                 }
-                bool covered = judge.IsLongAudioCovered(i, now);
-                Grade grade = covered ? grades.TryGetValue(i, out Grade last) && last != Grade.Miss ? last : Grade.JusticeCritical : Grade.Miss;
-                if (covered && family == 2 && !note.IsContinuation && entered.Add(i)) PlayCue(84);
-                int cue = JudgementAudioPolicy.LoopCue(family, grade);
-                // Successful coverage of any same-family long keeps its shared
-                // loop audible; an unrelated missed chain cannot mute that contact.
-                if (covered || activeCue[family] == 0) activeCue[family] = cue;
-            }
-            for (int i = 0; i < loops.Length; i++) {
-                AudioSource source = loops[i]; AudioClip clip = bank.Get(activeCue[i]);
-                if (source.clip == clip && source.isPlaying) continue;
-                source.Stop(); source.clip = clip; if (clip != null) source.Play();
+                if (now < life.StartMs) continue;
+                if (!voice.Started) {
+                    Grade grade = voice.HeadGrade ?? Grade.JusticeCritical;
+                    if (!voice.HeadGrade.HasValue) {
+                        bool covered = false, pendingHead = false;
+                        foreach (int index in life.Members) {
+                            var note = chart.Notes[index];
+                            if (Math.Abs(note.TimeMs - life.StartMs) < .001 && note.VisibleHead &&
+                                !note.IsContinuation && !note.IsSlideCheckpoint && note.JudgePointCount > 0)
+                                pendingHead = true;
+                            if (now >= note.TimeMs && now < note.EndTimeMs && judge.IsLongAudioCovered(index, now)) covered = true;
+                        }
+                        // Wait for the head result when one exists; hidden-head
+                        // AIR/curve chains use coverage at their lifetime entrance.
+                        // A hidden-head chain may be contacted a frame later.
+                        // Absence of coverage is not a permanent silent onset.
+                        if (pendingHead || !covered) continue;
+                        grade = Grade.JusticeCritical;
+                    }
+                    voice.Started = true;
+                    voice.Cue = JudgementAudioPolicy.LoopCue(life.Family, grade);
+                    if (!limiter.TryAccept(voice.Cue, life.StartMs)) { voice.Cue = 0; continue; }
+                }
+                AudioClip clip = bank.Get(voice.Cue);
+                if (clip == null) continue;
+                if (voice.Source == null) {
+                    // Reuse only sources released by a completed lifetime.
+                    foreach (var source in loops) {
+                        if (!longs.Exists(other => other.Source == source)) { voice.Source = source; break; }
+                    }
+                    if (voice.Source == null) { voice.Source = CreateSource(true); loops.Add(voice.Source); }
+                }
+                if (voice.Source.isPlaying) continue;
+                voice.Source.clip = clip;
+                // Pause/resume (or a late frame) preserves chart-relative phase;
+                // it must not replay the waveform attack at every curve node.
+                voice.Source.timeSamples = (int)(((now - life.StartMs) * clip.frequency / 1000.0) % clip.samples);
+                voice.Source.Play();
             }
         }
         public void Silence() { foreach (var source in shots) if (source != null) source.Stop(); foreach (var source in loops) if (source != null) source.Stop(); }
@@ -223,8 +290,8 @@ namespace ChunithmMobile.Runtime
         {
             if (judge != null) judge.Judged -= OnJudged;
             Silence(); foreach (var source in shots) if (source != null) Destroy(source); shots.Clear();
-            for (int i = 0; i < loops.Length; i++) { if (loops[i] != null) Destroy(loops[i]); loops[i] = null; }
-            grades.Clear(); entered.Clear(); ended.Clear(); lastCueMs.Clear();
+            foreach (var source in loops) if (source != null) Destroy(source); loops.Clear();
+            longs.Clear(); longByNote.Clear(); limiter.Clear();
             chart = null; bank = null; judge = null; session = null; baked = false;
         }
         private void OnDestroy() => Clear();

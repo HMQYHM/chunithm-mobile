@@ -79,9 +79,6 @@ namespace ChunithmMobile.Runtime
                 Debug.LogError("Unable to create first-run application folders: " + exception);
             }
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
-            // Menus and loading pages stay uncapped. The saved limit is
-            // applied only by the gameplay playback scheduler.
-            FrameRateSettings.ApplyInterfaceFrameRate();
             IPlatformServices platform = PlatformServices.Current;
             Debug.Log($"CHUNITHM Mobile {Application.version} Unity prototype | {platform.DisplayName} | " +
                       $"{SystemInfo.graphicsDeviceType} | {SystemInfo.processorType} | " +

@@ -2256,10 +2256,6 @@ namespace ChunithmMobile.Runtime
                 SkinDropdown("分数显示模式", new[] { "当前分数", "SSS+ 评级", "SSS 评级", "SS+ 评级", "SS 评级", "S+ 评级", "S 评级", "已损失分数", "距离最好成绩" },
                     Mathf.Clamp(settings.GameplayBelowNoteMetricMode - 2, 0, 8),
                     index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index + 2, 2, 10)), false);
-            frameRateSettingsValue = SettingsOption("帧数上限", FrameRateSettings.Label(settings.FrameRateLimit),
-                () => ChangeFrameRateLimit(-1), () => ChangeFrameRateLimit(1));
-            SkinToggle("垂直同步帧率", "移动端由系统控制同步", settings.VerticalSync,
-                value => ChangeSetting(() => settings.VerticalSync = value, false));
             SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
                 value => ChangeSetting(() => settings.ShowGameplayFps = value, false));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
@@ -2279,7 +2275,7 @@ namespace ChunithmMobile.Runtime
             if (settings.TrackMaskEnabled) {
             SettingsSlider("遮罩高度", "%", 4, 45, settings.TrackMaskHeight,
                 value => settings.TrackMaskHeight = Mathf.RoundToInt(value));
-            SettingsSlider("遮罩不透明度", "%", 20, 100, settings.TrackMaskOpacity,
+            SettingsSlider("遮罩不透明度", "%", 0, 100, settings.TrackMaskOpacity,
                 value => settings.TrackMaskOpacity = Mathf.RoundToInt(value));
             }
             noteSpeedSettingsValue = SettingsOption("谱面流速", OriginalNoteSpeed.Label(settings.NoteSpeedOption),
@@ -2736,21 +2732,6 @@ namespace ChunithmMobile.Runtime
             FitModText(valueLabel, 21);
             ButtonText("›", row, new Vector2(.88f, .20f), new Vector2(.96f, .80f), surface, next);
             return valueLabel;
-        }
-
-        private Text frameRateSettingsValue;
-
-        private void ChangeFrameRateLimit(int direction)
-        {
-            int next = FrameRateSettings.Step(settings.FrameRateLimit, direction);
-            if (next == settings.FrameRateLimit) return;
-            settings.FrameRateLimit = next;
-            settings.Save();
-            if (frameRateSettingsValue != null)
-                frameRateSettingsValue.text = FrameRateSettings.Label(next);
-            // The settings page remains uncapped; this value is applied when
-            // the next chart playback is scheduled.
-            FrameRateSettings.ApplyInterfaceFrameRate();
         }
 
         private void SettingsStepper(string title, Func<int> current, Action<int> changed)
@@ -5371,9 +5352,6 @@ namespace ChunithmMobile.Runtime
         {
             GameplaySkinEvents.PublishGameplayState(active);
             if (!active) {
-                // Restore uncapped interface pacing after gameplay, including
-                // result, song selection and settings pages.
-                FrameRateSettings.ApplyInterfaceFrameRate();
                 CancelGameplayResume();
                 SetGameplayInputSuppressed(false);
                 SetGameplayJudgementSuppressed(false);
@@ -6289,10 +6267,6 @@ namespace ChunithmMobile.Runtime
         private void ApplyRuntimeSettings()
         {
             if (settings == null) return;
-            // Runtime settings are also used while building menus and loading
-            // a chart. Keep those pages uncapped until the playback scheduler
-            // applies the gameplay-only limit.
-            FrameRateSettings.ApplyInterfaceFrameRate();
             if (!string.Equals(GameplaySkinManager.Active.Id, settings.GameplaySkinId,
                     StringComparison.OrdinalIgnoreCase))
                 GameplaySkinManager.SetActive(settings.GameplaySkinId);

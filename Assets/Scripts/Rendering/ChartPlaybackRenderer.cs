@@ -1107,9 +1107,9 @@ namespace ChunithmMobile.Rendering
                 double segmentEnd = ribbon.AuthoredTimes[i + 1];
                 if (segmentEnd <= segmentStart + .001) continue;
 
-                // Both ends of one quad must use the same local scroll map.
-                // Otherwise a profile switch joins unrelated Z positions and
-                // creates the large diagonal triangles seen on complex charts.
+                // Per-point profiles and control samples were resolved at Bind.
+                // Keep those assignments while projecting the frozen ribbon;
+                // removing a head must not reassign the surviving endpoints.
                 int profileA = ribbon.PointProfileIds[i];
                 int profileB = ribbon.PointProfileIds[i + 1];
                 CalculateRibbonPoint(note, segmentStart, now, profileA, ribbon.Lanes[i], ribbon.Widths[i],
@@ -1166,51 +1166,30 @@ namespace ChunithmMobile.Rendering
         private static bool ClipRibbonSegment(ref Vector3 leftA, ref Vector3 rightA, ref float uvA,
             ref Vector3 leftB, ref Vector3 rightB, ref float uvB, float near, float far)
         {
-            float stableNear = near - RibbonClipEpsilonZ;
-            float stableFar = far + RibbonClipEpsilonZ;
-            if ((leftA.z < stableNear && leftB.z < stableNear) ||
-                (leftA.z > stableFar && leftB.z > stableFar)) return false;
-            // Once both ends have crossed the gameplay near plane, retain the
-            // segment only inside the short hysteresis band and collapse that
-            // last strip onto one shared Z plane. Leaving the two original Z
-            // values in the mesh makes perspective recompute its X position
-            // while the head is being hidden or the tail is being removed;
-            // on a curved/ AIR ribbon this reads as a one-frame sideways flash.
-            // The segment is still discarded as soon as both ends pass the
-            // stable band above, so this does not extend the gameplay body.
-            if (leftA.z < near && leftB.z < near) {
-                leftA.z = rightA.z = near;
-                leftB.z = rightB.z = near;
-                return true;
+            // Intersect the cached segment with the visible interval. Never
+            // flatten an already-passed strip onto the judgement plane: that
+            // leaves sideways triangles from old curve sections on the line.
+            // Both intersections use the same immutable endpoints/UVs, including
+            // reverse scroll; no surviving curve control points are refitted.
+            float zA = leftA.z, zB = leftB.z;
+            if ((zA < near && zB < near) || (zA > far && zB > far)) return false;
+            float first = 0f, last = 1f;
+            float dz = zB - zA;
+            if (Mathf.Abs(dz) > .000001f) {
+                float atNear = (near - zA) / dz, atFar = (far - zA) / dz;
+                first = Mathf.Max(0f, Mathf.Min(atNear, atFar));
+                last = Mathf.Min(1f, Mathf.Max(atNear, atFar));
+                if (first >= last) return false;
             }
-            // Keep the epsilon as a topology hysteresis band, but never use
-            // it as the interpolation plane. Using stableNear here places the
-            // body edge in front of the judgement line while the head remains
-            // pinned on JudgementZ, which reads as a sideways jump under
-            // perspective as the head is judged or hidden.
-            if (leftA.z < near) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, near);
-            else if (leftA.z > far) ClipStart(ref leftA, ref rightA, ref uvA, leftB, rightB, uvB, far);
-            if (leftB.z < near) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, near);
-            else if (leftB.z > far) ClipEnd(leftA, rightA, uvA, ref leftB, ref rightB, ref uvB, far);
+            Vector3 originalLeft = leftA, originalRight = rightA;
+            float originalUv = uvA;
+            leftA = Vector3.Lerp(originalLeft, leftB, first);
+            rightA = Vector3.Lerp(originalRight, rightB, first);
+            uvA = Mathf.Lerp(originalUv, uvB, first);
+            leftB = Vector3.Lerp(originalLeft, leftB, last);
+            rightB = Vector3.Lerp(originalRight, rightB, last);
+            uvB = Mathf.Lerp(originalUv, uvB, last);
             return true;
-        }
-
-        private static void ClipStart(ref Vector3 leftA, ref Vector3 rightA, ref float uvA,
-            Vector3 leftB, Vector3 rightB, float uvB, float z)
-        {
-            float t = Mathf.Approximately(leftA.z, leftB.z) ? 0f : Mathf.Clamp01((z - leftA.z) / (leftB.z - leftA.z));
-            leftA = Vector3.Lerp(leftA, leftB, t);
-            rightA = Vector3.Lerp(rightA, rightB, t);
-            uvA = Mathf.Lerp(uvA, uvB, t);
-        }
-
-        private static void ClipEnd(Vector3 leftA, Vector3 rightA, float uvA,
-            ref Vector3 leftB, ref Vector3 rightB, ref float uvB, float z)
-        {
-            float t = Mathf.Approximately(leftA.z, leftB.z) ? 1f : Mathf.Clamp01((z - leftA.z) / (leftB.z - leftA.z));
-            leftB = Vector3.Lerp(leftA, leftB, t);
-            rightB = Vector3.Lerp(rightA, rightB, t);
-            uvB = Mathf.Lerp(uvA, uvB, t);
         }
 
         // Keep the original mesh-space thickness. The gameplay camera already

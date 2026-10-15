@@ -140,7 +140,9 @@ namespace ChunithmMobile.Runtime
                 // The cover is a child of songInfo. Apply its visual skin
                 // here, but keep its rectangle under the parent unless the
                 // user explicitly enabled an independent editor override.
-                if (element.Id == "songCover" || element.Id == "trackMask")
+                // Track mask visibility/opacity belongs to saved gameplay settings.
+                if (element.Id == "trackMask") continue;
+                if (element.Id == "songCover")
                 {
                     ApplySkinVisual(target.gameObject, element, IsDynamicLayoutElement(element.Id));
                     continue;
