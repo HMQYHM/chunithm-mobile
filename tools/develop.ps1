@@ -52,6 +52,7 @@ $buildDir = Join-Path $buildRoot 'Android'
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $testMarkers = @{
+    LongRibbonMotionAudit = 'Long ribbon motion audit completed:'
     ExTapVisualSelfTest = 'EXTAP visual regression passed:'
     AppBootstrapSelfTest = 'App bootstrap regression passed:'
     TrackMaskSelfTest = 'Track mask regression passed:'
