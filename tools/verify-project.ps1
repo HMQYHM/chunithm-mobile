@@ -69,7 +69,9 @@ $androidBridges = @(
     'Runtime/AppUiShell.cs', # Log export bridge; keep the rest of the UI platform-neutral.
     'Runtime/MultiplayerClient.cs', # Device ID lookup.
     'Runtime/PlatformMemoryInfo.cs',
-    'Runtime/PlatformStoragePaths.cs'
+    'Runtime/PlatformStoragePaths.cs',
+    'Runtime/MobileAudioDiagnostics.cs',
+    'Resources\Audio\Judgement\provenance.json'
 )
 $scriptsRoot = Join-Path $project 'Assets\Scripts'
 foreach ($file in (Get-ChildItem -LiteralPath $scriptsRoot -Recurse -Filter '*.cs')) {

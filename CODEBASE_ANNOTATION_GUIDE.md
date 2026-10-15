@@ -68,7 +68,7 @@
 
 `LowLatencyAudioController` 管理 Unity 音频配置和 DSP buffer；它不应该调用 Android 硬件倍速 API。播放速率应保持在 Unity 软件 DSP 链路中完成，以便和谱面时钟一致。
 
-`LocalChartPlaybackSession` 负责游玩歌曲的完整资源生命周期：加载、混音、预备、播放、暂停、恢复、释放和结束。每次加载都有 generation 标识；旧的异步回调不能修改新的播放会话。正解音是在谱面判定点上限流合成到歌曲 PCM 的，需同时考虑音乐延迟、正解音额外延迟和音量，且同一时刻最多合成规定数量的声音，避免高密度片段爆音。
+`LocalChartPlaybackSession` 负责游玩歌曲的完整资源生命周期：加载、混音、预备、播放、暂停、恢复、释放和结束。每次加载都有 generation 标识；旧的异步回调不能修改新的播放会话。正解音先按原版 ANSWER 类别生成并合成到歌曲 PCM：同一类别同一采样帧只保留一次，不同类别仍可同刻并存；音乐偏移、正解音偏移和音量必须明确应用一次。
 
 `InterfaceAudioController` 只负责首页/列表/结算等界面背景音乐和渐弱；`SongSelectionPreviewPlayer` 只负责歌曲列表试听。游玩音乐不能被界面 BGM 控制器抢占。
 
@@ -138,3 +138,13 @@ Live2D 游玩皮肤的布局和参数映射由 `GameplaySkinCubismRenderer` 负�
 `C2sParser` 将 ASD 段的末端生成为独立 `ASD_NODE`，将正间隔 ALD 按整条不歧义链的谱面 tick（接缝只采样一次，包括整除时的终点）生成离散 `AirAction` 判定音符。原始 ASC/ASD 继续负责曲线几何与入口；两种节点都进入 `JudgePointScheduler`，不会根据渲染帧临时增加 Combo。AIR 总数中先扣除这些正式节点，剩余预算用于现有 AIR-HOLD / AIR-SLIDE 保持点分配；完整原生 KEEP 节奏尚未全部还原。
 
 `VisualGuidePath.Nodes` 保留 ALD 的分数几何、独立滚速与正式音符索引。`AirLadderVisuals` 使用这份数据渲染，收到 `MarkJudged` 后隐藏对应节点；没有节点时不会自行用毫秒重采样。`ChartMirror` 同时镜像正式音符和阶梯显示几何。ASD 的紫色动作图片由末端的独立音符负责，原始段不再在曲线接缝重复显示。
+
+### 判定反馈与 Full AUTO 合成（2026-10-15）
+- `GameplayJudgementAudio.cs`：原版 cue 表、每局 PCM bank、手动反馈和三类长条循环。KEEP 点只更新覆盖/音级，不重复发短音。皮肤可选 `audio/cue_<CRI ID>.wav`；缺失继续使用内置 PCM。
+- `GameplayAudioMixLayer.cs`：单轨预合成的声道、重采样、循环相位与共享 PCM 数据。Full AUTO 将音乐、ANSWER、成功判定与持续音按各自开关/音量合成；成功后禁止实时重复。音轨和皮肤外部音效由当前加载 generation 持有和释放。
+- `MobileAudioDiagnostics.cs` / `ChunithmAudioSession.mm`：仅查询 Android 能力/输出路线；iOS 只申请 preferred I/O duration，不抢 Unity 会话的 category、activation 或蓝牙路由。日志必须区分 Unity 队列估计和真实设备输出延迟。
+- Windows CRI 的 AISAC、随机音色和 DSP 效果未移植；cue 与默认 PCM 对齐不能称为最终听感完全一致。
+
+### 帧率、重开与 MOD 说明（2026-10-15）
+
+`FrameRateSettings` 统一启动与画面设置的帧率应用，0 使用 `int.MaxValue` 表示无应用上限。桌面垂直同步优先于 targetFrameRate；移动端由系统刷新周期控制，vSyncCount 不改变移动端调度。设置版本 26 迁移保持版本 25 的流速选项不变。单人暂停重开先停止旧会话，显示加载遮罩，再执行相同的谱面、音频和首帧准备；遮罩退出后才启动 DSP 预备阶段。MOD 说明使用逻辑面板宽度适配字号、自动换行和滚动内容，避免长翻译缩到不可读字号。

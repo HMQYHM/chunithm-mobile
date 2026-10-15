@@ -34,6 +34,7 @@ namespace ChunithmMobile.Runtime
                       $"speakers={observedConfiguration.speakerMode}->{active.speakerMode}");
             observedConfiguration = active;
 
+            MobileAudioDiagnostics.Report(active.dspBufferSize, active.sampleRate);
             if (!deviceWasChanged) return;
             LocalChartPlaybackSession session = FindObjectOfType<LocalChartPlaybackSession>();
             if (session == null || !session.IsPlaying) return;
@@ -78,6 +79,7 @@ namespace ChunithmMobile.Runtime
             double bufferMs = active.sampleRate > 0
                 ? active.dspBufferSize * 1000.0 / active.sampleRate
                 : 0;
+            MobileAudioDiagnostics.Report(active.dspBufferSize, active.sampleRate);
             Debug.Log($"Audio DSP configured: requested={requested}, actual={active.sampleRate}Hz, " +
                       $"buffer={active.dspBufferSize} samples ({bufferMs:F2}ms), " +
                       $"speakers={active.speakerMode}");

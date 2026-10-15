@@ -43,7 +43,7 @@ namespace ChunithmMobile.Rendering
             blurredRenderer = CreateQuad("Blurred jacket background", distance, width, height, blurredMaterial);
             skinBackgroundMaterial = MeshFactory.Material((Texture)null, Color.white, true);
             skinBackgroundMaterial.renderQueue = 1002;
-            skinBackgroundRenderer = CreateQuad("Skin authored background", distance - .16f, width, height, skinBackgroundMaterial, false);
+            skinBackgroundRenderer = CreateQuad("Skin authored background", distance - .16f, width, height, skinBackgroundMaterial);
             float coverSize = height * .56f;
             coverRenderer = CreateQuad("Centered jacket", distance - .08f, coverSize, coverSize, coverMaterial);
             SetVisible(false);
@@ -175,7 +175,7 @@ namespace ChunithmMobile.Rendering
             if (skinBackgroundRenderer != null) skinBackgroundRenderer.enabled = showing && custom;
         }
 
-        private MeshRenderer CreateQuad(string name, float z, float width, float height, Material material, bool jacketOrigin = true)
+        private MeshRenderer CreateQuad(string name, float z, float width, float height, Material material)
         {
             var child = new GameObject(name);
             child.transform.SetParent(transform, false);
@@ -186,15 +186,10 @@ namespace ChunithmMobile.Rendering
                 new Vector3(width * .5f, -height * .5f, 0),
                 new Vector3(width * .5f, height * .5f, 0),
                 new Vector3(-width * .5f, height * .5f, 0));
-            // Extracted jackets use the opposite vertical origin from the
-            // world-space quad. UI jackets correct this in LocalCoverLoader;
-            // keep the same orientation for the blurred and centred gameplay
-            // images without rotating or mirroring the artwork horizontally.
-            // Authored PNG backgrounds use the normal Unity texture origin,
-            // unlike the extracted jackets. Do not invert the Studio preview.
-            quad.uv = jacketOrigin
-                ? new[] { new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0), Vector2.zero }
-                : new[] { Vector2.zero, Vector2.right, Vector2.one, Vector2.up };
+            // DDS is normalized by its uploader; PNG/JPG already use Unity's
+            // bottom-origin pixels. All background surfaces now share normal
+            // UVs so a second jacket-only correction cannot invert one format.
+            quad.uv = new[] { Vector2.zero, Vector2.right, Vector2.one, Vector2.up };
             filter.sharedMesh = quad;
             var renderer = child.AddComponent<MeshRenderer>();
             renderer.sharedMaterial = material;

@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Reflection;
+using ChunithmMobile.Rendering;
 using ChunithmMobile.Runtime;
 using UnityEngine;
 
@@ -35,11 +37,15 @@ namespace ChunithmMobile.Editor
             {
                 if (texture == null || texture.width != 4 || texture.height != 4 || texture.format != TextureFormat.RGBA32)
                     throw new Exception("DDS Unity texture is not portable RGBA32");
+                VerifyUploadedOrientation(texture);
+                // Upload must not mutate the source-order worker result.
+                ExpectPixel(bc1, 0, 0, 255, 0, 0, 255, "source data after upload");
             }
             finally
             {
                 if (texture != null) UnityEngine.Object.DestroyImmediate(texture);
             }
+            VerifyImageFormatAndBackdropParity();
             string realSample = Environment.GetEnvironmentVariable("CHUNITHM_DDS_SAMPLE");
             if (!string.IsNullOrWhiteSpace(realSample) && File.Exists(realSample))
             {
@@ -50,7 +56,83 @@ namespace ChunithmMobile.Editor
                 if (realTexture == null) throw new Exception("Real DDS jacket failed RGBA32 upload");
                 UnityEngine.Object.DestroyImmediate(realTexture);
             }
-            Debug.Log("DDS texture regression passed: BC1/2/3 colors, alpha, orientation and RGBA32 upload");
+            Debug.Log("DDS texture regression passed: BC1/2/3 colors, alpha, GPU upload orientation, PNG/JPG parity, normal backdrop UVs and rounded-cover readback");
+        }
+
+        private static void VerifyUploadedOrientation(Texture texture)
+        {
+            Texture2D readback = Readback(texture);
+            try {
+                Color top = readback.GetPixel(1, readback.height - 1);
+                Color bottom = readback.GetPixel(1, 0);
+                if (top.r < .8f || top.g > .2f || bottom.g < .8f || bottom.r > .2f)
+                    throw new Exception("Uploaded jacket is upside down: top=" + top + ", bottom=" + bottom);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(readback); }
+        }
+
+        private static Texture2D Readback(Texture source)
+        {
+            RenderTexture target = RenderTexture.GetTemporary(source.width, source.height, 0);
+            RenderTexture previous = RenderTexture.active;
+            try {
+                Graphics.Blit(source, target);
+                RenderTexture.active = target;
+                var result = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
+                result.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+                result.Apply();
+                return result;
+            }
+            finally { RenderTexture.active = previous; RenderTexture.ReleaseTemporary(target); }
+        }
+
+        private static void VerifyImageFormatAndBackdropParity()
+        {
+            // JPEG chroma subsampling blends tiny one-row fixtures. Use large
+            // color bands so the assertion checks orientation, not compression.
+            var authored = new Texture2D(16, 16, TextureFormat.RGB24, false);
+            var cameraRoot = new GameObject("Jacket orientation regression camera", typeof(Camera));
+            Texture2D dds = null, png = null, jpg = null;
+            try {
+                for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++)
+                    authored.SetPixel(x, y, y < 8 ? Color.green : Color.red);
+                authored.Apply();
+                dds = DdsTextureDecoder.CreateTexture(DdsTextureDecoder.Decode(BuildBc1()), "orientation DDS");
+                png = new Texture2D(2, 2); png.LoadImage(authored.EncodeToPNG());
+                jpg = new Texture2D(2, 2); jpg.LoadImage(authored.EncodeToJPG(100));
+                var backdrop = cameraRoot.AddComponent<GameplayBackdropRenderer>();
+                const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic;
+                if (typeof(GameplayBackdropRenderer).GetField("coverRenderer", instance).GetValue(backdrop) == null)
+                    typeof(GameplayBackdropRenderer).GetMethod("Awake", instance).Invoke(backdrop, null);
+                foreach (string field in new[] { "coverRenderer", "blurredRenderer", "skinBackgroundRenderer" }) {
+                    var renderer = (MeshRenderer)typeof(GameplayBackdropRenderer).GetField(field, instance).GetValue(backdrop);
+                    Vector2[] uv = renderer.GetComponent<MeshFilter>().sharedMesh.uv;
+                    if (uv[0] != Vector2.zero || uv[1] != Vector2.right || uv[2] != Vector2.one || uv[3] != Vector2.up)
+                        throw new Exception(field + " applies a second jacket flip");
+                }
+                foreach (Texture2D source in new[] { dds, png, jpg }) {
+                    VerifyUploadedOrientation(source);
+                    var rounded = (Texture2D)typeof(GameplayBackdropRenderer).GetMethod("CreateRoundedCover",
+                        BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { source, 32, .085f });
+                    try {
+                        Texture2D readback = Readback(rounded);
+                        try {
+                            Color top = readback.GetPixel(16, 27), bottom = readback.GetPixel(16, 1);
+                            if (top.r <= top.g || bottom.g <= bottom.r)
+                                throw new Exception("Rounded backdrop changes jacket orientation");
+                        }
+                        finally { UnityEngine.Object.DestroyImmediate(readback); }
+                    }
+                    finally { UnityEngine.Object.DestroyImmediate(rounded); }
+                }
+            }
+            finally {
+                UnityEngine.Object.DestroyImmediate(cameraRoot);
+                UnityEngine.Object.DestroyImmediate(authored);
+                if (dds != null) UnityEngine.Object.DestroyImmediate(dds);
+                if (png != null) UnityEngine.Object.DestroyImmediate(png);
+                if (jpg != null) UnityEngine.Object.DestroyImmediate(jpg);
+            }
         }
 
         private static byte[] BuildBc1()

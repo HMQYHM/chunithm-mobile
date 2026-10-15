@@ -102,7 +102,16 @@ namespace ChunithmMobile.Runtime
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear
             };
-            texture.LoadRawTextureData(data.Rgba32);
+            // DDS rows are top-to-bottom, while Unity raw texture row zero is
+            // the bottom. Normalize exactly once at upload so sprites, jacket
+            // backgrounds and PNG/JPG callers all use the same upright UVs.
+            // Keep the worker-thread decode result in source order for reuse.
+            int stride = checked(data.Width * 4);
+            var unityPixels = new byte[data.Rgba32.Length];
+            for (int row = 0; row < data.Height; row++)
+                Buffer.BlockCopy(data.Rgba32, row * stride, unityPixels,
+                    (data.Height - 1 - row) * stride, stride);
+            texture.LoadRawTextureData(unityPixels);
             texture.Apply(false, true);
             return texture;
         }

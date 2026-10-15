@@ -481,6 +481,7 @@ namespace ChunithmMobile.Runtime
         private void RefreshMultiplayerModPickerV2()
         {
             if (multiplayerModPickerLayer == null || multiplayerModPickerDraft == null) return;
+            RefreshModTextScale();
             bool scoringOnly = MultiplayerModPickerScoringOnlyV2();
             if (multiplayerModPickerTitle != null)
                 multiplayerModPickerTitle.text = UiLocalization.Translate(scoringOnly ? "选择 MOD · 普通模式" : "选择 MOD · 休闲模式");
@@ -1329,8 +1330,10 @@ namespace ChunithmMobile.Runtime
             else if (!room.song.transferReady) SetButtonLabel(multiplayerRoomSongButton, "等待房主上传");
             else SetButtonLabel(multiplayerRoomSongButton, "同步当前歌曲");
             if (multiplayerRoomSongButton != null)
-                multiplayerRoomSongButton.interactable = !persistent && !active && hasSong &&
-                    (host || self == null || !self.songReady);
+                // The host must be able to choose the first song. Requiring
+                // hasSong here disabled the only entry into song selection.
+                multiplayerRoomSongButton.interactable = !persistent && !active &&
+                    (host || hasSong && (self == null || !self.songReady));
             if (multiplayerRoomModeButton != null) multiplayerRoomModeButton.interactable = !active && host && !anyReady;
             multiplayerRoomModsButton.interactable = !active && host && !anyReady;
             if (multiplayerRoomSelectionButton != null) multiplayerRoomSelectionButton.interactable = !active && host && !anyReady;

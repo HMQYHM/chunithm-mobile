@@ -33,11 +33,11 @@ namespace ChunithmMobile.Editor
         {
             ConfigureExternalTools();
             ConfigureAndroidSigning();
-            PlayerSettings.productName = "ChuMobile";
+            PlayerSettings.productName = "Chunithm Mobile";
             PlayerSettings.companyName = "HMQYHM";
-            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "hmqyhm.chumobile");
-            PlayerSettings.bundleVersion = "0.3.5";
-            PlayerSettings.Android.bundleVersionCode = 305;
+            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.zhongermate.chunithmmobile");
+            PlayerSettings.bundleVersion = "0.3.6";
+            PlayerSettings.Android.bundleVersionCode = 306;
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
             // Use the installed stable platform explicitly. Auto would currently
@@ -98,6 +98,22 @@ namespace ChunithmMobile.Editor
             string storePassword = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEYSTORE_PASS");
             string alias = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEY_ALIAS");
             string aliasPassword = System.Environment.GetEnvironmentVariable("CHUNITHM_ANDROID_KEY_PASS");
+            // Local release/test builds use the project's preserved debug
+            // keystore when no external signing environment is provided. This
+            // keeps upgrades compatible with earlier APKs while keeping the
+            // key file itself outside source control.
+            if (string.IsNullOrWhiteSpace(keystore) && string.IsNullOrWhiteSpace(alias))
+            {
+                string bundled = System.IO.Path.Combine(System.IO.Directory.GetParent(Application.dataPath).FullName,
+                    "CHUNITHM-Mobile-debug.keystore");
+                if (System.IO.File.Exists(bundled))
+                {
+                    keystore = bundled;
+                    alias = "androiddebugkey";
+                    storePassword = "android";
+                    aliasPassword = "android";
+                }
+            }
             if (string.IsNullOrWhiteSpace(keystore) && string.IsNullOrWhiteSpace(alias))
             {
                 // Do not inherit a stale machine-local keystore path from
@@ -124,7 +140,7 @@ namespace ChunithmMobile.Editor
         {
             Apply();
             string output = System.Environment.GetEnvironmentVariable("CHUNITHM_APK_OUTPUT");
-            if (string.IsNullOrWhiteSpace(output)) output = "Build/Android/CHUNITHM-Mobile-0.3.5-unity-arm64.apk";
+            if (string.IsNullOrWhiteSpace(output)) output = "Build/Android/Chunithm-Mobile-0.3.6-unity-arm64.apk";
             string outputDirectory = System.IO.Path.GetDirectoryName(output);
             if (!string.IsNullOrWhiteSpace(outputDirectory)) System.IO.Directory.CreateDirectory(outputDirectory);
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions {

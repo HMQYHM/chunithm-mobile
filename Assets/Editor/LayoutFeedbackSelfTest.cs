@@ -118,6 +118,16 @@ namespace ChunithmMobile.Editor
                 ((RectTransform)canvas.transform).sizeDelta = new Vector2(1920, 1080);
                 Set(shell, "canvas", canvas);
                 Call(shell, "BuildGameplay");
+                RectTransform songInfo = Get<RectTransform>(shell, "gameplaySongInfoBlock");
+                RectTransform songCover = Get<RectTransform>(shell, "gameplaySongInfoCoverMask");
+                Require(songCover.parent == songInfo,
+                    "song cover is not owned by the song information element");
+                Set(shell, "draftSettings", new AppSettings());
+                Call(shell, "EnsureAllDraftLayoutOverrides");
+                var seeded = Get<AppSettings>(shell, "draftSettings").GameplayLayoutOverrides
+                    .Find(item => item != null && item.ElementId == "songCover");
+                Require(seeded != null && !seeded.Independent,
+                    "fallback cover layout detached the cover before explicit editing");
                 Call(shell, "BuildLayoutEditor");
                 var layer = Get<RectTransform>(shell, "layoutEditorLayer");
                 layer.gameObject.SetActive(true);

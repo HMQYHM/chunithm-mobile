@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
@@ -16,7 +17,7 @@ namespace ChunithmMobile.Runtime
         private const float ModScoringSectionTop = 0f;
         private const float ModPracticeSectionTop = 214f;
         private const float ModSpeedSectionTop = 704f;
-        private const float ModListContentHeight = 940f;
+        private const float ModListContentHeight = 0f;
 
         private sealed class ModOptionView
         {
@@ -44,10 +45,12 @@ namespace ChunithmMobile.Runtime
             public Text DetailStatus;
             public Text DetailEffects;
             public Button DetailToggle;
+            public ScrollRect DetailScroll;
             public ModOptionView Current;
         }
 
         private readonly Dictionary<RectTransform, ModDialogView> modDialogs = new Dictionary<RectTransform, ModDialogView>();
+        private readonly Dictionary<Text, int> modTextBaseMaximums = new Dictionary<Text, int>();
 
         private RectTransform BuildModDialog(string name, out RectTransform layer, out Text title,
             string heading, UnityAction close)
@@ -65,9 +68,9 @@ namespace ChunithmMobile.Runtime
             FitModText(title, 28);
             ButtonText("×", body, new Vector2(.90f, .90f), new Vector2(.955f, .98f), surface, close);
 
-            // Single-column rows keep state indicators readable on short landscape screens.
+            // Two columns reduce scrolling; each card keeps its state below the title.
             RectTransform listPanel = Panel("MOD list panel", body, surface,
-                new Vector2(.035f, .15f), new Vector2(.43f, .865f));
+                new Vector2(.035f, .15f), new Vector2(.63f, .865f));
             RectTransform viewport = RectObject("MOD list viewport", listPanel, new Vector2(.035f, .025f), new Vector2(.965f, .975f));
             viewport.offsetMin = viewport.offsetMax = Vector2.zero;
             viewport.gameObject.AddComponent<RectMask2D>();
@@ -85,7 +88,7 @@ namespace ChunithmMobile.Runtime
             scroll.scrollSensitivity = 42;
 
             RectTransform details = Panel("MOD details", body, surface,
-                new Vector2(.455f, .15f), new Vector2(.965f, .865f));
+                new Vector2(.65f, .15f), new Vector2(.965f, .865f));
             var view = new ModDialogView();
             view.NextRow["Scoring"] = ModScoringSectionTop + 18f;
             view.NextRow["Practice"] = ModPracticeSectionTop + 18f;
@@ -133,29 +136,27 @@ namespace ChunithmMobile.Runtime
 
             float nextTop = 0f;
             string[] sections = { "Scoring", "Practice", "Speed" };
-            foreach (string section in sections)
-            {
-                float oldTop = view.SectionTop[section];
-                float newTop = section == "Scoring" ? 0f : nextTop;
-                float delta = newTop - oldTop;
-                if (Mathf.Abs(delta) > .01f)
-                {
-                    if (view.SectionLabels.TryGetValue(section, out RectTransform label)) MoveModRect(label, delta);
-                    if (view.SectionLines.TryGetValue(section, out RectTransform line)) MoveModRect(line, delta);
-                    foreach (ModOptionView option in view.Options.Values)
-                        if (option.Section == section) MoveModRect((RectTransform)option.Button.transform, delta);
+            foreach (string section in sections) {
+                float delta = nextTop - view.SectionTop[section];
+                if (view.SectionLabels.TryGetValue(section, out RectTransform label)) MoveModRect(label, delta);
+                if (view.SectionLines.TryGetValue(section, out RectTransform line)) MoveModRect(line, delta);
+                view.SectionTop[section] = nextTop;
+                int index = 0;
+                foreach (ModOptionView option in view.Options.Values) {
+                    if (option.Section != section) continue;
+                    var rect = (RectTransform)option.Button.transform;
+                    int column = index % 2, row = index / 2;
+                    rect.anchorMin = new Vector2(column == 0 ? .035f : .51f, 1);
+                    rect.anchorMax = new Vector2(column == 0 ? .49f : .965f, 1);
+                    float top = nextTop + 42 + row * 64;
+                    rect.offsetMin = new Vector2(0, -top - 58);
+                    rect.offsetMax = new Vector2(0, -top);
+                    index++;
                 }
-
-                view.SectionTop[section] = newTop;
-                int count = 0;
-                foreach (ModOptionView option in view.Options.Values)
-                    if (option.Section == section) count++;
-                view.NextRow[section] = newTop + 18f + count * 61f;
-                nextTop = newTop + 18f + count * 61f + 24f;
+                nextTop += 42 + Mathf.CeilToInt(index / 2f) * 64 + 14;
             }
-
             RectTransform content = (RectTransform)body.Find("MOD list panel/MOD list viewport/MOD list content");
-            if (content != null) content.sizeDelta = new Vector2(0, Mathf.Max(ModListContentHeight, nextTop + 110f));
+            if (content != null) content.sizeDelta = new Vector2(0, nextTop);
         }
 
         private static void MoveModRect(RectTransform rect, float delta)
@@ -172,10 +173,35 @@ namespace ChunithmMobile.Runtime
             view.DetailTitle = Label("", details, 26, TextAnchor.UpperLeft,
                 new Vector2(.07f, .69f), new Vector2(.93f, .84f), ModPrimaryTextColor, true);
             FitModText(view.DetailTitle, 26);
-            view.DetailDescription = Label("从左侧列表选择 MOD，右侧会说明它的游玩效果与成绩状态。", details, 17,
-                TextAnchor.UpperLeft, new Vector2(.07f, .46f), new Vector2(.93f, .68f), ModMutedTextColor, true);
-            view.DetailEffects = Label("", details, 16, TextAnchor.UpperLeft,
-                new Vector2(.07f, .21f), new Vector2(.93f, .43f), ModMutedTextColor, true);
+            // Long translations keep a readable font and grow vertically;
+            // the viewport scrolls instead of shrinking text to fit a box.
+            RectTransform viewport = RectObject("MOD description viewport", details,
+                new Vector2(.07f, .225f), new Vector2(.93f, .68f));
+            viewport.gameObject.AddComponent<Image>().color = Color.clear;
+            viewport.gameObject.AddComponent<RectMask2D>();
+            RectTransform content = RectObject("MOD description content", viewport,
+                new Vector2(0, 1), Vector2.one);
+            content.pivot = new Vector2(.5f, 1);
+            var layout = content.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 16;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            view.DetailScroll = viewport.gameObject.AddComponent<ScrollRect>();
+            view.DetailScroll.viewport = viewport;
+            view.DetailScroll.content = content;
+            view.DetailScroll.horizontal = false;
+            view.DetailScroll.movementType = ScrollRect.MovementType.Clamped;
+            view.DetailScroll.scrollSensitivity = 35;
+            view.DetailDescription = Label("从左侧列表选择 MOD，右侧会说明它的游玩效果与成绩状态。", content, 26,
+                TextAnchor.UpperLeft, Vector2.zero, Vector2.one, ModMutedTextColor, true);
+            FitModDetailText(view.DetailDescription, 26);
+            view.DetailEffects = Label("", content, 24, TextAnchor.UpperLeft,
+                Vector2.zero, Vector2.one, ModMutedTextColor, true);
+            FitModDetailText(view.DetailEffects, 24);
             view.DetailStatus = Label("", details, 16, TextAnchor.MiddleLeft,
                 new Vector2(.07f, .12f), new Vector2(.93f, .20f), ModMutedTextColor, true);
             view.DetailToggle = ButtonText("启用", details, new Vector2(.07f, .025f), new Vector2(.93f, .105f), cyan,
@@ -195,18 +221,21 @@ namespace ChunithmMobile.Runtime
             rect.offsetMax = new Vector2(0, -top - 38);
             Text label = button.GetComponentInChildren<Text>();
             label.alignment = TextAnchor.MiddleLeft;
-            label.rectTransform.offsetMin = new Vector2(16, 2);
-            label.rectTransform.offsetMax = new Vector2(-124, -2);
+            label.rectTransform.anchorMin = new Vector2(0, .35f);
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.offsetMin = new Vector2(12, 0);
+            label.rectTransform.offsetMax = new Vector2(-12, -2);
             label.raycastTarget = false;
             FitModText(label, 20);
             Text state = Label("未开启", button.transform, 13, TextAnchor.MiddleRight,
-                new Vector2(.66f, .12f), new Vector2(.88f, .88f), ModMutedTextColor, true);
+                new Vector2(.07f, .02f), new Vector2(.88f, .34f), ModMutedTextColor, true);
             state.raycastTarget = false;
             FitModText(state, 13);
             RectTransform dot = Panel("Status dot", button.transform, new Color(.42f, .45f, .48f), Vector2.one * .5f, Vector2.one * .5f);
             dot.pivot = new Vector2(1, .5f);
             dot.sizeDelta = new Vector2(15, 15);
-            dot.anchoredPosition = new Vector2(-17, 0);
+            dot.anchorMin = dot.anchorMax = new Vector2(1, .19f);
+            dot.anchoredPosition = new Vector2(-12, 0);
             dot.GetComponent<Image>().raycastTarget = false;
             ModOptionView option = new ModOptionView {
                 Button = button, Toggle = action, Scoring = scoring, Section = section, StateLabel = state
@@ -221,6 +250,7 @@ namespace ChunithmMobile.Runtime
         {
             if (option == null) return;
             view.Current = option;
+            if (view.DetailScroll != null) view.DetailScroll.verticalNormalizedPosition = 1;
             RefreshModDetails(view);
             RefreshModOptionSelection(view);
         }
@@ -237,6 +267,39 @@ namespace ChunithmMobile.Runtime
             label.resizeTextForBestFit = true;
             label.resizeTextMinSize = 13;
             label.resizeTextMaxSize = maximum;
+        }
+
+        private void FitModDetailText(Text label, int maximum)
+        {
+            if (label == null) return;
+            modTextBaseMaximums[label] = maximum;
+            ApplyModTextScale(label, maximum);
+        }
+
+        private static void ApplyModTextScale(Text label, int maximum)
+        {
+            if (label == null) return;
+            // CanvasScaler already maps logical units onto device pixels. Use
+            // the available panel width so high pixel density does not scale
+            // the font a second time. Long text grows into the scroll content.
+            float scale = Mathf.Clamp(label.rectTransform.rect.width / 450f, .90f, 1.20f);
+            label.resizeTextForBestFit = false;
+            label.fontSize = Mathf.RoundToInt(maximum * scale);
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Overflow;
+            label.raycastTarget = false;
+            LayoutRebuilder.MarkLayoutForRebuild(label.rectTransform);
+        }
+
+        private void RefreshModTextScale()
+        {
+            foreach (KeyValuePair<Text, int> entry in modTextBaseMaximums.ToArray()) {
+                if (entry.Key == null) {
+                    modTextBaseMaximums.Remove(entry.Key);
+                    continue;
+                }
+                ApplyModTextScale(entry.Key, entry.Value);
+            }
         }
 
         private void UpdateModOption(Button button, string name, bool selected, bool disabled)
@@ -333,6 +396,7 @@ namespace ChunithmMobile.Runtime
             view.DetailDescription.color = ModMutedTextColor;
             view.DetailEffects.text = UiLocalization.Translate(ModEffects(option.Name));
             view.DetailEffects.color = ModMutedTextColor;
+            RefreshModTextScale();
             view.DetailStatus.text = UiLocalization.Translate(option.Disabled ? "当前模式不可用" : option.Scoring ? "开启后成绩仍会保存" : "开启后本局不记录成绩");
             view.DetailStatus.color = option.Disabled ? ModDisabledTextColor : enabled ? accent : ModMutedTextColor;
             Text buttonLabel = view.DetailToggle.GetComponentInChildren<Text>();
@@ -347,12 +411,13 @@ namespace ChunithmMobile.Runtime
                 case "全屏触控板": return "保留当前横向宽度，将地面触控范围扩展至全屏，并自动协助 AIR 判定。";
                 case "AIR 区域 AUTO": return "AIR 区域内的音符由系统自动判定。";
                 case "上下 AIR AUTO": return "自动处理上下 AIR 的方向判定。";
-                case "全谱面 AUTO": return "自动判定整张谱面，仅用于观看与练习。";
+                case "全谱面 AUTO": return "自动判定整张谱面，仅用于观看与练习。音乐、正解音与自动判定音会在加载时合成一条音频，遵循各自的开关与音量。";
                 case "air长条简单模式": return "AIR 长条保持在 AIR 区即可完成，无需上下移动。";
                 case "简单判定": return "除了 MISS 外的判定统一视为 JUSTICE CRITICAL。";
                 case "谱面镜像": return "左右镜像谱面和对应的输入位置。";
                 case "Flick 可点击判定": return "Flick 可通过点击直接判定。";
                 case "免疫地雷音符": return "触碰地雷不会造成 MISS。";
+                case "匀速模式": return "不受谱面变速影响，让音符以固定速度移动，适合在有变速的谱面使用。";
                 default: return "调整歌曲播放速度，适合个人练习使用。";
             }
         }
@@ -363,6 +428,7 @@ namespace ChunithmMobile.Runtime
                 case "全屏触控板": return "- 全屏地面输入\n- 强制开启 AIR 区域 AUTO\n- 强制开启上下 AIR AUTO\n- 休闲联机可用；普通联机不可用";
                 case "谱面镜像": return "- 可保存成绩\n- 联机普通模式可用";
                 case "air长条简单模式": return "- 可保存成绩\n- 不影响其他 AIR 音符";
+                case "匀速模式": return "- 忽略谱面中的变速事件\n- 保持固定移动速度\n- 适合练习变速谱面";
                 default: return name.EndsWith("x", StringComparison.Ordinal) ? "- 改变音乐与谱面播放速度\n- 可再次点击恢复 1.0x" : "- 可再次点击关闭\n- 当前局立即生效";
             }
         }

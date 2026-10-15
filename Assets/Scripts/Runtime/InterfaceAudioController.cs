@@ -158,8 +158,9 @@ namespace ChunithmMobile.Runtime
 
         public void PlayMineKeySound()
         {
-            if (keySoundEnabled && keySoundVolume > 0f && switchClip != null)
-                gameplayKeySource.PlayOneShot(switchClip, keySoundVolume);
+            if (!keySoundEnabled || keySoundVolume <= 0f || gameplayKeySource == null) return;
+            AudioClip mineMiss = Resources.Load<AudioClip>("Audio/Judgement/cue_303");
+            if (mineMiss != null) gameplayKeySource.PlayOneShot(mineMiss, keySoundVolume);
         }
 
         public void PlayStandaloneTransition(float duration)

@@ -1,0 +1,290 @@
+{
+  "source": "chu.acb memory AWB; original PCM wave layers; default TAP variation",
+  "limitations": "CRI envelope, AISAC, random variants and DSP effects are not emulated. Primary default loop wave is used.",
+  "cues": [
+    {
+      "cue": 50,
+      "waves": [
+        285
+      ],
+      "sha256": "a9611f934afafe1f402d0013fd0400aa0fb43a585df0ad20fbc5be7fc96cb5ed",
+      "frames": 22032,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 59,
+      "waves": [
+        286
+      ],
+      "sha256": "f880e138c1214302e66d3272f5eca04047ab3762ed09950c6bffe8f5c3a3b927",
+      "frames": 60063,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 60,
+      "waves": [
+        286
+      ],
+      "sha256": "f880e138c1214302e66d3272f5eca04047ab3762ed09950c6bffe8f5c3a3b927",
+      "frames": 60063,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 61,
+      "waves": [
+        302
+      ],
+      "sha256": "80d169c1d4e39b77c1dbc169d6d34aee2f7abe3c2268988589402cdecca7abd0",
+      "frames": 25472,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 71,
+      "waves": [
+        279,
+        278
+      ],
+      "sha256": "76324a75ea8f67234cd831cba6f0cd8594ee01dc284ce81b18e7effe050c1477",
+      "frames": 109366,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 72,
+      "waves": [
+        279,
+        278
+      ],
+      "sha256": "76324a75ea8f67234cd831cba6f0cd8594ee01dc284ce81b18e7effe050c1477",
+      "frames": 109366,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 80,
+      "waves": [
+        279,
+        278
+      ],
+      "sha256": "76324a75ea8f67234cd831cba6f0cd8594ee01dc284ce81b18e7effe050c1477",
+      "frames": 109366,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 81,
+      "waves": [
+        279,
+        278
+      ],
+      "sha256": "76324a75ea8f67234cd831cba6f0cd8594ee01dc284ce81b18e7effe050c1477",
+      "frames": 109366,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 82,
+      "waves": [
+        277
+      ],
+      "sha256": "64f9199adb8bad01f02e41cf21991d800dfe6b3879b5da94e8ed154df0981d6d",
+      "frames": 66150,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 83,
+      "waves": [
+        277
+      ],
+      "sha256": "64f9199adb8bad01f02e41cf21991d800dfe6b3879b5da94e8ed154df0981d6d",
+      "frames": 66150,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 58,
+      "waves": [
+        63
+      ],
+      "sha256": "ef5dc9adaeb862340e78fe7c19382af0a00a1b13062610757f6705efa4cef42f",
+      "frames": 143353,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 306,
+      "waves": [
+        62
+      ],
+      "sha256": "12d63069c6e327f6aea222d5faa000d7b598b1e688f6563691881e89409fd5aa",
+      "frames": 150041,
+      "rate": 48000,
+      "channels": 2
+    },
+    {
+      "cue": 89,
+      "waves": [
+        67
+      ],
+      "sha256": "1f0ccd2d2d73dbf5a21252de65873484bb4a4fdfa451ce58ebaa0a6646c72a3c",
+      "frames": 132300,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 97,
+      "waves": [
+        67
+      ],
+      "sha256": "1f0ccd2d2d73dbf5a21252de65873484bb4a4fdfa451ce58ebaa0a6646c72a3c",
+      "frames": 132300,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 98,
+      "waves": [
+        67
+      ],
+      "sha256": "1f0ccd2d2d73dbf5a21252de65873484bb4a4fdfa451ce58ebaa0a6646c72a3c",
+      "frames": 132300,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 99,
+      "waves": [
+        67
+      ],
+      "sha256": "1f0ccd2d2d73dbf5a21252de65873484bb4a4fdfa451ce58ebaa0a6646c72a3c",
+      "frames": 132300,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 303,
+      "waves": [
+        282
+      ],
+      "sha256": "6094593a5dd6a1b46f22c2a445e15973293a1e2d343747e5dcc77e947b984905",
+      "frames": 96000,
+      "rate": 48000,
+      "channels": 2
+    },
+    {
+      "cue": 578,
+      "waves": [
+        60
+      ],
+      "sha256": "fbc9dc01f7adaf380f40d9618cfb5dd9649b428707d248db0a2a2e0a80aaeb35",
+      "frames": 216000,
+      "rate": 48000,
+      "channels": 2
+    },
+    {
+      "cue": 84,
+      "waves": [
+        69
+      ],
+      "sha256": "d47641ddea0c1ec94c403c6f933bf619b6b04d2101d15b142df8d931dc482b85",
+      "frames": 113987,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 85,
+      "waves": [
+        71
+      ],
+      "sha256": "8c1f63a2887eedf4a0ba3fb9718523046c457c7eece2654937e1f9852f9314d7",
+      "frames": 77469,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 90,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 91,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 92,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 93,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 94,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 95,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 407,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    },
+    {
+      "cue": 408,
+      "waves": [
+        283
+      ],
+      "sha256": "fd6993c02db558d4637eb27f1e5c3a9fd8ee10fb5f2d77a8714cc665dbc2468d",
+      "frames": 37790,
+      "rate": 44100,
+      "channels": 2
+    }
+  ]
+}

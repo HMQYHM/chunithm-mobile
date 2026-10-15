@@ -57,7 +57,7 @@ namespace ChunithmMobile.Editor
                     }
             }
             finally { UiLocalization.SetLanguage(previous); }
-            Debug.Log("Skin UI regression passed: five settings categories, both palettes, saved preferences, package import/activation/fallback, conditional controls, dropdowns and three-language landscape screenshots.");
+            Debug.Log("Skin UI regression passed: five settings categories, both palettes, saved preferences, package import/activation/fallback, conditional controls, dropdowns and four-language landscape screenshots.");
         }
 
         private static void CheckSettingsAndAudioIntegrationContracts()

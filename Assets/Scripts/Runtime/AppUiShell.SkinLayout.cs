@@ -70,10 +70,20 @@ namespace ChunithmMobile.Runtime
                 selectedLayoutElementId = SkinEditorElementIds.FirstOrDefault(id => LayoutTarget(id) != null) ?? SkinEditorElementIds[0];
             }
             string id = SelectedLayoutElementId;
+            // Explicitly selecting the cover is the opt-in point for an
+            // independent rectangle. Automatic fallback seeding must keep it
+            // attached to the song information parent.
+            if (id == "songCover")
+            {
+                GameplayLayoutOverride cover = EnsureDraftLayoutOverride(id);
+                if (cover != null) cover.Independent = true;
+            }
             if (layoutEditorSelectedElementLabel != null)
             {
                 string displayLabel = SkinEditorElementLabels.TryGetValue(id, out string selectedLabel) ? selectedLabel : id;
-                if (id == "songCover" && !IsSkinLayoutEditable(id)) displayLabel += "（随歌曲信息）";
+                if (id == "songCover" &&
+                    LayoutOverride(draftSettings ?? settings, id)?.Independent != true)
+                    displayLabel += "（随歌曲信息）";
                 layoutEditorSelectedElementLabel.text = "编辑元素：" +
                     displayLabel;
             }
@@ -119,7 +129,7 @@ namespace ChunithmMobile.Runtime
                 if (element == null) continue;
                 RectTransform target = LayoutTarget(element.Id);
                 if (target == null) continue;
-                if (element.Id == "songCover" || element.Id == "judgementImage") continue;
+                if (element.Id == "songCover" || element.Id == "trackMask" || element.Id == "judgementImage") continue;
                 SetCanvasSkinRect(target, canvas, element);
             }
             foreach (GameplaySkinElementDefinition element in style.LayoutElements)
@@ -127,8 +137,14 @@ namespace ChunithmMobile.Runtime
                 if (element == null) continue;
                 RectTransform target = LayoutTarget(element.Id);
                 if (target == null) continue;
-                if (element.Id == "songCover")
-                    SetCanvasSkinRect(gameplaySongInfoCoverMask, canvas, element);
+                // The cover is a child of songInfo. Apply its visual skin
+                // here, but keep its rectangle under the parent unless the
+                // user explicitly enabled an independent editor override.
+                if (element.Id == "songCover" || element.Id == "trackMask")
+                {
+                    ApplySkinVisual(target.gameObject, element, IsDynamicLayoutElement(element.Id));
+                    continue;
+                }
                 if (element.Id == "judgementImage") {
                     // FitInParent otherwise overwrites the authored rectangle.
                     var fitter = target.GetComponent<AspectRatioFitter>();
@@ -179,6 +195,8 @@ namespace ChunithmMobile.Runtime
             foreach (GameplayLayoutOverride item in source.GameplayLayoutOverrides)
             {
                 if (item == null || !string.Equals(item.SkinId, skinId, StringComparison.OrdinalIgnoreCase)) continue;
+                if (item.ElementId == "trackMask") continue;
+                if (item.ElementId == "songCover" && !item.Independent) continue;
                 RectTransform target = LayoutTarget(item.ElementId);
                 if (target == null || item.Width <= 0f || item.Height <= 0f) continue;
                 if (item.ReferenceWidth <= 0f || item.ReferenceHeight <= 0f)
@@ -306,7 +324,11 @@ namespace ChunithmMobile.Runtime
                 SkinId = ActiveLayoutSkinId, ElementId = id,
                 X = fallback.x, Y = fallback.y, Width = fallback.width, Height = fallback.height,
                 ReferenceWidth = fallback.width, ReferenceHeight = fallback.height,
-                Visible = source == null || source.Visible
+                Visible = source == null || source.Visible,
+                // Merely seeding the editor with a fallback rectangle must
+                // not detach the cover from songInfo. Selecting songCover in
+                // the element picker is what opts into independent editing.
+                Independent = false
             };
             draftSettings.GameplayLayoutOverrides.Add(item);
             return item;
@@ -357,6 +379,23 @@ namespace ChunithmMobile.Runtime
             editorTouchpadHandle?.gameObject.SetActive(IsSkinLayoutEditable("touchpad"));
             editorTouchpadWidthHandle?.gameObject.SetActive(IsSkinLayoutEditable("touchpad"));
             editorAirTopHandle?.gameObject.SetActive(IsSkinLayoutEditable("airZone"));
+        }
+
+        private void ApplyGameplayVisibilitySettings(AppSettings source)
+        {
+            if (source == null) return;
+            // Skin/layout application runs after the game baseline and can
+            // enable static panels again. User visibility switches remain
+            // authoritative, including in the visual-editor preview.
+            bool fullscreen = IsFullscreenTouchpadActive();
+            if (!source.ShowTouchpadVisual || fullscreen) gameplayTouchpad?.gameObject.SetActive(false);
+            if (!source.ShowInputBoundary || fullscreen) {
+                gameplayAirBoundaryBottom?.gameObject.SetActive(false);
+                gameplayAirBoundaryTop?.gameObject.SetActive(false);
+            }
+            if (!source.ShowGameplaySongInfo) gameplaySongInfoBlock?.gameObject.SetActive(false);
+            if (!source.ShowGameplayFps) gameplayFpsLabel?.gameObject.SetActive(false);
+            if (!source.ShowAirGuide || fullscreen) gameplayAirGuide?.gameObject.SetActive(false);
         }
 
         private RectTransform LayoutTarget(string id)

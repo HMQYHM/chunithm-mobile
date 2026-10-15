@@ -610,6 +610,16 @@ namespace ChunithmMobile.Judgement
             return accepted;
         }
 
+        /// <summary>Read-only audio coverage uses the same contact and assist
+        /// rules as KEEP. It never consumes input or resolves a score point.</summary>
+        public bool IsLongAudioCovered(int noteIndex, double now)
+        {
+            if (!TryGetNote(noteIndex, out ChartNote note)) return false;
+            if (autoPlay || (airAreaAuto && note.Kind is NoteKind.AirHold or NoteKind.AirAction)) return true;
+            if (input == null || input.Ground == null || input.Ground.Current.Ground == null) return false;
+            return IsCheckpointCovered(note, now, now);
+        }
+
         private bool IsCheckpointCovered(ChartNote note, double pointTime, double now)
         {
             if (note.Kind == NoteKind.AirHold) return IsAirContactActive(now);

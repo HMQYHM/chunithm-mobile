@@ -134,8 +134,8 @@ namespace ChunithmMobile.Runtime
             target.color = Color.white;
             target.type = Image.Type.Simple;
             target.preserveAspect = preserveAspect;
-            // UnityWebRequestTexture and the DDS decoder expose jacket pixels
-            // in display order. Keep the UI upright by default. A caller may
+            // DDS upload and UnityWebRequestTexture both produce Unity-origin
+            // textures. Keep the UI upright by default. A caller may
             // explicitly opt into a vertical flip only for a source format
             // that is known to require it; ordinary jackets must not inherit
             // a global negative Y scale.

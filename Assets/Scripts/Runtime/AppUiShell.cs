@@ -32,6 +32,8 @@ namespace ChunithmMobile.Runtime
         public float AnswerSoundVolume => settings == null ? 0f : settings.AnswerSoundVolume / 100f;
         // The answer cue offset is relative to the music latency, not an independent absolute offset.
         public int AnswerSoundOffsetMs => settings == null ? 0 : settings.MusicOffsetMs + settings.AnswerSoundOffsetMs;
+        public bool JudgementSoundEnabled => settings != null && settings.KeySoundEnabled;
+        public float JudgementSoundVolume => settings == null ? 0f : settings.KeySoundVolume / 100f;
         public float GameplayMusicVolume => settings == null ? 1f : settings.MusicVolume / 100f;
 
         private bool HighContrastUi => settings != null && settings.HighContrastUi;
@@ -635,6 +637,8 @@ namespace ChunithmMobile.Runtime
             if (Screen.width != lastScreenWidth || Screen.height != lastScreenHeight)
             {
                 UpdateResponsiveGrid();
+                Canvas.ForceUpdateCanvases();
+                RefreshModTextScale();
             }
             UpdateGameplayHud();
             UpdateMultiplayerV2();
@@ -817,10 +821,8 @@ namespace ChunithmMobile.Runtime
             var aspect = cover.gameObject.AddComponent<AspectRatioFitter>(); aspect.aspectMode = AspectRatioFitter.AspectMode.FitInParent; aspect.aspectRatio = 1;
             detailCover = cover.GetComponent<Image>();
             detailCoverPlaceholder = Label("♪", cover, 96, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, cyan).gameObject;
-            // LocalCoverLoader flips the cover RectTransform vertically to
-            // correct Android texture orientation. Keep controls on a separate,
-            // equally fitted overlay so their position and vector art are never
-            // inherited by that image-only flip.
+            // Keep pin controls on their own square overlay so cover aspect
+            // fitting and replacement cannot move the controls with the image.
             var coverControlsObject = new GameObject("Cover controls", typeof(RectTransform), typeof(AspectRatioFitter));
             coverControlsObject.transform.SetParent(coverBox, false);
             RectTransform coverControls = (RectTransform)coverControlsObject.transform;
@@ -2254,6 +2256,10 @@ namespace ChunithmMobile.Runtime
                 SkinDropdown("分数显示模式", new[] { "当前分数", "SSS+ 评级", "SSS 评级", "SS+ 评级", "SS 评级", "S+ 评级", "S 评级", "已损失分数", "距离最好成绩" },
                     Mathf.Clamp(settings.GameplayBelowNoteMetricMode - 2, 0, 8),
                     index => ChangeSetting(() => settings.GameplayBelowNoteMetricMode = Mathf.Clamp(index + 2, 2, 10)), false);
+            frameRateSettingsValue = SettingsOption("帧数上限", FrameRateSettings.Label(settings.FrameRateLimit),
+                () => ChangeFrameRateLimit(-1), () => ChangeFrameRateLimit(1));
+            SkinToggle("垂直同步帧率", "移动端由系统控制同步", settings.VerticalSync,
+                value => ChangeSetting(() => settings.VerticalSync = value, false));
             SkinToggle("显示帧数", "左下角显示实际渲染帧率", settings.ShowGameplayFps,
                 value => ChangeSetting(() => settings.ShowGameplayFps = value, false));
             SettingsSectionTitle("画面与背景", "亮度和歌曲封面背景", cyan);
@@ -2473,7 +2479,7 @@ namespace ChunithmMobile.Runtime
                 value => settings.BackgroundMusicVolume = Mathf.RoundToInt(value));
             SettingsAudioRow("按键音", settings.KeySoundEnabled, settings.KeySoundVolume,
                 value => settings.KeySoundEnabled = value, value => settings.KeySoundVolume = value,
-                () => PlaySettingsAudio("Audio/delay_ready", settings.KeySoundEnabled ? settings.KeySoundVolume / 100f : 0f));
+                () => PlaySettingsAudio("Audio/Judgement/cue_60", settings.KeySoundEnabled ? settings.KeySoundVolume / 100f : 0f));
             SettingsAudioRow("正解音", settings.AnswerSoundEnabled, settings.AnswerSoundVolume,
                 value => settings.AnswerSoundEnabled = value, value => settings.AnswerSoundVolume = value,
                 () => PlaySettingsAudio("Audio/se_touch_answer", settings.AnswerSoundEnabled ? settings.AnswerSoundVolume / 100f : 0f));
@@ -2730,6 +2736,21 @@ namespace ChunithmMobile.Runtime
             FitModText(valueLabel, 21);
             ButtonText("›", row, new Vector2(.88f, .20f), new Vector2(.96f, .80f), surface, next);
             return valueLabel;
+        }
+
+        private Text frameRateSettingsValue;
+
+        private void ChangeFrameRateLimit(int direction)
+        {
+            int next = FrameRateSettings.Step(settings.FrameRateLimit, direction);
+            if (next == settings.FrameRateLimit) return;
+            settings.FrameRateLimit = next;
+            settings.Save();
+            if (frameRateSettingsValue != null)
+                frameRateSettingsValue.text = FrameRateSettings.Label(next);
+            // The settings page remains uncapped; this value is applied when
+            // the next chart playback is scheduled.
+            FrameRateSettings.ApplyInterfaceFrameRate();
         }
 
         private void SettingsStepper(string title, Func<int> current, Action<int> changed)
@@ -3332,6 +3353,9 @@ namespace ChunithmMobile.Runtime
             ApplyGameplaySkinLayout(GameplaySkinManager.Style);
             ApplyGameplayLayoutOverrides(GameplaySkinManager.Style, draftSettings);
             ApplySkinInputAreas(GameplaySkinManager.Style, draftSettings);
+            ApplyGameplayVisibilitySettings(draftSettings);
+            gameplayTrackMask?.Configure(draftSettings.TrackMaskEnabled,
+                draftSettings.TrackMaskHeight, draftSettings.TrackMaskOpacity);
         }
 
         private static void SetLayoutEditorSliderValue(Slider slider, Text valueLabel, float value,
@@ -5141,6 +5165,7 @@ namespace ChunithmMobile.Runtime
 
         private void RefreshMods()
         {
+            RefreshModTextScale();
             SetModButton(fullscreenTouchpadButton, "全屏触控板", mods.FullscreenTouchpad);
             SetModButton(autoPlayButton, "全谱面 AUTO", mods.AutoPlay);
             SetModButton(airAreaAutoButton, "AIR 区域 AUTO", mods.AirAreaAuto, mods.FullscreenTouchpad);
@@ -5321,7 +5346,11 @@ namespace ChunithmMobile.Runtime
         {
             if (loading != null) yield return loading.HideAnimated(.3f);
             transitioning = false;
-            if (currentPage == AppPage.Gameplay) gameplaySession?.StartPreparedWithPreparation();
+            if (currentPage == AppPage.Gameplay) {
+                SetGameplayInputSuppressed(false);
+                SetGameplayJudgementSuppressed(false);
+                gameplaySession?.StartPreparedWithPreparation();
+            }
         }
 
         private IEnumerator HandleGameplayLoadFailure(RuntimeLoadingOverlay loading, string message)
@@ -5342,6 +5371,9 @@ namespace ChunithmMobile.Runtime
         {
             GameplaySkinEvents.PublishGameplayState(active);
             if (!active) {
+                // Restore uncapped interface pacing after gameplay, including
+                // result, song selection and settings pages.
+                FrameRateSettings.ApplyInterfaceFrameRate();
                 CancelGameplayResume();
                 SetGameplayInputSuppressed(false);
                 SetGameplayJudgementSuppressed(false);
@@ -5456,24 +5488,42 @@ namespace ChunithmMobile.Runtime
         private void RestartGameplay()
         {
             if (playedSong == null || playedChart == null || gameplaySession == null) return;
+            if (multiplayerInRound) return;
+            if (transitioning) return;
+            StartCoroutine(RestartGameplayThroughLoading());
+        }
+
+        private IEnumerator RestartGameplayThroughLoading()
+        {
+            transitioning = true;
             CancelGameplayResume();
             pauseTapPendingUntil = 0f;
-            SetGameplayInputSuppressed(false);
-            SetGameplayJudgementSuppressed(false);
+            SetGameplayInputSuppressed(true);
+            SetGameplayJudgementSuppressed(true);
             gameplayPausePanel.gameObject.SetActive(false);
             gameplayCountdown.text = "";
             playedDeltas.Clear();
-            CaptureGameplayTimingSettings();
-            // A replay is a new visual session, even when the gameplay page
-            // stays enabled. Old threshold edges must not survive the replay.
-            gameplaySkinCustomDisplay?.RefreshSkin();
+            gameplaySession.StopPlayback();
+            ClearGameplayVisuals();
+            RuntimeLoadingOverlay loading = FindObjectOfType<RuntimeLoadingOverlay>();
+            if (loading != null)
+                yield return loading.ShowAnimated("正在重新加载歌曲…", 0f, .2f);
+            else
+                yield return new WaitForSecondsRealtime(.2f);
+            // Restart the song actually being played, even if selection state
+            // changed while the gameplay screen remained alive.
+            selectedSong = playedSong;
+            selectedChart = playedChart;
+            PrepareSelectedGameplayScene();
+            loading?.SetProgress("正在重新读取谱面…", .04f);
             gameplaySession.PlaySong(playedSong, playedChart, mods.MusicRate, mods.AutoPlay,
                 mods.AirAreaAuto, mods.DirectionalAirAuto, mods.MineImmunity, mods.AirLongNoMotion,
                 musicOffsetMs: playedMusicOffsetMs, judgementOffsetMs: playedJudgeOffsetMs,
                 mirrorChart: mods.MirrorChart, nonMissJusticeCritical: mods.NonMissJusticeCritical,
                 flickAllTap: mods.FlickAllTap, uniformSpeed: mods.UniformSpeed,
-                onFailed: message => StartCoroutine(HandleGameplayLoadFailure(
-                    FindObjectOfType<RuntimeLoadingOverlay>(), message)));
+                onReady: () => StartCoroutine(RevealGameplayAfterLoading(loading)),
+                onFailed: message => StartCoroutine(HandleGameplayLoadFailure(loading, message)),
+                keepLoadingVisible: true, deferStart: true);
         }
 
         private void CaptureGameplayTimingSettings()
@@ -6239,6 +6289,10 @@ namespace ChunithmMobile.Runtime
         private void ApplyRuntimeSettings()
         {
             if (settings == null) return;
+            // Runtime settings are also used while building menus and loading
+            // a chart. Keep those pages uncapped until the playback scheduler
+            // applies the gameplay-only limit.
+            FrameRateSettings.ApplyInterfaceFrameRate();
             if (!string.Equals(GameplaySkinManager.Active.Id, settings.GameplaySkinId,
                     StringComparison.OrdinalIgnoreCase))
                 GameplaySkinManager.SetActive(settings.GameplaySkinId);
@@ -6343,6 +6397,9 @@ namespace ChunithmMobile.Runtime
             ApplyGameplayLayoutOverrides(gameplaySkin, settings);
             EnsureCoreGameplayHudVisible();
             ApplySkinInputAreas(gameplaySkin);
+            ApplyGameplayVisibilitySettings(settings);
+            gameplayTrackMask?.Configure(settings.TrackMaskEnabled,
+                settings.TrackMaskHeight, settings.TrackMaskOpacity);
             gameplayBackdrop?.Configure(settings.BackgroundBrightness / 100f, settings.JacketBackgroundOpacity / 100f);
             FindObjectOfType<RuntimeLoadingOverlay>()?.SetHighContrastPalette(HighContrastUi);
         }
@@ -6512,10 +6569,7 @@ namespace ChunithmMobile.Runtime
         private void OnGameplayJudged(ScheduledJudgePoint point, JudgementResult judgement)
         {
             gameplayChartRenderer?.MarkJudged(point.NoteIndex, point.PointIndex);
-            if (point.PointIndex == 0 && judgement.Grade == ChunithmMobile.Chart.Judgement.Miss &&
-                gameplayJudge != null && gameplayJudge.TryGetNote(point.NoteIndex, out ChartNote soundNote) &&
-                soundNote.Kind == NoteKind.Mine)
-                interfaceAudio?.PlayMineKeySound();
+
             if (delayCalibrationActive && delayCalibrationLive != null)
             {
                 bool calibrationMiss = judgement.Grade == ChunithmMobile.Chart.Judgement.Miss;
@@ -7026,6 +7080,10 @@ namespace ChunithmMobile.Runtime
         {
             bool rebuild = HighContrastUi;
             settings.Reset();
+            // Reset also restores automatic language selection. Rebuild the
+            // labels if it resolves to a different language from the old UI.
+            rebuild |= UiLocalization.Current != settings.EffectiveLanguage;
+            UiLocalization.SetLanguage(settings.EffectiveLanguage);
             if (rebuild) { RebuildUiForLanguage(); return; }
             ApplyRuntimeSettings();
             RenderSettingsCategory(false);
@@ -7520,7 +7578,10 @@ namespace ChunithmMobile.Runtime
         private static PinIconGraphic CreatePinVector(string name, Transform parent, Color color,
             Vector2 offset)
         {
-            var layer = new GameObject(name, typeof(RectTransform), typeof(PinIconGraphic));
+            // Graphic itself only requires RectTransform. Without a renderer,
+            // GraphicRaycaster throws while reading this icon's cull state and
+            // prevents pointer dispatch for the entire song-selection canvas.
+            var layer = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(PinIconGraphic));
             layer.transform.SetParent(parent, false);
             RectTransform rect = (RectTransform)layer.transform;
             rect.anchorMin = Vector2.zero;

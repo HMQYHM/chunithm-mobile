@@ -157,7 +157,8 @@ namespace ChunithmMobile.Editor
             string[] pluginPaths = {
                 "Assets/Plugins/iOS/ChunithmDocumentPicker.mm",
                 "Assets/Plugins/iOS/ChunithmWebSocket.mm",
-                "Assets/Plugins/iOS/ChunithmSceneDelegate.mm"
+                "Assets/Plugins/iOS/ChunithmSceneDelegate.mm",
+                "Assets/Plugins/iOS/ChunithmAudioSession.mm"
             };
             foreach (string pluginPath in pluginPaths)
             {
@@ -235,6 +236,7 @@ namespace ChunithmMobile.Editor
             project.SetBuildProperty(frameworkTarget, "IPHONEOS_DEPLOYMENT_TARGET", "15.0");
             project.SetBuildProperty(mainTarget, "ENABLE_BITCODE", "NO");
             project.SetBuildProperty(frameworkTarget, "ENABLE_BITCODE", "NO");
+            project.AddFrameworkToProject(frameworkTarget, "AVFoundation.framework", false);
             project.AddFrameworkToProject(frameworkTarget,
                 "UniformTypeIdentifiers.framework", false);
             project.AddFrameworkToProject(mainTarget,

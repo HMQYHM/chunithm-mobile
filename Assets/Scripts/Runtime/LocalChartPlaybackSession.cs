@@ -22,6 +22,23 @@ namespace ChunithmMobile.Runtime
     /// </summary>
     public sealed class LocalChartPlaybackSession : MonoBehaviour
     {
+        // 原版 ANSWER 队列有三类会实际触发 SE_TOUCH_ANSWER 的事件：
+        // 1=普通头部，2=长条尾/有效滑条节点，3=AIR 动作/阶梯节点。
+        // 合成到单轨时仍需保留类别，因为原版按类别各播放一次；同类同刻事件只合并一次。
+        private enum AnswerSoundCategory { Head = 1, LongNode = 2, AirAction = 3 }
+
+        private readonly struct AnswerSoundEvent
+        {
+            public readonly int StartFrame;
+            public readonly AnswerSoundCategory Category;
+
+            public AnswerSoundEvent(int startFrame, AnswerSoundCategory category)
+            {
+                StartFrame = startFrame;
+                Category = category;
+            }
+        }
+
         private readonly DspChartClock clock = new DspChartClock();
         private ChartPlaybackRenderer chartRenderer;
         private bool pauseRequested;
@@ -31,6 +48,10 @@ namespace ChunithmMobile.Runtime
         private AudioClip songClip;
         private AudioClip mixedSongClip;
         private ParsedChart loadedChart;
+        private bool fullAutoAudio;
+        private JudgementAudioBank judgementAudioBank;
+        private GameplayJudgementAudio judgementAudio;
+
         private bool completionRaised;
         private bool calibrationPlayback;
         private RuntimeLoadingOverlay loading;
@@ -83,6 +104,7 @@ namespace ChunithmMobile.Runtime
             // 先递增代次再释放旧会话。每个 await 返回后都会检查代次，防止旧任务写回新页面。
             int generation = ++playbackGeneration;
             ReleasePlayback();
+            fullAutoAudio = autoPlay;
             calibrationPlayback = string.Equals(selectedChart.Difficulty, "CALIBRATION", StringComparison.OrdinalIgnoreCase);
             lastAudioLoadError = null;
             Debug.Log($"Gameplay load begin: song={song.Name}, chart={selectedChart.Path}, " +
@@ -205,6 +227,8 @@ namespace ChunithmMobile.Runtime
 
             AudioClip decodedClip = null;
             AudioClip preparedMixedClip = null;
+            JudgementAudioBank preparedBank = null;
+            AudioClip answerClip = null;
             try {
                 int normalizedMusicOffset = Mathf.Clamp(musicOffsetMs, -500, 500);
                 AudioType audioType = SongAudioSet.GetUnityAudioType(source);
@@ -234,17 +258,23 @@ namespace ChunithmMobile.Runtime
                     $"frequency={decodedClip.frequency}Hz, channels={decodedClip.channels}, " +
                     $"length={decodedClip.length:F2}s, managed={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
                 loading?.SetProgress("正在按谱面合并正解音…", .96f);
-                AudioClip answerClip = null;
                 AppUiShell shell = FindObjectOfType<AppUiShell>();
+                if (shell != null && shell.JudgementSoundEnabled && shell.JudgementSoundVolume > 0f) {
+                    preparedBank = new JudgementAudioBank();
+                    await preparedBank.LoadAsync();
+                }
                 if (shell != null && shell.AnswerSoundEnabled && shell.AnswerSoundVolume > 0f)
                     answerClip = await LoadGameplaySkinAudioAsync("se_touch_answer.wav", AudioType.WAV);
                 if (generation >= 0 && !IsCurrentGeneration(generation)) {
+                    preparedBank?.Dispose();
                     if (answerClip != null && answerClip != Resources.Load<AudioClip>("Audio/se_touch_answer"))
                         Destroy(answerClip);
                     if (decodedClip != null) Destroy(decodedClip);
                     return false;
                 }
-                preparedMixedClip = BuildMixedSongClip(decodedClip, chart, answerClip);
+                preparedMixedClip = BuildMixedSongClip(decodedClip, chart, answerClip, normalizedMusicOffset, preparedBank);
+                if (fullAutoAudio && preparedBank != null && preparedMixedClip == null)
+                    throw new InvalidOperationException("Full AUTO audio mix failed; gameplay will not start with duplicate realtime cues.");
                 if (answerClip != null && answerClip != Resources.Load<AudioClip>("Audio/se_touch_answer"))
                     Destroy(answerClip);
                 if (generation >= 0 && !IsCurrentGeneration(generation)) {
@@ -252,6 +282,11 @@ namespace ChunithmMobile.Runtime
                     if (decodedClip != null) Destroy(decodedClip);
                     return false;
                 }
+                judgementAudioBank = preparedBank;
+                preparedBank = null;
+                judgementAudio = GetComponent<GameplayJudgementAudio>() ?? gameObject.AddComponent<GameplayJudgementAudio>();
+                judgementAudio.Bind(this, chart, judgementAudioBank, fullAutoAudio && preparedMixedClip != null,
+                    shell != null && shell.JudgementSoundEnabled ? shell.JudgementSoundVolume : 0f);
                 songClip = decodedClip;
                 mixedSongClip = preparedMixedClip;
                 if (mixedSongClip != null) {
@@ -261,6 +296,8 @@ namespace ChunithmMobile.Runtime
                     songClip = null;
                 }
                 songSource = gameObject.AddComponent<AudioSource>();
+                songSource.priority = 16;
+                songSource.spatialBlend = 0;
                 songSource.playOnAwake = false;
                 songSource.loop = false;
                 songSource.clip = mixedSongClip ?? songClip;
@@ -283,6 +320,8 @@ namespace ChunithmMobile.Runtime
                 return true;
             }
             catch (Exception exception) {
+                preparedBank?.Dispose();
+                if (answerClip != null && answerClip != Resources.Load<AudioClip>("Audio/se_touch_answer")) Destroy(answerClip);
                 if (generation >= 0 && !IsCurrentGeneration(generation)) {
                     if (preparedMixedClip != null) Destroy(preparedMixedClip);
                     if (decodedClip != null) Destroy(decodedClip);
@@ -341,6 +380,11 @@ namespace ChunithmMobile.Runtime
 
         private void SchedulePreparedPlaybackAtDsp(int musicOffsetMs, double baseDsp)
         {
+            // This is the single scheduling gate for normal, delayed,
+            // restarted, calibration and multiplayer playback. Apply the cap
+            // here so loading screens and menus remain uncapped, while every
+            // actual chart run uses the saved gameplay limit.
+            FrameRateSettings.ApplyGameplayFrameRate(AppSettings.Load());
             preparedMusicOffsetMs = Mathf.Clamp(musicOffsetMs, -500, 500);
             preparationEndDsp = baseDsp;
             double chartStartDsp = baseDsp;
@@ -359,105 +403,59 @@ namespace ChunithmMobile.Runtime
                       $"rawAudioDsp={rawAudioStartDsp:F3}, musicOffset={preparedMusicOffsetMs}ms");
         }
 
-        private AudioClip BuildMixedSongClip(AudioClip source, ParsedChart chart, AudioClip answer)
+        private AudioClip BuildMixedSongClip(AudioClip source, ParsedChart chart, AudioClip answer,
+            int musicOffsetMs, JudgementAudioBank feedback = null)
         {
             AppUiShell shell = FindObjectOfType<AppUiShell>();
-            // The shell owns the user-facing audio toggle and volume. The
-            // generated track is intentionally silent when the setting is off.
-            if (answer == null || chart == null || source == null || shell == null ||
-                !shell.AnswerSoundEnabled || shell.AnswerSoundVolume <= 0f)
-                return null;
-
-            try
-            {
-                int sourceChannels = Math.Max(1, source.channels);
-                int answerChannels = Math.Max(1, answer.channels);
-                int answerSampleCount = checked(answer.samples * answerChannels);
-                var answerData = new float[answerSampleCount];
-                if (!answer.GetData(answerData, 0))
-                {
-                    Debug.LogWarning("正解音合并失败：正解音没有可读 PCM 数据。");
-                    return null;
+            if (chart == null || source == null || shell == null) return null;
+            bool useAnswer = answer != null && shell.AnswerSoundEnabled && shell.AnswerSoundVolume > 0;
+            bool useFeedback = fullAutoAudio && feedback != null && shell.JudgementSoundEnabled && shell.JudgementSoundVolume > 0;
+            if (!useAnswer && !useFeedback) return null;
+            AudioClip mixed = null;
+            try {
+                int frequency = source.frequency, channels = source.channels;
+                var layers = new List<GameplayAudioMixLayer>();
+                int answerCount = 0, feedbackCount = 0;
+                if (useAnswer) {
+                    var sample = new GameplayAudioMixLayer(answer, frequency, 0, 0, false, 1);
+                    var events = BuildAnswerSoundEvents(chart, JudgePointScheduler.Build(chart),
+                        source.length * 1000.0, frequency, shell.AnswerSoundOffsetMs - musicOffsetMs);
+                    answerCount = events.Count;
+                    foreach (var cue in events)
+                        layers.Add(new GameplayAudioMixLayer(sample, cue.StartFrame * 1000.0 / frequency, 0, false, shell.AnswerSoundVolume));
                 }
-                var answerMono = new float[answer.samples];
-                for (int frame = 0; frame < answer.samples; frame++) {
-                    float sum = 0f;
-                    for (int channel = 0; channel < answerChannels; channel++)
-                        sum += answerData[frame * answerChannels + channel];
-                    answerMono[frame] = sum / answerChannels;
+                if (useFeedback) {
+                    var pcm = new Dictionary<int, GameplayAudioMixLayer>();
+                    foreach (var cue in AutoJudgementAudioPlan.Build(chart)) {
+                        if (!pcm.TryGetValue(cue.Cue, out var sample))
+                            pcm[cue.Cue] = sample = new GameplayAudioMixLayer(feedback.Get(cue.Cue), frequency, 0, 0, false, 1);
+                        // The music is scheduled musicOffsetMs after the chart.
+                        // Feedback follows chart time, ANSWER keeps its own user offset.
+                        layers.Add(new GameplayAudioMixLayer(sample, cue.StartMs - musicOffsetMs,
+                            cue.EndMs - musicOffsetMs, cue.Loop, shell.JudgementSoundVolume));
+                        feedbackCount++;
+                    }
                 }
-
-                List<ScheduledJudgePoint> points = JudgePointScheduler.Build(chart);
-                float musicVolume = Mathf.Clamp01(shell.GameplayMusicVolume);
-                float answerVolume = Mathf.Clamp01(shell.AnswerSoundVolume);
-                int answerOffsetMs = shell.AnswerSoundOffsetMs;
-                int frequency = Math.Max(1, source.frequency);
-                var answerStarts = new List<int>();
-                foreach (ScheduledJudgePoint point in points)
-                {
-                    ChartNote note = chart.Notes[point.NoteIndex];
-                    // One chart-timed cue per visible head, including mines.
-                    // KEEP checkpoints and hidden continuations do not add cues.
-                    if (!ShouldMergeAnswerSound(note, point)) continue;
-                    AddAnswerStart(answerStarts, source,
-                        point.TimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames) + answerOffsetMs, frequency);
-                }
-
-                // The tail is a sound event, not a scoring event. The original
-                // long-note lifecycle keeps its final visual tail separate from
-                // KEEP checkpoints, so add one chart-timed sound without adding
-                // a judgement point or changing the score total.
-                foreach (ChartNote note in chart.Notes)
-                {
-                    if (!ShouldMergeTailAnswerSound(note)) continue;
-                    AddAnswerStart(answerStarts, source,
-                        note.EndTimeMs + JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames) + answerOffsetMs, frequency);
-                }
-
-                int droppedAnswerSounds = LimitConcurrentAnswerSounds(answerStarts, 4);
-
-                AudioClip mixed = AudioClip.Create("Gameplay song with chart answer sounds",
-                    source.samples, sourceChannels, frequency, false);
+                mixed = AudioClip.Create(fullAutoAudio ? "Full AUTO music + ANSWER + judgement" : "Gameplay song with chart answer sounds",
+                    source.samples, channels, frequency, false);
                 const int chunkFrames = 32768;
-                int answerFramesAtSourceRate = Mathf.CeilToInt(answer.samples *
-                    (frequency / (float)Math.Max(1, answer.frequency)));
                 for (int offset = 0; offset < source.samples; offset += chunkFrames) {
                     int frames = Math.Min(chunkFrames, source.samples - offset);
-                    var chunk = new float[frames * sourceChannels];
-                    if (!source.GetData(chunk, offset)) {
-                        Destroy(mixed);
-                        Debug.LogWarning("正解音合并失败：MP3 没有可读 PCM 数据。");
-                        return null;
-                    }
-                    for (int sample = 0; sample < chunk.Length; sample++) chunk[sample] *= musicVolume;
-                    int chunkEnd = offset + frames;
-                    foreach (int answerStart in answerStarts) {
-                        int overlapStart = Math.Max(offset, answerStart);
-                        int overlapEnd = Math.Min(chunkEnd, answerStart + answerFramesAtSourceRate);
-                        if (overlapStart >= overlapEnd) continue;
-                        for (int sourceFrame = overlapStart; sourceFrame < overlapEnd; sourceFrame++) {
-                            int answerFrame = Mathf.Clamp(Mathf.FloorToInt((sourceFrame - answerStart) *
-                                (answer.frequency / (float)frequency)), 0, answerMono.Length - 1);
-                            float value = answerMono[answerFrame] * answerVolume;
-                            int chunkFrame = (sourceFrame - offset) * sourceChannels;
-                            for (int channel = 0; channel < sourceChannels; channel++)
-                                chunk[chunkFrame + channel] = Mathf.Clamp(chunk[chunkFrame + channel] + value, -1f, 1f);
-                        }
-                    }
-                    if (!mixed.SetData(chunk, offset)) {
-                        Destroy(mixed);
-                        return null;
-                    }
+                    var chunk = new float[frames * channels];
+                    if (!source.GetData(chunk, offset)) throw new InvalidOperationException("Unreadable song PCM");
+                    for (int i = 0; i < chunk.Length; i++) chunk[i] *= Mathf.Clamp01(shell.GameplayMusicVolume);
+                    foreach (var layer in layers) layer.AddTo(chunk, offset, channels);
+                    // Sum all layers first. A per-event clamp changes the result
+                    // with event order and destroys cancellation between layers.
+                    for (int i = 0; i < chunk.Length; i++) chunk[i] = Mathf.Clamp(chunk[i], -1, 1);
+                    if (!mixed.SetData(chunk, offset)) throw new InvalidOperationException("Cannot write mixed PCM");
                 }
-                Debug.Log($"Merged chart answer sounds into gameplay audio: answerPoints={answerStarts.Count}, " +
-                          $"concurrentLimit=4, droppedConcurrent={droppedAnswerSounds}, " +
-                          $"samples={source.samples}, channels={sourceChannels}, chunkFrames={chunkFrames}, " +
-                          $"managed={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
+                Debug.Log($"Gameplay audio mixed: fullAuto={fullAutoAudio}, answerEvents={answerCount}, " +
+                    $"feedbackEvents={feedbackCount}, samples={source.samples}, channels={channels}, frequency={frequency}Hz");
                 return mixed;
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning("正解音合并失败，将播放原歌曲：" + exception.Message);
+            } catch (Exception error) {
+                if (mixed != null) Destroy(mixed);
+                Debug.LogWarning("Gameplay audio mix failed: " + error.Message);
                 return null;
             }
         }
@@ -486,52 +484,91 @@ namespace ChunithmMobile.Runtime
             }
         }
 
-        private static bool ShouldMergeAnswerSound(ChartNote note, ScheduledJudgePoint point)
+        private static List<AnswerSoundEvent> BuildAnswerSoundEvents(ParsedChart chart,
+            List<ScheduledJudgePoint> points, double songDurationMs, int frequency, int answerOffsetMs)
         {
-            if (note == null || point.PointIndex != 0 || !note.VisibleHead) return false;
-            return note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or
-                NoteKind.Mine or NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or NoteKind.Air or NoteKind.AirHold or
-                NoteKind.AirAction;
-        }
+            var events = new List<AnswerSoundEvent>();
+            var unique = new HashSet<long>();
+            double timingOffsetMs = JudgementEngine.Frames(JudgementEngine.AnswerOffsetFrames) + answerOffsetMs;
+            if (chart == null || points == null || frequency <= 0) return events;
 
-        private static bool ShouldMergeTailAnswerSound(ChartNote note)
-        {
-            if (note == null || !note.VisibleTail || note.EndTimeMs <= note.TimeMs) return false;
-            return note.Kind is NoteKind.Hold or NoteKind.Slide or NoteKind.AirHold or NoteKind.AirAction;
-        }
+            foreach (ScheduledJudgePoint point in points) {
+                if (point.NoteIndex < 0 || point.NoteIndex >= chart.Notes.Count) continue;
+                ChartNote note = chart.Notes[point.NoteIndex];
+                if (note == null) continue;
 
-        private static bool AddAnswerStart(List<int> starts, AudioClip source, double timeMs, int frequency)
-        {
-            if (timeMs < 0 || timeMs >= source.length * 1000.0) return false;
-            int startFrame = Mathf.Clamp(Mathf.RoundToInt((float)(timeMs * frequency / 1000.0)), 0, source.samples - 1);
-            starts.Add(startFrame);
-            return true;
-        }
-
-        private static int LimitConcurrentAnswerSounds(List<int> starts, int maximumAtOneFrame)
-        {
-            if (starts == null || starts.Count <= maximumAtOneFrame) return 0;
-            starts.Sort();
-            int write = 0;
-            int previousFrame = -1;
-            int frameCount = 0;
-            int dropped = 0;
-            for (int read = 0; read < starts.Count; read++)
-            {
-                int frame = starts[read];
-                if (frame != previousFrame) {
-                    previousFrame = frame;
-                    frameCount = 0;
-                }
-                if (frameCount >= maximumAtOneFrame) {
-                    dropped++;
-                    continue;
-                }
-                starts[write++] = frame;
-                frameCount++;
+                AnswerSoundCategory category;
+                if (!TryGetAnswerSoundCategory(note, point, out category)) continue;
+                AddAnswerEvent(events, unique, point.TimeMs + timingOffsetMs,
+                    category, songDurationMs, frequency);
             }
-            if (write < starts.Count) starts.RemoveRange(write, starts.Count - write);
-            return dropped;
+
+            // Slide checkpoint ownership is a chart-node property, not a
+            // KEEP sample property. Schedule it at the authored node time so
+            // allocating extra continuous judge points cannot move the cue.
+            foreach (ChartNote note in chart.Notes) {
+                if (note == null || note.Kind != NoteKind.Slide || note.VisibleHead ||
+                    !note.IsSlideCheckpoint || note.OriginalType is not ("SLD" or "SXD")) continue;
+                AddAnswerEvent(events, unique, note.TimeMs + timingOffsetMs,
+                    AnswerSoundCategory.LongNode, songDurationMs, frequency);
+            }
+
+            // HOLD/HEAVEN HOLD have a separate category-2 endpoint. SLIDE
+            // endpoints are added only through their authored checkpoint flag;
+            // a geometric tail alone is not an ANSWER event in the original.
+            foreach (ChartNote note in chart.Notes) {
+                if (note == null || !note.VisibleTail || note.EndTimeMs <= note.TimeMs) continue;
+                if (note.Kind is NoteKind.Hold or NoteKind.HeavenHold)
+                    AddAnswerEvent(events, unique, note.EndTimeMs + timingOffsetMs,
+                        AnswerSoundCategory.LongNode, songDurationMs, frequency);
+            }
+            events.Sort((left, right) => {
+                int frame = left.StartFrame.CompareTo(right.StartFrame);
+                return frame != 0 ? frame : left.Category.CompareTo(right.Category);
+            });
+            return events;
+        }
+
+        private static bool TryGetAnswerSoundCategory(ChartNote note, ScheduledJudgePoint point,
+            out AnswerSoundCategory category)
+        {
+            category = 0;
+            // MINE remains part of the combo/checker path, but the original
+            // normal-note binding explicitly excludes type 11 from ANSWER.
+            if (note == null || note.Kind == NoteKind.Mine) return false;
+
+            // ALD plates, ASD endpoint notes and AIR long action checkpoints
+            // use category 3. They must not also receive a generic category-1
+            // head cue when their visual cap is present.
+            if (note.Kind == NoteKind.AirAction &&
+                (note.OriginalType is "ALD" or "ASD_NODE" || !note.VisibleHead || point.PointIndex > 0)) {
+                category = AnswerSoundCategory.AirAction;
+                return true;
+            }
+            if (note.Kind == NoteKind.AirHold && (!note.VisibleHead || point.PointIndex > 0)) {
+                category = AnswerSoundCategory.AirAction;
+                return true;
+            }
+
+            if (point.PointIndex != 0 || !note.VisibleHead) return false;
+            if (note.Kind is NoteKind.Tap or NoteKind.ExTap or NoteKind.Flick or
+                NoteKind.Hold or NoteKind.HeavenHold or NoteKind.Slide or NoteKind.Air or
+                NoteKind.AirHold or NoteKind.AirAction) {
+                category = AnswerSoundCategory.Head;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool AddAnswerEvent(List<AnswerSoundEvent> events, HashSet<long> unique,
+            double timeMs, AnswerSoundCategory category, double songDurationMs, int frequency)
+        {
+            if (timeMs < 0 || timeMs >= songDurationMs) return false;
+            int startFrame = Math.Max(0, Mathf.RoundToInt((float)(timeMs * frequency / 1000.0)));
+            long key = ((long)startFrame << 8) | (byte)category;
+            if (!unique.Add(key)) return false;
+            events.Add(new AnswerSoundEvent(startFrame, category));
+            return true;
         }
 
         private static string FindSongRoot(string chartPath)
@@ -566,6 +603,7 @@ namespace ChunithmMobile.Runtime
             if (clock.TimeMs < playbackEndMs + completionDelayMs) return;
             completionRaised = true;
             if (songSource != null) songSource.Stop();
+            judgementAudio?.Silence();
             Debug.Log($"Chart playback completed: chartEnd={loadedChart.DurationMs:F1}ms, " +
                 $"audioEnd={playbackEndMs:F1}ms, delay={completionDelayMs:F1}ms, rate={clock.Rate:F2}");
             PlaybackCompleted?.Invoke();
@@ -583,6 +621,7 @@ namespace ChunithmMobile.Runtime
                 else songSource.Pause();
             }
             clock.Pause();
+            judgementAudio?.Silence();
         }
 
         /// <summary>
@@ -646,6 +685,10 @@ namespace ChunithmMobile.Runtime
 
         private void ReleasePlayback()
         {
+            judgementAudio?.Clear();
+            judgementAudioBank?.Dispose();
+            judgementAudioBank = null;
+            fullAutoAudio = false;
             pauseRequested = applicationPaused || !applicationFocused;
             pausedPreparationRemaining = 0;
             preparationEndDsp = 0;

@@ -68,6 +68,10 @@ namespace ChunithmMobile.Editor
                 ToggleFromDetail(Get<Button>(shell, "fullscreenTouchpadButton"));
                 Require(!settings.FullscreenTouchpad && !settings.AirAreaAuto && !settings.DirectionalAirAuto,
                     "fullscreen touchpad did not restore prior AIR helper states");
+                Get<Button>(shell, "uniformSpeedButton").onClick.Invoke();
+                Text uniformDescription = single.GetComponentsInChildren<Text>(true).First(t =>
+                    t.text.Contains("不受谱面变速影响"));
+                Require(uniformDescription != null, "uniform speed fell back to music-rate description");
                 List<Button> speeds = Get<List<Button>>(shell, "rateButtons");
                 ToggleFromDetail(speeds[0]);
                 ToggleFromDetail(speeds[2]);
@@ -128,17 +132,18 @@ namespace ChunithmMobile.Editor
                         single.gameObject.SetActive(true);
                         multi.gameObject.SetActive(false);
                         Invoke(shell, "RefreshMods");
-                        Capture(camera, canvas, single, size, $"Build/mods-single-{highContrast}-{language}-{size.x}.png");
+                        Get<Button>(shell, "autoPlayButton").onClick.Invoke();
+                        Capture(shell, camera, canvas, single, size, $"Build/mods-single-{highContrast}-{language}-{size.x}.png");
                         single.gameObject.SetActive(false);
                         multi.gameObject.SetActive(true);
                         foreach (string mode in new[] { "normal", "casual" }) {
                             Set(shell, "multiplayerCreateMode", mode);
                             Invoke(shell, "RefreshMultiplayerModPickerV2");
-                            Capture(camera, canvas, multi, size, $"Build/mods-{mode}-{highContrast}-{language}-{size.x}.png");
+                            Capture(shell, camera, canvas, multi, size, $"Build/mods-{mode}-{highContrast}-{language}-{size.x}.png");
                         }
                     }
                 }
-                Debug.Log("MOD dialog regression passed: score classes, reset, exclusive/deselectable speeds, legacy migration, normal/casual permissions, 54 UI captures across two palettes, three languages and three landscape aspect ratios.");
+                Debug.Log("MOD dialog regression passed: score classes, reset, exclusive/deselectable speeds, legacy migration, normal/casual permissions, 72 UI captures across two palettes, four languages and three landscape aspect ratios.");
             }
             finally {
                 UiLocalization.SetLanguage(previous);
@@ -147,7 +152,7 @@ namespace ChunithmMobile.Editor
             }
         }
 
-        private static void Capture(Camera camera, Canvas canvas, RectTransform layer, Vector2Int size, string path)
+        private static void Capture(AppUiShell shell, Camera camera, Canvas canvas, RectTransform layer, Vector2Int size, string path)
         {
             float scale = Mathf.Pow(size.x / 1920f, .55f) * Mathf.Pow(size.y / 1080f, .45f);
             ((RectTransform)canvas.transform).sizeDelta = new Vector2(size.x / scale, size.y / scale);
@@ -159,6 +164,8 @@ namespace ChunithmMobile.Editor
             try {
                 camera.targetTexture = target;
                 Canvas.ForceUpdateCanvases();
+                Invoke(shell, "RefreshModTextScale");
+                Canvas.ForceUpdateCanvases();
                 RectTransform body = (RectTransform)layer.GetChild(0);
                 var content = body.Cast<Transform>().Where(t => t.GetComponent<Button>() != null || t.GetComponent<Text>() != null)
                     .Select(t => (RectTransform)t).ToArray();
@@ -168,6 +175,11 @@ namespace ChunithmMobile.Editor
                 RectTransform list = (RectTransform)body.Find("MOD list panel");
                 RectTransform details = (RectTransform)body.Find("MOD details");
                 Require(!Bounds(list).Overlaps(Bounds(details)), "MOD list overlaps detail pane: " + path);
+                RectTransform grid = (RectTransform)body.Find("MOD list panel/MOD list viewport/MOD list content");
+                Require(grid.sizeDelta.y < 750, "MOD list retained excessive bottom space: " + path);
+                var cards = list.GetComponentsInChildren<Button>().Select(b => (RectTransform)b.transform).ToArray();
+                for (int i=0; i<cards.Length; i++) for (int j=i+1; j<cards.Length; j++)
+                    Require(!Bounds(cards[i]).Overlaps(Bounds(cards[j])), "MOD grid cards overlap: " + path);
                 foreach (Button button in list.GetComponentsInChildren<Button>())
                     Require(button.transform.Find("Status dot") != null, "MOD list entry is missing its state dot");
                 foreach (Text text in layer.GetComponentsInChildren<Text>()) {
@@ -175,6 +187,14 @@ namespace ChunithmMobile.Editor
                     text.cachedTextGenerator.Populate(text.text, settings);
                     Require(text.cachedTextGenerator.characterCountVisible > 0, "MOD label is blank: " + text.text);
                 }
+                ScrollRect descriptionScroll = details.Find("MOD description viewport").GetComponent<ScrollRect>();
+                Require(descriptionScroll != null && !descriptionScroll.horizontal,
+                    "MOD explanations have no vertical scroll fallback");
+                var explanations = descriptionScroll.content.GetComponentsInChildren<Text>();
+                Require(explanations.Length == 2 && explanations.All(t => !t.resizeTextForBestFit && t.fontSize >= 22),
+                    "MOD explanations were shrunk to unreadable sizes");
+                Require(explanations[0].rectTransform.rect.height >= explanations[0].preferredHeight - 1,
+                    "MOD explanation text is vertically clipped");
                 camera.Render();
                 RenderTexture.active = target;
                 image.ReadPixels(new Rect(0, 0, size.x, size.y), 0, 0);

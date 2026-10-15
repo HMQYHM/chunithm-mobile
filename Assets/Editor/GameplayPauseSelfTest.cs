@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Reflection;
 using System.IO;
 using System.Text;
@@ -98,6 +99,22 @@ namespace ChunithmMobile.Editor
                     UnityEngine.Object.DestroyImmediate(source.clip);
                     Set(session, "songSource", null);
                 }
+
+                // Run the restart entry up to its first loading yield. The old
+                // paused session must be released before any new file reads.
+                Set(shell, "playedSong", new SongEntry { Name = "Restart test" });
+                Set(shell, "playedChart", new SongChartEntry { Path = "restart-test.c2s" });
+                Set(session, "loadedChart", chart);
+                clock.Play(5000);
+                panel.SetActive(true);
+                var restart = (IEnumerator)typeof(AppUiShell).GetMethod("RestartGameplayThroughLoading", Private)
+                    .Invoke(shell, null);
+                Require(restart.MoveNext(), "restart bypassed loading transition");
+                Require(!clock.Playing && Get(session, "loadedChart") == null && !panel.activeSelf &&
+                    (bool)Get(shell, "transitioning"), "restart retained old playback or pause controls");
+                Require(restart.Current is WaitForSecondsRealtime || restart.Current is IEnumerator,
+                    "restart did not yield to a loading frame");
+                Set(shell, "transitioning", false);
 
                 clock.Play();
                 panel.SetActive(false);

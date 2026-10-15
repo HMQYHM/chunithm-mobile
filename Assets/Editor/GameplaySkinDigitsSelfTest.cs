@@ -48,7 +48,10 @@ namespace ChunithmMobile.Editor
                 Require(text.color.a == 0f && root.transform.childCount == 1,
                     "complete digit value did not switch to image rendering");
                 text.text = "13\nCOMBO";
-                renderer.SendMessage("LateUpdate");
+                // SendMessage trips ShouldRunBehaviour in batch edit mode. Invoke the
+                // same update method directly so fallback verification is clean.
+                typeof(GameplaySkinDigitRenderer).GetMethod("LateUpdate",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(renderer, null);
                 Require(text.color.a > 0f, "missing digit did not restore text fallback");
                 Debug.Log("Gameplay skin digit regression passed: import, PNG lookup, image rendering and text fallback.");
             }

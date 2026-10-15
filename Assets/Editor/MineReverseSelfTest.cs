@@ -41,22 +41,20 @@ namespace ChunithmMobile.Editor
                 "AIR\t1\t0\t8\t2\nASD\t1\t0\t12\t2\t0\t3\t192\t12\t2\t3\n";
             using var data = new MemoryStream(Encoding.UTF8.GetBytes(records));
             ParsedChart chart = C2sParser.Parse(data);
-            var merge = typeof(LocalChartPlaybackSession).GetMethod("ShouldMergeAnswerSound", Static);
-            var starts = new List<int>();
             int mines = 0;
-            foreach (var point in JudgePointScheduler.Build(chart)) {
+            List<ScheduledJudgePoint> points = JudgePointScheduler.Build(chart);
+            foreach (var point in points) {
                 if (chart.Notes[point.NoteIndex].Kind != NoteKind.Mine) continue;
                 mines++;
-                Require((bool)merge.Invoke(null, new object[] { chart.Notes[point.NoteIndex], point }),
-                    "mine missing from answer timeline");
-                Require(!(bool)merge.Invoke(null, new object[] { chart.Notes[point.NoteIndex],
-                    new ScheduledJudgePoint(point.NoteIndex, 1, point.TimeMs) }), "duplicate mine cue");
+                var mineOnly = new ParsedChart(new List<ChartNote> { chart.Notes[point.NoteIndex] },
+                    10000, chart.Bpm, 1, new List<ScrollEvent>(),
+                    new Dictionary<int, List<ScrollEvent>>(), new List<ScrollAssignment>());
+                Require(!ContainsAnswerEvent(mineOnly,
+                    new List<ScheduledJudgePoint> { new ScheduledJudgePoint(0, 0, point.TimeMs) }, 0),
+                    "mine incorrectly entered the answer timeline");
             }
             Require(mines == 1, "mine scheduler fixture failed");
-            starts.AddRange(new[] { 100, 100, 100, 100, 100, 100, 200 });
-            int dropped = (int)typeof(LocalChartPlaybackSession).GetMethod("LimitConcurrentAnswerSounds", Static)
-                .Invoke(null, new object[] { starts, 4 });
-            Require(dropped == 2 && starts.Count == 5, "four-cue mix limit changed");
+            VerifyAnswerCategoriesAndSameCategoryMerge();
 
             GameplaySkinManager.Initialize(GameplaySkinManager.BuiltinId);
             var root = new GameObject("Mine reverse regression");
@@ -100,8 +98,57 @@ namespace ChunithmMobile.Editor
                 audio.Configure(false, 1, true, 1, 1);
                 audio.PlayMineKeySound();
                 Require(!key.isPlaying, "disabled key sound played");
-                Debug.Log("Mine/reverse tests passed: mine cue, duplicate suppression, four-cue limit, reverse heads/tails, normal approach, judgement lifetime, key source and toggle.");
+                Debug.Log("Mine/reverse tests passed: mine exclusion, category answer events, same-category merge, reverse heads/tails, normal approach, judgement lifetime, key source and toggle.");
             } finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        private static bool ContainsAnswerEvent(ParsedChart chart, List<ScheduledJudgePoint> points, int noteIndex)
+        {
+            var builder = typeof(LocalChartPlaybackSession).GetMethod("BuildAnswerSoundEvents", Static);
+            var events = (IList)builder.Invoke(null, new object[] { chart, points, 10000d, 48000, 0 });
+            foreach (object answerEvent in events) {
+                int frame = (int)answerEvent.GetType().GetField("StartFrame").GetValue(answerEvent);
+                double expected = points.Find(point => point.NoteIndex == noteIndex).TimeMs;
+                if (Math.Abs(frame - expected * 48d) < 1) return true;
+            }
+            return false;
+        }
+
+        private static void VerifyAnswerCategoriesAndSameCategoryMerge()
+        {
+            var notes = new List<ChartNote> {
+                new ChartNote { Kind = NoteKind.Tap, TimeMs = 1000, VisibleHead = true },
+                new ChartNote { Kind = NoteKind.Tap, TimeMs = 1000, VisibleHead = true },
+                new ChartNote { Kind = NoteKind.Mine, TimeMs = 1000, VisibleHead = true },
+                new ChartNote { Kind = NoteKind.Hold, TimeMs = 2000, EndTimeMs = 2500, VisibleHead = true, VisibleTail = true },
+                new ChartNote { Kind = NoteKind.Slide, OriginalType = "SLD", TimeMs = 3000, IsSlideCheckpoint = true, VisibleHead = false },
+                new ChartNote { Kind = NoteKind.AirAction, OriginalType = "ALD", TimeMs = 4000, VisibleHead = true },
+                new ChartNote { Kind = NoteKind.AirHold, TimeMs = 5000, VisibleHead = false }
+            };
+            var chart = new ParsedChart(notes, 7000, 120, notes.Count,
+                new List<ScrollEvent>(), new Dictionary<int, List<ScrollEvent>>(), new List<ScrollAssignment>());
+            var points = new List<ScheduledJudgePoint>();
+            for (int i = 0; i < notes.Count; i++) points.Add(new ScheduledJudgePoint(i, 0, notes[i].TimeMs));
+            var builder = typeof(LocalChartPlaybackSession).GetMethod("BuildAnswerSoundEvents", Static);
+            var events = (IList)builder.Invoke(null, new object[] { chart, points, 7000d, 48000, 0 });
+            Require(events.Count == 6, "answer event count or same-category merge changed");
+
+            var categories = new HashSet<int>();
+            foreach (object answerEvent in events)
+                categories.Add((int)answerEvent.GetType().GetField("Category").GetValue(answerEvent));
+            Require(categories.Contains(1) && categories.Contains(2) && categories.Contains(3),
+                "answer event categories are incomplete");
+
+            var shifted = (IList)builder.Invoke(null, new object[] { chart, points, 7000d, 48000, 37 });
+            int shiftedHead = int.MaxValue;
+            foreach (object answerEvent in shifted) {
+                int category = (int)answerEvent.GetType().GetField("Category").GetValue(answerEvent);
+                if (category != 1) continue;
+                shiftedHead = Math.Min(shiftedHead,
+                    (int)answerEvent.GetType().GetField("StartFrame").GetValue(answerEvent));
+            }
+            Require(shiftedHead == 48976,
+                "answer event offset did not use the requested sample time");
         }
 
         private static GameObject Part(object visual, string name) =>

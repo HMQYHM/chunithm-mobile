@@ -34,12 +34,11 @@ namespace ChunithmMobile.Runtime
         {
             vertices.Clear();
             Rect rect = rectTransform.rect;
-            float fadeTop = Mathf.Lerp(rect.yMin, rect.yMax, .24f);
-            Color clear = new Color(.004f, .008f, .014f, 0f);
             Color dark = new Color(.004f, .008f, .014f, opacity);
-
-            AddStrip(vertices, rect.xMin, rect.xMax, rect.yMin, fadeTop, clear, dark);
-            AddStrip(vertices, rect.xMin, rect.xMax, fadeTop, rect.yMax, dark, dark);
+            // This layer is a complete cover over the selected track region.
+            // The old lower transparent strip only darkened one section, so
+            // notes farther behind it remained visible when the handle moved.
+            AddStrip(vertices, rect.xMin, rect.xMax, rect.yMin, rect.yMax, dark, dark);
         }
 
         private static void AddStrip(VertexHelper vertices, float left, float right, float bottom, float top,

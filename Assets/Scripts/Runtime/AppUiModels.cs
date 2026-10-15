@@ -123,7 +123,7 @@ namespace ChunithmMobile.Runtime
     [Serializable]
     public sealed class AppSettings
     {
-        public int SettingsVersion = 25;
+        public int SettingsVersion = 26;
         // -1 follows the system. 0 is Simplified Chinese, 1 is Traditional Chinese, 2 is English, 3 is Japanese.
         public int LanguageMode = -1;
         public int MusicVolume = 100;
@@ -134,6 +134,9 @@ namespace ChunithmMobile.Runtime
         public int AnswerSoundVolume = 80;
         public int AnswerSoundOffsetMs;
         public int DspBufferSize = 512;
+        // 0 follows the display refresh rate without an application cap.
+        public int FrameRateLimit;
+        public bool VerticalSync;
         public bool ShowGameplayFps = true;
         // MusicOffsetMs moves the song audio relative to the chart clock.
         // JudgeOffsetMs moves only the input judgement reference point.
@@ -274,7 +277,11 @@ namespace ChunithmMobile.Runtime
                     value.GameplayBelowNoteMetricMode = 3;
                 }
                 if (value.SettingsVersion < 24) value.GameplayBelowNoteMetricMode = 3;
-                value.SettingsVersion = 25;
+                if (value.SettingsVersion < 26) {
+                    value.FrameRateLimit = 0;
+                    value.VerticalSync = false;
+                }
+                value.SettingsVersion = 26;
                 value.BackgroundBrightness = UnityEngine.Mathf.Clamp(value.BackgroundBrightness, 0, 100);
                 value.GameplayJudgementX = UnityEngine.Mathf.Clamp(value.GameplayJudgementX, 5, 95);
                 value.GameplayJudgementY = UnityEngine.Mathf.Clamp(value.GameplayJudgementY, 5, 95);
@@ -286,6 +293,7 @@ namespace ChunithmMobile.Runtime
                 value.KeySoundVolume = UnityEngine.Mathf.Clamp(value.KeySoundVolume, 0, 100);
                 value.AnswerSoundVolume = UnityEngine.Mathf.Clamp(value.AnswerSoundVolume, 0, 100);
                 value.DspBufferSize = NormalizeDspBufferSize(value.DspBufferSize);
+                value.FrameRateLimit = FrameRateSettings.NormalizeLimit(value.FrameRateLimit);
                 if (value.NoteSpeed <= 0) {
                     value.NoteSpeed = 100;
                     value.TrackVerticalOffset = 12;
@@ -374,63 +382,11 @@ namespace ChunithmMobile.Runtime
 
         public void Reset()
         {
-            LanguageMode = -1;
-            MusicVolume = 100;
-            BackgroundMusicVolume = 100;
-            KeySoundEnabled = true;
-            KeySoundVolume = 80;
-            AnswerSoundEnabled = true;
-            AnswerSoundVolume = 80;
-            DspBufferSize = 512;
-            MusicOffsetMs = 0;
-            JudgeOffsetMs = 0;
-            GameplayPauseX = 5;
-            GameplayPauseY = 93;
-            GameplayPauseScale = 100;
-            PauseRequiresDoubleTap = false;
-            BackgroundBrightness = 0;
-            ShowJusticeCriticalMs = true;
-            ShowJusticeMs = true;
-            ShowAttackMs = true;
-            ExcludeMissFromAverage = true;
-            ShowTouchFeedback = true;
-            ShowAirGuide = true;
-            ShowGameplaySongInfo = true;
-            JacketBackgroundOpacity = 42;
-            TouchpadHeight = 17;
-            TouchpadWidth = 100;
-            TouchpadOpacity = 100;
-            TouchEffectOpacity = 100;
-            TouchContactRangeTenths = 10;
-            GroundAreaHeight = 17;
-            AirAreaBottom = 17;
-            AirAreaTop = 96;
-            TrackVerticalOffset = 12;
-            TrackWidth = 100;
-            TrackTopWidth = 100;
-            TrackMaskEnabled = false;
-            TrackMaskHeight = 16;
-            TrackMaskOpacity = 90;
-            NoteSpeedOption = OriginalNoteSpeed.DefaultOption;
-            NoteSpeed = 100;
-            GameplayHudX = 88;
-            GameplayHudY = 89;
-            GameplayScoreScale = 100;
-            GameplayComboX = 50;
-            GameplayComboY = 51;
-            GameplayComboScale = 100;
-            GameplayJudgementX = 50;
-            GameplayJudgementY = 41;
-            GameplayJudgementScale = 100;
-            GameplaySongInfoX = 16;
-            GameplaySongInfoY = 91;
-            GameplaySongInfoScale = 100;
-            GameplayBelowNoteMetricMode = 3;
-            GameplayTargetRank = 0;
-            EmojiBackground = false;
-            BackgroundSkinMode = 0;
-            HighContrastUi = false;
-            GameplaySkinId = GameplaySkinManager.BuiltinId;
+            // Use the same defaults as a fresh installation, including newer
+            // audio, visibility and per-skin layout fields. A second handwritten
+            // defaults list silently left those preferences behind on reset.
+            UnityEngine.JsonUtility.FromJsonOverwrite(
+                UnityEngine.JsonUtility.ToJson(new AppSettings()), this);
             Save();
         }
 
@@ -467,6 +423,10 @@ namespace ChunithmMobile.Runtime
         public float ReferenceWidth;
         public float ReferenceHeight;
         public bool Visible = true;
+        // The song cover is a child of songInfo by default. This is only true
+        // after the user explicitly edits the cover in the generic layout
+        // selector; otherwise it must continue to follow its parent.
+        public bool Independent;
     }
 
     [Serializable]
