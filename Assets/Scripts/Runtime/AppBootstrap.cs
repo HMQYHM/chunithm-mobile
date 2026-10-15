@@ -79,11 +79,30 @@ namespace ChunithmMobile.Runtime
                 Debug.LogError("Unable to create first-run application folders: " + exception);
             }
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
+            ApplyStartupFrameRate();
             IPlatformServices platform = PlatformServices.Current;
             Debug.Log($"CHUNITHM Mobile {Application.version} Unity prototype | {platform.DisplayName} | " +
                       $"{SystemInfo.graphicsDeviceType} | {SystemInfo.processorType} | " +
                       $"display={Screen.currentResolution.refreshRateRatio.value:F2}Hz | " +
+                      $"startupTarget={Application.targetFrameRate}fps | " +
                       $"safeArea={platform.SafeAreaPixels}");
+        }
+
+        private static void ApplyStartupFrameRate()
+        {
+            // Android/iOS otherwise fall back to Unity's 30 FPS default. Sample
+            // the display once at launch; menus, playback and settings must not
+            // overwrite this value or change the device's display mode/vsync.
+            Application.targetFrameRate = ResolveStartupFrameRate(Screen.currentResolution.refreshRateRatio.value);
+        }
+
+        private static int ResolveStartupFrameRate(double refreshHz)
+        {
+            if (double.IsNaN(refreshHz) || double.IsInfinity(refreshHz) || refreshHz < 1 || refreshHz > int.MaxValue)
+                return 60;
+            // Round upward: requesting less than a fractional display rate can
+            // make Unity's mobile scheduler choose a lower refresh-rate divisor.
+            return (int)Math.Ceiling(refreshHz);
         }
 
         private static ScreenOrientation ResolveLaunchOrientation()

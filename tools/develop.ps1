@@ -52,6 +52,7 @@ $buildDir = Join-Path $buildRoot 'Android'
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $testMarkers = @{
+    AppBootstrapSelfTest = 'App bootstrap regression passed:'
     TrackMaskSelfTest = 'Track mask regression passed:'
     JudgementAudioSelfTest = 'Judgement audio regression passed:'
     UiFullRegressionSelfTest = 'UI full regression passed:'
