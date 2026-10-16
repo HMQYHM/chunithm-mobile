@@ -17,6 +17,12 @@ using UnityEngine;
 
 namespace ChunithmMobile.Editor
 {
+    // Separate test entry keeps the reported chart/speed reproduction
+    // independently runnable by the repository's normal test command.
+    public static class PandoraRibbonMotionSelfTest
+    {
+        public static void Run() => LongRibbonMotionAudit.RunPandora();
+    }
     // Diagnostic replay only: feeds the real DSP clock and LateUpdate path at
     // deterministic display cadences, renders actual materials, and records
     // body changes on judgement callbacks. Does not alter runtime behavior.
@@ -26,6 +32,96 @@ namespace ChunithmMobile.Editor
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         private sealed class AudioTime : IAudioTimeSource { public double Seconds { get; set; } }
         private static EditorApplication.CallbackFunction liveTick;
+        // Reproduce the seven overlapping opening slides at the reported
+        // visible speed; the KING short-zigzag probe is not equivalent.
+        public static void RunPandora()
+        {
+            string output = Environment.GetEnvironmentVariable("CHUNITHM_RIBBON_AUDIT") ?? "Build/pandora-motion-audit";
+            Directory.CreateDirectory(output);
+            GameplaySkinManager.Initialize(GameplaySkinManager.BuiltinId);
+            ChartSpace.SetFarWidthPercent(100);
+            var chart = C2sParser.Parse(Environment.GetEnvironmentVariable("CHUNITHM_CHART_PATH"));
+            File.WriteAllLines(Path.Combine(output, "opening-notes.tsv"), chart.Notes.Select((n, i) =>
+                string.Format(Inv, "{0}\t{1}\t{2:F6}\t{3:F6}\t{4}\t{5}\t{6}\t{7}\t{8}",
+                    i,n.OriginalType,n.TimeMs,n.EndTimeMs,n.Lane,n.Width,n.EndLane,n.EndWidth,n.LongChainId))
+                .Take(70));
+            var summary = new StringBuilder("scenario\tframeRate\tframes\tjudgeCallbacks\tbodyChangesAtJudge\tinvalidVertices\tmaxFrontDeltaPixels\tcacheMutationChecksFailed\tqualityAA\n");
+            int quality = QualitySettings.GetQualityLevel();
+            try {
+                foreach (float speed in new[] { 4.8f, 8f })
+                    Replay(chart, "pandora-" + speed.ToString("0.0", Inv), 2200, 14000, 60, true, output, summary, speed);
+                QualitySettings.SetQualityLevel(2, false);
+                Replay(chart, "pandora-mobile-8.0", 2200, 14000, 60, true, output, summary, 8f);
+            } finally { QualitySettings.SetQualityLevel(quality, false); }
+            File.WriteAllText(Path.Combine(output,"summary.tsv"), summary.ToString());
+            VerifyPandoraMotion(output);
+            CapturePandoraLayers(chart, output);
+            Debug.Log("Pandora ribbon motion audit completed: " + output);
+        }
+        private static void CapturePandoraLayers(ParsedChart chart, string output)
+        {
+            var root = new GameObject("Pandora layers"); var renderer = Create(root);
+            renderer.VisualSpeed = OriginalNoteSpeed.VisualMultiplier(80);
+            renderer.Bind(chart, new DspChartClock()); renderer.RefreshSkin();
+            var camera=Camera(root);var rt=new RenderTexture(960,540,24);
+            var texture=new Texture2D(960,540,TextureFormat.RGB24,false);camera.targetTexture=rt;
+            var active=(IDictionary)typeof(ChartPlaybackRenderer).GetField("active",Hidden).GetValue(renderer);
+            var render=typeof(ChartPlaybackRenderer).GetMethod("RenderFrame",Hidden);
+            string directory=Path.Combine(output,"layers");Directory.CreateDirectory(directory);
+            try {
+                foreach(string layer in new[]{"all","body","line","single"}) {
+                    string frames=Path.Combine(directory,layer);Directory.CreateDirectory(frames);
+                    for(int frame=0;frame<121;frame++) {
+                        render.Invoke(renderer,new object[]{5200+frame*1000.0/60});
+                        foreach(DictionaryEntry entry in active) {
+                            int index=(int)entry.Key;
+                            foreach(string part in new[]{"Head","Tail","Body","Line"}) {
+                                var go=(GameObject)entry.Value.GetType().GetField(part).GetValue(entry.Value);
+                                bool opening=index<7;
+                                go.SetActive(go.activeSelf && opening &&
+                                    (layer=="all" || layer=="single" && index==0 ||
+                                     layer=="body" && part=="Body" || layer=="line" && part=="Line"));
+                            }
+                        }
+                        camera.Render();RenderTexture.active=rt;texture.ReadPixels(new Rect(0,0,960,540),0,0,false);texture.Apply();
+                        File.WriteAllBytes(Path.Combine(frames,frame.ToString("D4")+".png"),texture.EncodeToPNG());
+                    }
+                }
+            } finally {
+                RenderTexture.active=null;camera.targetTexture=null;
+                UnityEngine.Object.DestroyImmediate(texture);UnityEngine.Object.DestroyImmediate(rt);UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+        private static void VerifyPandoraMotion(string output)
+        {
+            var report = new StringBuilder("scenario\tcachedEdgeMaxXRange\topeningFrontReverseSteps\tsampledFrontSteps\n");
+            foreach (string name in new[] { "pandora-4.8", "pandora-8.0", "pandora-mobile-8.0" }) {
+                var ranges = new Dictionary<string, Vector2>();
+                foreach (string row in File.ReadLines(Path.Combine(output,name,"vertices.csv")).Skip(1)) {
+                    string[] c = row.Split(',');
+                    if(int.Parse(c[2], Inv) >= 14) continue;
+                    string key=c[2]+":"+c[4]+":"+c[5];
+                    float x=float.Parse(c[6],Inv);
+                    if(ranges.TryGetValue(key,out Vector2 range)) ranges[key]=new Vector2(Mathf.Min(range.x,x),Mathf.Max(range.y,x));
+                    else ranges[key]=new Vector2(x,x);
+                }
+                float maximum = ranges.Values.Max(v=>v.y-v.x);
+                int reversed=0,steps=0; var last = new Dictionary<int,float>();
+                foreach (string row in File.ReadLines(Path.Combine(output,name,"geometry.csv")).Skip(1)) {
+                    string[] c=row.Split(',');double time=double.Parse(c[1],Inv);int note=int.Parse(c[2],Inv);
+                    if(note>6 || time<3600 || time>8200)continue;
+                    float x=float.Parse(c[5],Inv);
+                    if(last.TryGetValue(note,out float previous)) { steps++;if(x>previous+.0001f)reversed++; }
+                    last[note]=x;
+                }
+                // This invariant concerns the seven authored opening ribbons
+                // at 100% top width, not arbitrary zigzags elsewhere in the song.
+                if(maximum>.00001f || reversed>0 || steps==0)
+                    throw new InvalidOperationException("Pandora opening ribbon instability: "+name);
+                report.AppendLine(string.Format(Inv,"{0}\t{1:R}\t{2}\t{3}",name,maximum,reversed,steps));
+            }
+            File.WriteAllText(Path.Combine(output,"opening-invariants.tsv"),report.ToString());
+        }
         // Live companion to the deterministic replays: use the application's
         // real audio-domain clock and editor update cadence, with no time seeks
         // or injected samples. Exit explicitly because this entry is asynchronous.
@@ -147,12 +243,14 @@ namespace ChunithmMobile.Editor
             return camera;
         }
         private static void Replay(ParsedChart chart, string name, double from, double to, int fps,
-            bool capture, string output, StringBuilder manifest)
+            bool capture, string output, StringBuilder manifest, float speed = 4.8f)
         {
             string directory = Path.Combine(output, name); Directory.CreateDirectory(directory);
             var root = new GameObject(name);
             var time = new AudioTime(); var clock = new DspChartClock(time); clock.Play(from);
             var renderer = Create(root); renderer.Bind(chart, clock);
+            renderer.VisualSpeed = OriginalNoteSpeed.VisualMultiplier(Mathf.RoundToInt(speed * 10));
+            if (name.StartsWith("pandora-")) renderer.RefreshSkin();
             var camera = Camera(root);
             var rt = new RenderTexture(960, 540, 24) { antiAliasing = Math.Max(1, QualitySettings.antiAliasing) };
             var texture = new Texture2D(960, 540, TextureFormat.RGB24, false);
@@ -166,6 +264,7 @@ namespace ChunithmMobile.Editor
             float maxJump = 0, cacheError = 0;
             var previous = new Dictionary<int, float>();
             var csv = new StringBuilder("frame,timeMs,note,kind,vertices,frontX,frontScreenX,deltaPixels\n");
+            var vertexCsv = new StringBuilder("frame,timeMs,note,vertex,u,v,x,y,z\n");
             try {
                 for (int frame = 0; frame <= frames; frame++) {
                     time.Seconds = frame / (double)fps;
@@ -187,6 +286,12 @@ namespace ChunithmMobile.Editor
                         if (!body.activeInHierarchy) continue;
                         Mesh mesh = body.GetComponent<MeshFilter>().sharedMesh;
                         var vertices = mesh.vertices;
+                        if (name.StartsWith("pandora-") && chart.Notes[index].Kind == NoteKind.Slide) {
+                            var uv = mesh.uv;
+                            for(int v=0;v<vertices.Length;v++)
+                                vertexCsv.AppendLine(string.Format(Inv,"{0},{1:F6},{2},{3},{4:R},{5:R},{6:R},{7:R},{8:R}",
+                                    frame,now,index,v,uv[v].x,uv[v].y,vertices[v].x,vertices[v].y,vertices[v].z));
+                        }
                         if (vertices.Length == 0) continue;
                         var candidates = new List<Vector3>();
                         for (int v = 0; v < vertices.Length; v += 2) {
@@ -211,6 +316,7 @@ namespace ChunithmMobile.Editor
                 manifest.AppendLine(string.Format(Inv, "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6:F6}\t{7}\t{8}",
                     name, fps, frames + 1, events, changes, missing, maxJump, cacheError, QualitySettings.antiAliasing));
                 File.WriteAllText(Path.Combine(directory, "geometry.csv"), csv.ToString());
+                if (name.StartsWith("pandora-")) File.WriteAllText(Path.Combine(directory,"vertices.csv"),vertexCsv.ToString());
             } finally {
                 RenderTexture.active = null; camera.targetTexture = null;
                 UnityEngine.Object.DestroyImmediate(texture); UnityEngine.Object.DestroyImmediate(rt); UnityEngine.Object.DestroyImmediate(root);
