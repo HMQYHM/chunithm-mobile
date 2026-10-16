@@ -22,6 +22,11 @@ namespace ChunithmMobile.Runtime
     /// </summary>
     public sealed class LocalChartPlaybackSession : MonoBehaviour
     {
+        // AudioSource.priority is lower-is-higher. The song must remain
+        // audible when optional judgement feedback exceeds the platform's
+        // simultaneous voice budget.
+        public const int MusicAudioPriority = 16;
+
         // 原版 ANSWER 队列有三类会实际触发 SE_TOUCH_ANSWER 的事件：
         // 1=普通头部，2=长条尾/有效滑条节点，3=AIR 动作/阶梯节点。
         // 合成到单轨时仍需保留类别，因为原版按类别各播放一次；同类同刻事件只合并一次。
@@ -296,7 +301,7 @@ namespace ChunithmMobile.Runtime
                     songClip = null;
                 }
                 songSource = gameObject.AddComponent<AudioSource>();
-                songSource.priority = 16;
+                songSource.priority = MusicAudioPriority;
                 songSource.spatialBlend = 0;
                 songSource.playOnAwake = false;
                 songSource.loop = false;

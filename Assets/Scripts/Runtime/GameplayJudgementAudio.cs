@@ -167,6 +167,13 @@ namespace ChunithmMobile.Runtime
     /// voices and one sustained source per admitted chain, until its authored end.</summary>
     public sealed class GameplayJudgementAudio : MonoBehaviour
     {
+        // Unity uses a smaller number for a higher-priority voice. Judgement
+        // feedback must never virtualize the song or other gameplay audio on
+        // devices with a limited hardware voice budget.
+        public const int AudioPriority = 240;
+        private const int InitialShotSources = 12;
+        private const int MaxShotSources = 24;
+
         private sealed class LongVoice
         {
             public LongJudgementAudioLifetime Life;
@@ -193,7 +200,7 @@ namespace ChunithmMobile.Runtime
             if (baked || volume <= 0) return;
             judge = GetComponent<GameplayJudgeController>();
             if (judge != null) judge.Judged += OnJudged;
-            for (int i = 0; i < 12; i++) shots.Add(CreateSource(false));
+            for (int i = 0; i < InitialShotSources; i++) shots.Add(CreateSource(false));
             foreach (var life in LongJudgementAudioLifetime.Build(chart)) {
                 var voice = new LongVoice { Life = life };
                 longs.Add(voice);
@@ -203,7 +210,8 @@ namespace ChunithmMobile.Runtime
         private AudioSource CreateSource(bool loop)
         {
             var source = gameObject.AddComponent<AudioSource>();
-            source.playOnAwake = false; source.loop = loop; source.spatialBlend = 0; source.priority = 0;
+            source.playOnAwake = false; source.loop = loop; source.spatialBlend = 0;
+            source.priority = AudioPriority;
             source.volume = volume; source.pitch = (float)session.Clock.Rate; return source;
         }
         private void OnJudged(ScheduledJudgePoint point, JudgementResult result)
@@ -224,7 +232,10 @@ namespace ChunithmMobile.Runtime
             if (bank == null || !limiter.TryAccept(cue, chartMs)) return;
             AudioSource target = shots.Find(source => !source.isPlaying);
             // Grow only when necessary; never stop a different cue to reuse its voice.
-            if (target == null && shots.Count < JudgementAudioPolicy.Cues.Length * 4) {
+            // Keep the realtime feedback pool bounded. A dense chord is
+            // dropped after the per-cue limiter instead of creating enough
+            // AudioSources to consume the device voice budget.
+            if (target == null && shots.Count < MaxShotSources) {
                 target = CreateSource(false); shots.Add(target);
             }
             if (target == null) return;

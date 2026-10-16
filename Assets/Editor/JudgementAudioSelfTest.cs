@@ -72,6 +72,10 @@ namespace ChunithmMobile.Editor
                 realtime.Bind(session,chart,bank,true,1);Require(realtime.UsesBakedTrack,"AUTO duplicate guard");
                 Require(root.GetComponents<AudioSource>().Length==0,"AUTO allocated realtime voices");
                 realtime.Bind(session,chart,bank,false,1);Require(root.GetComponents<AudioSource>().Length==12,"manual voice pool missing/bound exceeded");
+                Require(root.GetComponents<AudioSource>().All(v => v.priority == GameplayJudgementAudio.AudioPriority),
+                    "judgement voices must remain lower priority than the song");
+                Require(GameplayJudgementAudio.AudioPriority > LocalChartPlaybackSession.MusicAudioPriority,
+                    "song priority must beat judgement voices");
                 // Exercise the realtime entry with delayed callbacks: window keys
                 // come from the chart point, not the frame executing this method.
                 session.Clock.Play(1000);
