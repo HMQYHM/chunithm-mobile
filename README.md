@@ -4,7 +4,7 @@
 
 ## 简体中文
 
-CHUNITHM Mobile 是一个独立的 Unity 移动端项目，目标是把 CHUNITHM 的游玩体验带到移动端。当前 0.3.5 发布内容包括 Android APK、iOS 未签名 IPA、Skin Studio 源码、完整示例皮肤包，以及可公开的联机核心服务端归档。
+CHUNITHM Mobile 是一个独立的 Unity 移动端项目，目标是把 CHUNITHM 的游玩体验带到移动端。当前 0.3.7 发布内容包括 Android APK 和 iOS 未签名 IPA；Skin Studio 与联机核心服务端归档仍可从仓库文档中获取。
 
 ### 下载与文档
 
@@ -19,7 +19,7 @@ APK 与 IPA 请以 Release 中实际上传的文件为准。当前 IPA 为未签
 
 ### 当前已公开的内容
 
-- 游戏版本 0.3.5 的 Android 构建和 iOS 未签名构建。
+- 游戏版本 0.3.7 的 Android 构建和 iOS 未签名构建。
 - Skin Studio 的布局、资源、场景、规则和 Live2D 配置编辑能力及四语言完整说明。
 - 一个包含 Live2D、触控板、游玩 UI 和资源示例的完整示例皮肤包。
 - 仅包含联机核心所需文件的 Node.js 服务端归档；配置示例不含密钥、运行数据或 Bot 凭据。
@@ -34,7 +34,7 @@ APK 与 IPA 请以 Release 中实际上传的文件为准。当前 IPA 为未签
 
 ## 繁體中文
 
-CHUNITHM Mobile 是獨立的 Unity 行動端專案，目標是將 CHUNITHM 的遊玩體驗帶到行動裝置。0.3.4 發布內容包含 Android APK、iOS 未簽名 IPA、Skin Studio 原始碼、完整示例皮膚包，以及可公開的多人連線核心服務端封存。
+CHUNITHM Mobile 是獨立的 Unity 行動端專案，目標是將 CHUNITHM 的遊玩體驗帶到行動裝置。目前 0.3.7 提供 Android APK 與 iOS 未簽名 IPA；Skin Studio 與多人連線核心封存仍可從儲存庫文件取得。
 
 - [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) · [專案說明網站](https://hmqyhm.github.io/chunithm-mobile/)
 - [Skin Studio 完整說明](docs/skin-studio/SKIN-STUDIO-COMPLETE.zh-TW.md)
@@ -47,7 +47,7 @@ IPA 為未簽名建置，須在 Xcode 使用自己的開發者帳號、Team 與 
 
 ## 日本語
 
-CHUNITHM Mobile は、CHUNITHM のプレイ体験をモバイル端末へ届ける独立した Unity プロジェクトです。0.3.4 では Android APK、iOS 未署名 IPA、Skin Studio ソース、完全なサンプルスキン、公開可能なマルチプレイ中核サーバーアーカイブを提供します。
+CHUNITHM Mobile は、CHUNITHM のプレイ体験をモバイル端末へ届ける独立した Unity プロジェクトです。現在の 0.3.7 では Android APK と iOS 未署名 IPA を提供しています。Skin Studio とマルチプレイ中核のアーカイブはリポジトリのドキュメントから確認できます。
 
 - [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) · [プロジェクト説明サイト](https://hmqyhm.github.io/chunithm-mobile/)
 - [Skin Studio 完全ガイド](docs/skin-studio/SKIN-STUDIO-COMPLETE.ja.md)
@@ -60,7 +60,7 @@ IPA は未署名ビルドです。Xcode で自分の開発者アカウント、T
 
 ## English
 
-CHUNITHM Mobile is an independent Unity project that brings the CHUNITHM play experience to mobile devices. Version 0.3.4 provides an Android APK, an unsigned iOS IPA, Skin Studio source, a complete sample skin package, and a publishable multiplayer-core server archive.
+CHUNITHM Mobile is an independent Unity project that brings the CHUNITHM play experience to mobile devices. Version 0.3.7 provides an Android APK and an unsigned iOS IPA; Skin Studio and the multiplayer-core archive remain documented in this repository.
 
 - [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases) · [Project website](https://hmqyhm.github.io/chunithm-mobile/)
 - [Complete Skin Studio guide](docs/skin-studio/SKIN-STUDIO-COMPLETE.en.md)

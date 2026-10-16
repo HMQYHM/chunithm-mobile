@@ -2,7 +2,7 @@
 
 [專案說明網站](https://hmqyhm.github.io/chunithm-mobile/) · [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases)
 
-CHUNITHM Mobile 是獨立的 Unity 行動端專案。本儲存庫公開專案說明頁、多人連線核心原始碼封存，以及 Skin Studio 皮膚製作器原始碼封存。
+CHUNITHM Mobile 是獨立的 Unity 行動端專案。目前 0.3.7 提供 Android APK 與 iOS 未簽名 IPA；本儲存庫也公開專案說明頁、多人連線核心原始碼封存，以及 Skin Studio 皮膚製作器原始碼封存。
 
 ## 目前公開內容
 

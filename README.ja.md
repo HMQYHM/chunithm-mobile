@@ -2,7 +2,7 @@
 
 [プロジェクト説明](https://hmqyhm.github.io/chunithm-mobile/) · [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases)
 
-CHUNITHM Mobile は独立した Unity モバイルプロジェクトです。このリポジトリでは、プロジェクト説明サイト、マルチプレイ中核のソースアーカイブ、Skin Studio のソースアーカイブを公開しています。
+CHUNITHM Mobile は独立した Unity モバイルプロジェクトです。現在の 0.3.7 では Android APK と iOS 未署名 IPA を提供しています。このリポジトリでは、プロジェクト説明サイト、マルチプレイ中核のソースアーカイブ、Skin Studio のソースアーカイブも公開しています。
 
 ## 公開内容
 

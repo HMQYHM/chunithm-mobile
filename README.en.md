@@ -2,7 +2,7 @@
 
 [Project guide](https://hmqyhm.github.io/chunithm-mobile/) · [GitHub Releases](https://github.com/HMQYHM/chunithm-mobile/releases)
 
-CHUNITHM Mobile is an independent Unity mobile project. This repository publishes the project guide, a multiplayer core source archive, and a Skin Studio source archive.
+CHUNITHM Mobile is an independent Unity mobile project. The current 0.3.7 release provides an Android APK and an unsigned iOS IPA; the repository also contains the project guide, multiplayer core source archive, and Skin Studio source archive.
 
 ## Public contents
 
