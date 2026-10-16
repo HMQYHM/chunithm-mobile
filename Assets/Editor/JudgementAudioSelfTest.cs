@@ -76,6 +76,7 @@ namespace ChunithmMobile.Editor
                     "judgement voices must remain lower priority than the song");
                 Require(GameplayJudgementAudio.AudioPriority > LocalChartPlaybackSession.MusicAudioPriority,
                     "song priority must beat judgement voices");
+                Require(JudgementAudioLimiter.MaxVoicesPerCue == 4, "same cue concurrent limit changed");
                 // Exercise the realtime entry with delayed callbacks: window keys
                 // come from the chart point, not the frame executing this method.
                 session.Clock.Play(1000);

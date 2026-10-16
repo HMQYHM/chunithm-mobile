@@ -99,13 +99,14 @@ namespace ChunithmMobile.Runtime
     /// different render frames. Categories and scoring are completely separate.</summary>
     public sealed class JudgementAudioLimiter
     {
+        public const int MaxVoicesPerCue = 4;
         private readonly Dictionary<(int cue, long window), int> counts = new Dictionary<(int, long), int>();
         public bool TryAccept(int cue, double chartMs)
         {
             if (cue == 0) return false;
             var key = (cue, (long)Math.Floor(chartMs));
             counts.TryGetValue(key, out int count);
-            if (count >= 4) return false;
+            if (count >= MaxVoicesPerCue) return false;
             counts[key] = count + 1;
             return true;
         }
@@ -229,7 +230,8 @@ namespace ChunithmMobile.Runtime
         }
         private void PlayCue(int cue, double chartMs)
         {
-            if (bank == null || !limiter.TryAccept(cue, chartMs)) return;
+            if (bank == null || !limiter.TryAccept(cue, chartMs) ||
+                PlayingCueCount(cue) >= JudgementAudioLimiter.MaxVoicesPerCue) return;
             AudioSource target = shots.Find(source => !source.isPlaying);
             // Grow only when necessary; never stop a different cue to reuse its voice.
             // Keep the realtime feedback pool bounded. A dense chord is
@@ -240,6 +242,18 @@ namespace ChunithmMobile.Runtime
             }
             if (target == null) return;
             target.clip = bank.Get(cue); target.Play();
+        }
+
+        private int PlayingCueCount(int cue)
+        {
+            AudioClip clip = bank?.Get(cue);
+            if (clip == null) return 0;
+            int count = 0;
+            foreach (var source in shots)
+                if (source != null && source.isPlaying && source.clip == clip) count++;
+            foreach (var source in loops)
+                if (source != null && source.isPlaying && source.clip == clip) count++;
+            return count;
         }
         private void Update()
         {
@@ -278,6 +292,10 @@ namespace ChunithmMobile.Runtime
                     voice.Started = true;
                     voice.Cue = JudgementAudioPolicy.LoopCue(life.Family, grade);
                     if (!limiter.TryAccept(voice.Cue, life.StartMs)) { voice.Cue = 0; continue; }
+                    if (PlayingCueCount(voice.Cue) >= JudgementAudioLimiter.MaxVoicesPerCue) {
+                        voice.Cue = 0;
+                        continue;
+                    }
                 }
                 AudioClip clip = bank.Get(voice.Cue);
                 if (clip == null) continue;
