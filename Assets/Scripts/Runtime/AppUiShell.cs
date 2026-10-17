@@ -218,6 +218,9 @@ namespace ChunithmMobile.Runtime
         private Button updateNoticeConfirm;
         private Button updateNoticeLogsButton;
         private bool updateLogsExpanded;
+        private GitHubReleaseUpdateService githubReleaseUpdateService;
+        private GitHubReleaseUpdateService.ReleaseUpdate pendingGithubReleaseUpdate;
+        private bool githubReleasePromptShown;
         private int updateLogIndex;
         private RectTransform modsLayer;
         private Button autoPlayButton;
@@ -550,6 +553,9 @@ namespace ChunithmMobile.Runtime
             BuildMetadataEditor(); BuildImportOverlay(); BuildCredits();
             ApplyRuntimeSettings();
             RefreshMods();
+            githubReleaseUpdateService = GetComponent<GitHubReleaseUpdateService>() ?? gameObject.AddComponent<GitHubReleaseUpdateService>();
+            githubReleaseUpdateService.Check(Application.version, OnGithubReleaseUpdateAvailable,
+                error => MultiplayerLog.Info("github-update", "check failed: " + error));
             foreach (var pair in pages) SetPageImmediate(pair.Value, pair.Key == AppPage.Loading);
             FindObjectOfType<RuntimeLoadingOverlay>()?.Hide();
             StartCoroutine(LoadLibrary());
@@ -3859,7 +3865,11 @@ namespace ChunithmMobile.Runtime
         private void ShowUpdateNoticeIfNeeded()
         {
             const string updateKey = "chunithm_mobile_update_notice_version";
-            if (PlayerPrefs.GetString(updateKey, "") == UpdateLogVersions[0] || updateNoticeLayer == null) return;
+            if (updateNoticeLayer == null) return;
+            if (PlayerPrefs.GetString(updateKey, "") == UpdateLogVersions[0]) {
+                ShowPendingGithubReleaseUpdate();
+                return;
+            }
             updateNoticeLayer.gameObject.SetActive(true);
             CanvasGroup group = updateNoticeLayer.GetComponent<CanvasGroup>() ?? updateNoticeLayer.gameObject.AddComponent<CanvasGroup>();
             group.alpha = 0f;
@@ -3882,6 +3892,30 @@ namespace ChunithmMobile.Runtime
             PlayerPrefs.SetString("chunithm_mobile_update_notice_version", UpdateLogVersions[0]);
             PlayerPrefs.Save();
             if (updateNoticeLayer != null) updateNoticeLayer.gameObject.SetActive(false);
+            ShowPendingGithubReleaseUpdate();
+        }
+
+        private void OnGithubReleaseUpdateAvailable(GitHubReleaseUpdateService.ReleaseUpdate update)
+        {
+            pendingGithubReleaseUpdate = update;
+            MultiplayerLog.Info("github-update", "new stable release=" + update.Version);
+            if (currentPage == AppPage.Home && (updateNoticeLayer == null || !updateNoticeLayer.gameObject.activeSelf))
+                ShowPendingGithubReleaseUpdate();
+        }
+
+        private void ShowPendingGithubReleaseUpdate()
+        {
+            if (githubReleasePromptShown || pendingGithubReleaseUpdate == null || currentPage != AppPage.Home) return;
+            githubReleasePromptShown = true;
+            GitHubReleaseUpdateService.ReleaseUpdate update = pendingGithubReleaseUpdate;
+            string body = "当前版本：" + Application.version + "\n最新版本：" + update.Version + "\n\n" +
+                (string.IsNullOrWhiteSpace(update.Body) ? "GitHub 已发布新版本。" : update.Body.Trim());
+            ShowModal("发现新版本 " + update.Version, body,
+                () => Application.OpenURL(update.Url), true);
+            if (modalConfirm != null) {
+                Text label = modalConfirm.GetComponentInChildren<Text>();
+                if (label != null) label.text = UiLocalization.Translate("打开 Release");
+            }
         }
 
         private void BuildMods()

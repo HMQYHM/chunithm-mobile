@@ -35,6 +35,7 @@ namespace ChunithmMobile.Runtime
             { "正在重新读取谱面…", "Reloading chart…" },
 
             { "自动判定整张谱面，仅用于观看与练习。音乐、正解音与自动判定音会在加载时合成一条音频，遵循各自的开关与音量。", "Automatically judges the entire chart for viewing and practice. Music, ANSWER and automatic judgement sounds are mixed into one audio track during loading, using their own switches and volumes." },
+            { "打开 Release", "Open Release" },
             { "0.3.7 更新日志", "Version 0.3.7 update log" },
             { "0.3.7 1. 重新构建游玩模块", "1. Rebuilt the gameplay module" },
             { "0.3.7 2. 优化判定音与正解音播放", "2. Optimized judgement and answer sound playback" },
@@ -345,6 +346,7 @@ namespace ChunithmMobile.Runtime
             { "正在重新读取谱面…", "譜面を再読み込み中…" },
 
             { "自动判定整张谱面，仅用于观看与练习。音乐、正解音与自动判定音会在加载时合成一条音频，遵循各自的开关与音量。", "全譜面を自動判定する鑑賞・練習用 MOD。読み込み時に楽曲・正解音・自動判定音を1本の音声に合成します。各音声のオン／オフと音量設定が適用されます。" },
+            { "打开 Release", "リリースを開く" },
             { "0.3.7 更新日志", "バージョン 0.3.7 更新履歴" },
             { "0.3.7 1. 重新构建游玩模块", "1. プレイモジュールを再構築" },
             { "0.3.7 2. 优化判定音与正解音播放", "2. 判定音と正解音の再生を最適化" },
@@ -539,6 +541,7 @@ namespace ChunithmMobile.Runtime
             { "正在重新读取谱面…", "正在重新讀取譜面…" },
 
             { "自动判定整张谱面，仅用于观看与练习。音乐、正解音与自动判定音会在加载时合成一条音频，遵循各自的开关与音量。", "自動判定整張譜面，僅用於觀看與練習。音樂、正解音與自動判定音會在載入時合成一條音訊，遵循各自的開關與音量。" },
+            { "打开 Release", "開啟 Release" },
             { "0.3.7 更新日志", "0.3.7 更新記錄" },
             { "0.3.7 1. 重新构建游玩模块", "1. 重建遊玩模組" },
             { "0.3.7 2. 优化判定音与正解音播放", "2. 最佳化判定音與正解音播放" },
