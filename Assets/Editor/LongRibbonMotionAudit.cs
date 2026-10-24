@@ -186,7 +186,11 @@ namespace ChunithmMobile.Editor
             var group = real.Notes.Select((n, i) => new { Note = n, Index = i })
                 .Where(x => x.Note.Kind == NoteKind.Slide && x.Note.LongChainId >= 0)
                 .GroupBy(x => x.Note.LongChainId)
-                .Where(g => g.Count() >= 4 && g.Max(x => x.Note.EndTimeMs) - g.Min(x => x.Note.TimeMs) > 900)
+                // Real charts can contain dense short chains (KING's longest
+                // representative chain is under 900 ms). Keep the audit
+                // focused on multi-point ribbons without excluding them by
+                // an arbitrary duration threshold.
+                .Where(g => g.Count() >= 4 && g.Max(x => x.Note.EndTimeMs) - g.Min(x => x.Note.TimeMs) > 300)
                 .OrderByDescending(g => g.Sum(x => Math.Abs(x.Note.EndLane - x.Note.Lane)) + g.Count()).First();
             double from = group.Min(x => x.Note.TimeMs) - 700;
             double to = Math.Min(group.Max(x => x.Note.EndTimeMs) + 350, from + 7500);

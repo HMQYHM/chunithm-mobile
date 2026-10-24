@@ -240,10 +240,10 @@
   });
   function scene(){if(!state.scene||typeof state.scene!=="object")state.scene={};if(!state.scene.background)state.scene.background={};if(!state.scene.track)state.scene.track={};return state.scene;}
   const sceneMap={sceneBackgroundColor:["background","color"],sceneBackgroundOpacity:["background","opacity"],sceneTrackColor:["track","color"],sceneLaneColor:["track","laneColor"],sceneGuideColor:["track","guideColor"],sceneEdgeColor:["track","edgeColor"],sceneJudgementLineColor:["track","judgementLineColor"],sceneBackgroundImage:["background","image"],sceneTrackImage:["track","image"],sceneLaneImage:["track","laneImage"]};
-  function renderScene(){const current=scene();for(const [id,[group,key]] of Object.entries(sceneMap)){const node=$(id);if(!node)continue;if(node.tagName==="SELECT"){const chosen=current[group][key]||"";node.innerHTML=ruleResourceOptions(chosen,id==="sceneBackgroundImage"?"使用歌曲背景":id==="sceneTrackImage"?"使用内置轨道":"使用内置分道线");}else node.value=current[group][key]??(key==="opacity"?1:"");}renderStage();}
+  function renderScene(){const current=scene();for(const [id,[group,key]] of Object.entries(sceneMap)){const node=$(id);if(!node)continue;if(node.tagName==="SELECT"){const chosen=current[group][key]||"";node.innerHTML=ruleResourceOptions(chosen,id==="sceneBackgroundImage"?"使用歌曲背景":id==="sceneTrackImage"?"使用内置轨道":"使用内置分道线");}else node.value=current[group][key]??(key==="opacity"?1:"");}}
   function updateSceneField(event,group,key){const value=event.target.type==="number"?Number(event.target.value):event.target.value;if(scene()[group][key]!==value){beginEdit();scene()[group][key]=value;}}
   for(const [id,[group,key]] of Object.entries(sceneMap))$(id)?.addEventListener("input",event=>{updateSceneField(event,group,key);renderStage();});
-  for(const [id,[group,key]] of Object.entries(sceneMap))$(id)?.addEventListener("change",event=>{updateSceneField(event,group,key);renderScene();finishEdit();});
+  for(const [id,[group,key]] of Object.entries(sceneMap))$(id)?.addEventListener("change",event=>{updateSceneField(event,group,key);renderScene();renderStage();finishEdit();});
   $("sceneImageFile").addEventListener("change",async event=>{
     try{const additions=new Map();for(const file of event.target.files){await livePanel.validateFile(file);const path=window.SkinStudioLive2D.path("ui/scene/"+file.name);if(!path||!/\.png$/i.test(path))throw Error("请选择安全的 PNG 文件名");additions.set(path,file);}beginEdit();for(const [path,file] of additions)state.files.set(path,file);renderScene();renderRules();finishEdit();notify("场景图片已导入");}catch(error){notify(error.message,true);}finally{event.target.value="";}
   });
@@ -265,9 +265,14 @@
     touchLeftPawSmoothing:["leftPaw","smoothing",.18],touchRightPawSmoothing:["rightPaw","smoothing",.18]
   };
   function renderTouchOverlay(){
-    const value=touchOverlay(); $("touchOverlayEnabled").checked=value.enabled===true;
-    $("touchTabletImage").value=value.tablet.image||""; $("touchLeftPawImage").value=value.leftPaw.image||""; $("touchRightPawImage").value=value.rightPaw.image||"";
-    for(const [id,[group,key,fallback]] of Object.entries(touchFields))$(id).value=value[group][key]??fallback;
+    // Rendering must not create empty paw objects in an imported document.
+    // Only an edit should materialize the optional touchOverlay groups.
+    const value=state.document.touchOverlay&&typeof state.document.touchOverlay==="object"?state.document.touchOverlay:{};
+    const tablet=value.tablet||{},leftPaw=value.leftPaw||{},rightPaw=value.rightPaw||{};
+    const groups={tablet,leftPaw,rightPaw};
+    $("touchOverlayEnabled").checked=value.enabled===true;
+    $("touchTabletImage").value=tablet.image||""; $("touchLeftPawImage").value=leftPaw.image||""; $("touchRightPawImage").value=rightPaw.image||"";
+    for(const [id,[group,key,fallback]] of Object.entries(touchFields))$(id).value=groups[group][key]??fallback;
   }
   $("touchOverlayEnabled")?.addEventListener("change",event=>{beginEdit();touchOverlay().enabled=event.target.checked;finishEdit();});
   for(const id of Object.keys(touchFields))$(id)?.addEventListener("input",event=>{beginEdit();const [group,key]=touchFields[id];touchOverlay()[group][key]=Number(event.target.value);});

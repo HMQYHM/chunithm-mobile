@@ -511,6 +511,198 @@ PlayerSettings:
       m_Height: 1024
       m_Kind: 4
       m_SubKind: App Store
+  - m_BuildTarget: OpenHarmony
+    m_Icons:
+    - m_Textures: []
+      m_Width: 216
+      m_Height: 216
+      m_Kind: 1
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 162
+      m_Height: 162
+      m_Kind: 1
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 108
+      m_Height: 108
+      m_Kind: 1
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 81
+      m_Height: 81
+      m_Kind: 1
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 54
+      m_Height: 54
+      m_Kind: 1
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 41
+      m_Height: 41
+      m_Kind: 1
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 216
+      m_Height: 216
+      m_Kind: 0
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 162
+      m_Height: 162
+      m_Kind: 0
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 108
+      m_Height: 108
+      m_Kind: 0
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 81
+      m_Height: 81
+      m_Kind: 0
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 54
+      m_Height: 54
+      m_Kind: 0
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 41
+      m_Height: 41
+      m_Kind: 0
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 272
+      m_Height: 272
+      m_Kind: 3
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 204
+      m_Height: 204
+      m_Kind: 3
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 136
+      m_Height: 136
+      m_Kind: 3
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 102
+      m_Height: 102
+      m_Kind: 3
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 68
+      m_Height: 68
+      m_Kind: 3
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 51
+      m_Height: 51
+      m_Kind: 3
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 272
+      m_Height: 272
+      m_Kind: 2
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 204
+      m_Height: 204
+      m_Kind: 2
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 136
+      m_Height: 136
+      m_Kind: 2
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 102
+      m_Height: 102
+      m_Kind: 2
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 68
+      m_Height: 68
+      m_Kind: 2
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 51
+      m_Height: 51
+      m_Kind: 2
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 256
+      m_Height: 256
+      m_Kind: 5
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 192
+      m_Height: 192
+      m_Kind: 5
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 128
+      m_Height: 128
+      m_Kind: 5
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 96
+      m_Height: 96
+      m_Kind: 5
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 64
+      m_Height: 64
+      m_Kind: 5
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 48
+      m_Height: 48
+      m_Kind: 5
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 256
+      m_Height: 256
+      m_Kind: 4
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 192
+      m_Height: 192
+      m_Kind: 4
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 128
+      m_Height: 128
+      m_Kind: 4
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 96
+      m_Height: 96
+      m_Kind: 4
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 64
+      m_Height: 64
+      m_Kind: 4
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 48
+      m_Height: 48
+      m_Kind: 4
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 288
+      m_Height: 288
+      m_Kind: 7
+      m_SubKind: 
+    - m_Textures: []
+      m_Width: 288
+      m_Height: 288
+      m_Kind: 6
+      m_SubKind: 
   m_BuildTargetBatching: []
   m_BuildTargetShaderSettings: []
   m_BuildTargetGraphicsJobs: []

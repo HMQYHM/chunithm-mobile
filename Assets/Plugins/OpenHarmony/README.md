@@ -1,6 +1,6 @@
 # OpenHarmony Unity bridge
 
-本目录记录 Unity 与 HarmonyOS 原生层的接入边界。当前 Unity 2022.3 安装没有确认到可用的 OpenHarmony 导出模块，因此这里提供的是接口契约和安全回退，不是可运行的 HAP 运行时。
+本目录记录 Unity 与 HarmonyOS 原生层的接入边界。当前 Unity 2022.3 安装没有确认到可用的 OpenHarmony 导出模块，因此这里提供的是接口契约和安全回退，不是可运行的 HAP 运行时。Stage 宿主的具体接入清单见 `harmonyos/CHUNITHM-Mobile-HarmonyOS/OPENHARMONY-UNITY-INTEGRATION.md`。
 
 需要接入原生 Runtime 后，按以下能力实现 `IOpenHarmonyBridge`：
 
@@ -15,4 +15,4 @@
 
 `harmonyos/CHUNITHM-Mobile-HarmonyOS/entry/src/main/ets/common/HarmonyOSBridgeContract.ets`
 
-在没有原生桥接实现时，游戏必须继续使用 Unity 的 Android/iOS/编辑器回退实现，不能把 Stage 启动壳宣称为完整游戏移植。
+在没有原生桥接实现时，游戏必须继续使用 Unity 的 Android/iOS/编辑器回退实现，不能把 Stage 启动壳宣称为完整游戏移植。需要先取得 `libunity.so`、`libil2cpp.so`、Unity data bundle 和 NAPI bridge，再接入 Stage 工程。

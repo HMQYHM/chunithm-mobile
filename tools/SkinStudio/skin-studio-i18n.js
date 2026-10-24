@@ -82,7 +82,10 @@
     const key = `studioI18n${name.replace(/[^a-z]/gi, '')}`;
     const source = element.dataset[key] || element.getAttribute(name);
     element.dataset[key] = source;
-    element.setAttribute(name, tr(source));
+    const translated = tr(source);
+    // Avoid writing the same attribute value back. MutationObserver watches
+    // these attributes, so unconditional setAttribute creates a microtask loop.
+    if (element.getAttribute(name) !== translated) element.setAttribute(name, translated);
   }
   function scan(root) {
     if (!root) return;

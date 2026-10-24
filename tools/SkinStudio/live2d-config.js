@@ -18,6 +18,10 @@
   }
   function allowedAsset(value) {
     const p = path(value);
+    // macOS folder pickers can expose Finder metadata (for example
+    // `._cat.model3.json`). These are not model assets and must never be
+    // selected as the active model or parsed as JSON.
+    if (p && p.split("/").some(segment => segment.startsWith("."))) return false;
     return !!p && /(?:\.png|\.moc3|\.(?:model3|motion3|exp3|cdi3|physics3|pose3)\.json|(?:^|\/)(?:LICENSE[^/]*|COPYING[^/]*)(?:\.txt)?)$/i.test(p);
   }
   const name = value => typeof value === "string" && /^[\p{L}\p{N}_-]{1,64}$/u.test(value) ? value : "";

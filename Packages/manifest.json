@@ -1,8 +1,9 @@
 {
   "dependencies": {
-    "com.unity.modules.animation": "1.0.0",
-    "com.unity.render-pipelines.universal": "14.0.10",
+    "com.unity.render-pipelines.universal": "14.0.12",
+    "com.unity.ugui": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",
+    "com.unity.modules.animation": "1.0.0",
     "com.unity.modules.audio": "1.0.0",
     "com.unity.modules.imageconversion": "1.0.0",
     "com.unity.modules.jsonserialize": "1.0.0",
@@ -11,7 +12,6 @@
     "com.unity.modules.uielements": "1.0.0",
     "com.unity.modules.unitywebrequest": "1.0.0",
     "com.unity.modules.unitywebrequestaudio": "1.0.0",
-    "com.unity.modules.unitywebrequesttexture": "1.0.0",
-    "com.unity.ugui": "1.0.0"
+    "com.unity.modules.unitywebrequesttexture": "1.0.0"
   }
 }

@@ -13,3 +13,9 @@ __pycache__/
 *.jks
 .env
 .env.local
+
+# macOS / 跨盘复制噪音
+.DS_Store
+._*
+mono_crash.*.json
+.hvigor/

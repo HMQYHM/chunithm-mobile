@@ -17,8 +17,11 @@ namespace ChunithmMobile.Rendering
         private const double VisibilityLeadRealMilliseconds = 120.0;
         private const double PostHeadRenderGraceMilliseconds = 900.0;
         // Rendering-only guard for tiny backwards samples from platform audio
-        // adapters. Judgement still uses the untouched DSP chart clock.
-        private const double RenderTimeBackstepToleranceMilliseconds = 8.0;
+        // adapters. Judgement still uses the untouched DSP chart clock. A
+        // device-side audio-route rebuild can step back more than one display
+        // frame; keep the tolerance wide enough that a recycled long-note body
+        // is not restarted on that sample, which read as a whole-body flash.
+        private const double RenderTimeBackstepToleranceMilliseconds = 24.0;
         private const float MinimumVisibilityGuardZ = 2f;
         private const float MaximumVisibilityGuardZ = 96f;
         // A moving ribbon must not be created/destroyed because a floating
@@ -103,6 +106,18 @@ namespace ChunithmMobile.Rendering
         private DspChartClock clock;
         private double lastRenderTime = double.NegativeInfinity;
         private double guideVisualTime = double.NegativeInfinity;
+        // Clock-jitter diagnostics for the "whole long note shakes on device"
+        // symptom. Accumulate the raw per-frame chart-clock delta and log a
+        // short summary; a smooth clock shows a near-constant delta, while a
+        // stair-stepping or backwards clock shows a wide min/max and backsteps.
+        // Remove this block once the device log confirms the time source.
+        private const int ClockDiagWindowFrames = 120;
+        private int clockDiagFrames;
+        private int clockDiagBacksteps;
+        private double clockDiagMin = double.PositiveInfinity;
+        private double clockDiagMax = double.NegativeInfinity;
+        private double clockDiagSum;
+        private double clockDiagPrev = double.NegativeInfinity;
         private Material holdBody, slideBody, airHoldBody, airHoldRoof;
         private Material heavenRoof, heavenRoofPink, heavenWall, heavenShadow;
         private Material airActionTrailGreenBody;
@@ -343,6 +358,7 @@ namespace ChunithmMobile.Rendering
                 Debug.Log($"Gameplay first visible frame: chart={clock.TimeMs:F2}ms, warmedNotes={active.Count}");
             }
             double now = clock.TimeMs;
+            SampleClockDeltaDiagnostic(now);
             // Keep rendering monotonic across tiny platform audio-clock
             // backsteps. This affects visuals only; judgement continues to
             // consume the authoritative DSP clock.
@@ -351,6 +367,27 @@ namespace ChunithmMobile.Rendering
                 lastRenderTime - now <= RenderTimeBackstepToleranceMilliseconds)
                 now = lastRenderTime;
             RenderFrame(now);
+        }
+
+        private void SampleClockDeltaDiagnostic(double now)
+        {
+            if (!double.IsNegativeInfinity(clockDiagPrev)) {
+                double delta = now - clockDiagPrev;
+                if (delta < 0) clockDiagBacksteps++;
+                clockDiagMin = Math.Min(clockDiagMin, delta);
+                clockDiagMax = Math.Max(clockDiagMax, delta);
+                clockDiagSum += delta;
+            }
+            clockDiagPrev = now;
+            if (++clockDiagFrames >= ClockDiagWindowFrames) {
+                double avg = clockDiagSum / clockDiagFrames;
+                Debug.Log($"[clock-diag] {ClockDiagWindowFrames}f chart delta avg={avg:F3}ms min={clockDiagMin:F3}ms max={clockDiagMax:F3}ms backsteps={clockDiagBacksteps}");
+                clockDiagFrames = 0;
+                clockDiagBacksteps = 0;
+                clockDiagMin = double.PositiveInfinity;
+                clockDiagMax = double.NegativeInfinity;
+                clockDiagSum = 0;
+            }
         }
 
         /// <summary>

@@ -23,6 +23,7 @@
       "index.html",
       "style.css",
       "app.js",
+      "skin-studio-i18n.js",
       "rule-config.js",
       "live2d-config.js",
       "live2d-panel.js",
